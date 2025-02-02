@@ -1,0 +1,28 @@
+package in.robinhood.ramanujan.data.db.dao;
+
+import io.vertx.core.Future;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+
+
+/*
+* store all the variableIds
+* store all the index of array. For ex: there will be entry like: arrayId:index1_index2_..._indexN
+* */
+
+@Component
+public interface VariableValueDao {
+    public Future<Void> createVariableNameIdMap(final String asyncId, final String arrayId, final String arrayName);
+    public Future<Void> storeVariableValue(final String asyncId, final String variableId, final Object value);
+    public Future<Void> storeArrayValueBatch(final String asyncId, final String arrayId, Map<String, Object> indexValueMap);
+    public Future<Void> storeArrayValue(final String asyncId, final String arrayId, final String index, final Object value);
+    public Future<Void> createVariable(final String asyncId, final String variableId, String variableName, final Object value);
+    /**
+     * The caller of this method has to be refactored.
+     * */
+    public Future<Object> getVariableValue(final String asyncId, final String variableId);
+    public Future<Map<String, Object>> getArrayValues(final String asyncId, final String arrayId);
+    public Future<Object> getAllValuesForAsyncId(final String asyncId);
+    public Future<Void> deletedAllVariablesForAsyncId(final String asyncId);
+}

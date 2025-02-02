@@ -1,0 +1,31 @@
+
+# FROM anapsix/alpine-java
+
+# Pull base image.
+FROM ubuntu:16.04
+
+# Install OpenJDK-8
+RUN apt-get update && \
+    apt-get install -y openjdk-8-jdk && \
+    apt-get install -y ant && \
+    apt-get clean;
+
+# Fix certificate issues
+RUN apt-get update && \
+    apt-get install ca-certificates-java && \
+    apt-get clean && \
+    update-ca-certificates -f;
+
+# Setup JAVA_HOME -- useful for docker commandline
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
+RUN export JAVA_HOME
+
+WORKDIR /
+COPY rest/target/rest-1.0.2-SNAPSHOT-fat.jar rest-1.0-SNAPSHOT-fat.jar
+COPY config/application-config-prod.json application-config.json
+COPY resources/OrchestratorCloudStorageWrite.json OrchestratorCloudStorageWrite.json
+COPY resources/MetricPusherCred.json MetricPusherCred.json
+MAINTAINER PSAXENA
+EXPOSE 80:80/tcp
+EXPOSE 5006:5006
+CMD ["java","-jar","-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5006","rest-1.0-SNAPSHOT-fat.jar", "-conf", "application-config.json"]
