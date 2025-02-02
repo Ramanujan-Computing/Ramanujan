@@ -1,0 +1,187 @@
+package in.ramanujan.data.db.dao;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.storage.BlobId;
+import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageOptions;
+import in.ramanujan.middleware.base.UserReadableDebugPoints;
+import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
+import in.ramanujan.monitoringutils.MonitoringHandler;
+import in.ramanujan.pojo.RuleEngineInput;
+import io.vertx.core.Context;
+import io.vertx.core.Future;
+import org.springframework.stereotype.Component;
+
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+@Component
+public abstract class  StorageDao {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    protected final String dagElementResultBucketName = "dag_element_result";
+    protected final String dagElementInputBucketName = "dag_element_input";
+    protected final String dageElementCodeBucketName = "dag-element-code";
+    protected final String commonFunctionCodeBucket = "common-function-code";
+    protected final String dagElementDebugValue = "dag-element-debug-value";
+
+    private Context context;
+
+    private Context getVertxContext() {
+        return context;
+    }
+
+    public void setContext(Context context, ConfigurationGetter.StorageType storageType) {
+        this.context = context;
+    }
+
+    public final Future<Object> getDagElementResult(String objectId) throws Exception {
+        Future<Object> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                Object data = getObject(objectId, dagElementResultBucketName);
+                blocking.complete(data);
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getDagElementResultFromStorage", handler -> {
+            if(handler.succeeded()) {
+                future.complete(handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final Future<String> getCommonCode(String asyncId) {
+        Future<String> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                String object = getObject(asyncId, commonFunctionCodeBucket);
+                blocking.complete(object);
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getCommonCode", handler -> {
+            if(handler.succeeded()) {
+                future.complete((String) handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final Future<UserReadableDebugPoints> getDebugPoints(String orchestratorAsyncId) {
+        Future<UserReadableDebugPoints> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                String object = getObject(orchestratorAsyncId, dagElementDebugValue);
+                blocking.complete(objectMapper.readValue(object, UserReadableDebugPoints.class));
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getDebugPoints", handler -> {
+            if(handler.succeeded()) {
+                future.complete((UserReadableDebugPoints) handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final Future<String> getDagElementCode(String dagElementId) {
+        Future<String> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                String object = getObject(dagElementId, dageElementCodeBucketName);
+                blocking.complete(object);
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getDagElementCode", handler -> {
+            if(handler.succeeded()) {
+                future.complete((String) handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final  Future<Void> storeCommonCode(String asyncId, String code) {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    setObject(asyncId, commonFunctionCodeBucket, code);
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("storeCommonCode", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    public final Future<Void> storeDagElementCode(String dagElementId, String code) {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    setObject(dagElementId, dageElementCodeBucketName, code);
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("storeDagElementCode", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    public final Future<Void> storeDagElement(String orchestratorAsyncId, RuleEngineInput ruleEngineInput) throws Exception {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    setObject(orchestratorAsyncId, dagElementInputBucketName, objectMapper.writeValueAsString(ruleEngineInput));
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("storeDagElementInStorage", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    protected abstract void setObject(String objectId, String buckName, String object) throws Exception;
+    protected abstract String getObject(String objectId, String bucketName) throws Exception;
+}
+

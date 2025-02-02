@@ -1,0 +1,6 @@
+.idea/*
+base/target/*
+rest/target/*
+service/target/*
+data/target/*
+*iml

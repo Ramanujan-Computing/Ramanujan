@@ -1,0 +1,7 @@
+CREATE TABLE `arrayIdNameMap` (
+  `arrayId` varchar(100) DEFAULT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  `asyncId` varchar(100) DEFAULT NULL,
+  KEY `arrayIdNameMap_asyncId_IDX` (`asyncId`) USING BTREE,
+  KEY `arrayIdNameMap_asyncId_arrayId_IDX` (`asyncId`,`arrayId`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci

@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <artifactId>middleware</artifactId>
-        <groupId>in.robinhood.ramanujan.middleware</groupId>
+        <groupId>in.ramanujan.middleware</groupId>
         <version>1.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -24,7 +24,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>in.robinhood.ramanujan</groupId>
+            <groupId>in.ramanujan</groupId>
             <artifactId>rule-engine</artifactId>
             <version>1.0.3-SNAPSHOT</version>
         </dependency>

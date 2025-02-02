@@ -1,0 +1,12 @@
+def func(var x: integer, var j:integer) {
+  var i:integer;
+  {i}={{x}+{10}};
+  {j}={i};
+}
+var i,j:integer;
+{i}={0};
+{j}={0};
+while({i}<{10}) {
+  exec func(i,j);
+  {i}={{i}+{1}};
+}

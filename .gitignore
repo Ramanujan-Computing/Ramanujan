@@ -1,5 +1,7 @@
 */target/*
 */.idea/*
+.idea/
+*/.vscode/*
 *iml
 */.gradle/*
 */gradle/*
@@ -20,4 +22,4 @@
 
 *.DS_Store
 *.json
-
+*/cmake.check_cache*

@@ -1,0 +1,202 @@
+def getSquared(var xPow:integer, var yPow:integer, var ans:integer) {
+  if({xPow}<{yPow}) {{
+    {ans}={{yPow}-{xPow}};
+  }else{
+    {ans}={{xPow}-{yPow}};
+  }}
+}
+def getAvg(var arr:array, var originalArr:array, var avgF:integer) {
+  var index,ans1,tmpAvg1,tmpAvg2:integer;
+  {avgF}={0};
+  {index}={0};
+  while({index}<{100}) {
+      {tmpAvg1}={arr[index]};
+      {tmpAvg2}={originalArr[index]};
+      exec getSquared(tmpAvg1,tmpAvg2, ans1);
+      {avgF}={{avgF}+{ans1}};
+      {index}={{index}+{1}};
+  }
+  {avgF}={{avgF}/{100}};
+}
+def getTestArr(var xTest:integer, var yTest:integer, var testArrTest:array) {
+  var it:integer;
+  {it}={0};
+  while({it}<{100}) {
+    {testArrTest[it]}={{{xTest}*{it}}+{yTest}};
+    {it}={{it}+{1}};
+  }
+}
+var train[100]:array;
+var i:integer;
+{i}={0};
+while({i}<{100}) {
+  {train[i]}={{{i}*{1.9}}+{33}};
+  {i}={{i}+{1}};
+}
+def mainCode(var train : array, var x1:double, var y1:double) {
+  var x1,y1,j,avg,diff1,diff2x,diff2y,tmp:double;
+  {j}={0};
+  var testArr[100]:array;
+  var slope:double;
+  var nexty,nextx:double;
+  {testArr[1]}={1};
+  while({j}<{15000}) {
+    exec getTestArr(x1,y1,testArr);
+    exec getAvg(testArr, train, diff1);
+
+    {tmp} ={{x1}+{0.0001}};
+    exec getTestArr(tmp,y1,testArr);
+    exec getAvg(testArr, train, diff2x);
+
+    {slope}={{{diff2x}-{diff1}}/{0.0001}};
+    {nextx}={{x1}-{{slope}*{0.1}}};
+
+
+    {tmp} ={{y1}+{0.0001}};
+    exec getTestArr(x1,tmp,testArr);
+    exec getAvg(testArr, train, diff2y);
+
+    {slope}={{{diff2y}-{diff1}}/{0.0001}};
+    {nexty}={{y1}-{{slope}*{0.50}}};
+
+    {x1}={nextx};
+    {y1}={nexty};
+
+    {j}={{j}+{1}};
+  }
+}
+var x1[100][10],y1[100][10]:array;
+{x1[0][0]}={0};
+{y1[0][0]} = {0};
+var ansX1,ansy1 :double;
+{ansX1}={0};
+{ansy1}={0};
+var iteration[10]:array;
+{i}={0};
+while({i} < {10}) {
+  {iteration[i]}={0};
+  {i}={{i}+{1}};
+}
+
+def getBest(var train:array, var best:integer, var x1:array, var y1:array, var iteration:integer) {
+  {best}={0};
+  var index:integer;
+  var bestM:double;
+  {bestM}={1000000000};
+  {index}={0};
+  while({index} < {10}) {
+    var testArr[100]:array;
+    {testArr[0]}={0};
+    var testX1,testY1:double;
+    {testX1}={x1[index][iteration]};
+    {testY1}={y1[index][iteration]};
+    exec getTestArr(testX1,testY1,testArr);
+    var avg:double;
+    {avg}={0};
+    exec getAvg(testArr, train, avg);
+    if({avg} < {bestM}) {{
+      {bestM} = {avg};
+      {best} = {index};
+    }}
+    {index}={{index}+{1}};
+  }
+}
+def posRun(var thread:integer, var train:array, var x1:array, var y1:array, var iteration :array) {
+  var currentIter:integer;
+  {currentIter}={iteration[thread]};
+  if({currentIter} == {0}) {{
+
+    {x1[thread][currentIter]}={thread};
+    {y1[thread][currentIter]}={thread};
+  } else {
+    var best :integer;
+    {best}={0};
+    var thisIter:integer;
+    {thisIter}={currentIter};
+    {currentIter} = {{currentIter}-{1}};
+    exec getBest(train, best, x1, y1, currentIter);
+    if({x1[thread][currentIter]} < {x1[best][currentIter]}) {
+      {
+        {x1[thread][thisIter]} = {{x1[thread][currentIter]}+{{{x1[best][currentIter]}-{x1[thread][currentIter]}}/{2}}};
+      } else {
+        {x1[thread][thisIter]} = {{x1[thread][currentIter]}-{{{x1[thread][currentIter]}-{x1[best][currentIter]}}/{2}}};
+      }
+    }
+    if({y1[thread][currentIter]} < {y1[best][currentIter]}) {
+      {
+        {y1[thread][thisIter]} = {{y1[thread][currentIter]}+{{{y1[best][currentIter]}-{y1[thread][currentIter]}}/{2}}};
+      } else {
+        {y1[thread][thisIter]} = {{y1[thread][currentIter]}-{{{y1[thread][currentIter]}-{y1[best][currentIter]}}/{2}}};
+      }
+    }
+    {currentIter}={thisIter};
+  }
+}
+
+
+  var x,y:double;
+  {x}={x1[thread][currentIter]};
+  {y}={y1[thread][currentIter]};
+  exec mainCode(train, x, y);
+  {x1[thread][currentIter]}={x};
+  {y1[thread][currentIter]}={y};
+}
+
+threadStart(t0) {
+  exec posRun(0, train, x1, y1,iteration);
+  {iteration[0]}={{iteration[0]}+{1}};
+}
+
+threadStart(t1) {
+  exec posRun(1, train, x1, y1,iteration);
+  {iteration[1]}={{iteration[1]}+{1}};
+
+}
+threadStart(t2) {
+  exec posRun(2, train, x1, y1,iteration);
+  {iteration[2]}={{iteration[2]}+{1}};
+
+}
+threadStart(t3) {
+  exec posRun(3, train, x1, y1,iteration);
+  {iteration[3]}={{iteration[3]}+{1}};
+
+}
+threadStart(t4) {
+  exec posRun(4, train, x1, y1,iteration);
+  {iteration[4]}={{iteration[4]}+{1}};
+
+}
+threadStart(t5) {
+  exec posRun(5, train, x1, y1,iteration);
+  {iteration[5]}={{iteration[5]}+{1}};
+
+}
+threadStart(t6) {
+  exec posRun(6, train, x1, y1,iteration);
+  {iteration[6]}={{iteration[6]}+{1}};
+
+}
+threadStart(t7) {
+  exec posRun(7, train, x1, y1,iteration);
+  {iteration[7]}={{iteration[7]}+{1}};
+
+}
+threadStart(t8) {
+  exec posRun(8, train, x1, y1,iteration);
+  {iteration[8]}={{iteration[8]}+{1}};
+
+}
+threadStart(t9) {
+  exec posRun(9, train, x1, y1,iteration);
+  {iteration[9]}={{iteration[9]}+{1}};
+
+}
+
+threadOnEnd(t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,2) {
+  var best:integer;
+  {best}={0};
+  exec getBest(train, best, x1, y1, 1);
+  {ansX1}={x1[best][0]};
+  {ansy1}={y1[best][0]};
+}
