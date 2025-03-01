@@ -1,0 +1,12 @@
+rest/.gradle/*
+rest/gradle/*
+rest/gradl*
+.gradle/*
+gradle/*
+.idea/*
+base/target/*
+rest/target/*
+service/target/*
+data/target/*
+*iml
+target/*
