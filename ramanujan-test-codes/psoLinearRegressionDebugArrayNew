@@ -32,7 +32,7 @@ var train[100]:array;
 var i:integer;
 i = 0;
 while(i < 100) {
-    train[i] = i * 10.9235 + 33.195;
+    train[i] = i * 1.8 + 32;
     i = i + 1;
 }
 

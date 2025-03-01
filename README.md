@@ -398,5 +398,58 @@ the syntax of Python3. It should be able to take in all the python dependencies 
       C code without an additional step of compilation. [far future]
 2. Dependency registry for the libraries. All major functionalities as given by Maven, NPM, etc. should be available.
 
+# Build and usage Strategy:
+## Build:
+### Lower level dependencies:
+1. commons
+2. ramanujan-device-common
+3. developer-console-model
+4. monitoring-utils
+5. db-layer
+
+### Second level dependencies:
+1. rule-engine
+2. kafka-manager
+3. orchestrator
+
+### Third level dependencies:
+1. middlware
+
+### Fourth level dependencies:
+1. developer-console
+
+## Usage:
+### Docker build:
+Dockerfile is provided to containerize all the necessary services.
+
+### Required APIs:
+#### Middleware server:
+1. PUT /orchestrator?ip=<orchestrator_ip>&port=<orchestrator_port>
+2. PUT /kafka?ip=<kafka_manager_ip>&port=<kafka_manager_port>
+
+#### Kafka Manager server:
+1. PUT /middleware?ip=<middleware_ip>&port=<middleware_port>
+
+#### For using experimental `prayog` device server on the network:
+1. PUT /start?devices=<number_of_devices_to_emulate>
+
+## Important configs:
+###middleware:
+1. orchestrator.host
+2. orchestrator.port
+3. kafka.host
+4. kafka.port
+5. db.type : "GCP", "IN_MEM"
+6. storage.type : "GCP", "LOCAL"
+7. monitoring.type : "GCP", "LOCAL"
+
+###Orchestrator:
+1. db.type : "GCP", "IN_MEM"
+2. storage.type : "GCP", "LOCAL"
+3. monitoring.type : "GCP", "LOCAL"
+
+## Developer Console:
+For executing code file:
+java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>
 
 
