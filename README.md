@@ -400,6 +400,7 @@ the syntax of Python3. It should be able to take in all the python dependencies 
 
 # Build and usage Strategy:
 ## Build:
+Use `mvn clean install`. Following is the dependency hierarchy:
 ### Lower level dependencies:
 1. commons
 2. ramanujan-device-common
@@ -434,7 +435,7 @@ Dockerfile is provided to containerize all the necessary services.
 1. PUT /start?devices=<number_of_devices_to_emulate>
 
 ## Important configs:
-###middleware:
+### middleware:
 1. orchestrator.host
 2. orchestrator.port
 3. kafka.host
@@ -443,13 +444,13 @@ Dockerfile is provided to containerize all the necessary services.
 6. storage.type : "GCP", "LOCAL"
 7. monitoring.type : "GCP", "LOCAL"
 
-###Orchestrator:
+### Orchestrator:
 1. db.type : "GCP", "IN_MEM"
 2. storage.type : "GCP", "LOCAL"
 3. monitoring.type : "GCP", "LOCAL"
 
 ## Developer Console:
 For executing code file:
-java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>
+```java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>```
 
 
