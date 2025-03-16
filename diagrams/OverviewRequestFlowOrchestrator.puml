@@ -1,0 +1,20 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+
+Middleware -> Orchestrator: run DAGElementI
+Orchestrator -> Orchestrator: register request
+Orchestrator -> Middleware: orchestratorAsyncId
+
+DeviceX -> Orchestrator: openPing(deviceId)
+Orchestrator -> Orchestrator: check if processing suitable\nfor the given device
+Orchestrator -> DeviceX: DagId; intermediate_code;
+DeviceX -> DeviceX: process intermediate_code
+DeviceX -> Orchestrator: send_processing_data
+
+Middleware -> Orchestrator: nth status_check
+Orchestrator -> Middleware: Success; send_processing_data
+
+
+@enduml

@@ -1,0 +1,34 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+
+DevConsole -> Middleware: Request
+Middleware -> Middleware: check code;\ntranslate to intermediate code
+Middleware -> DevConsole: AsyncId
+
+Middleware -> Middleware: DagElementQ.add(HEAD node of submitted DAG).
+loop DAGElementQ.isEmpty
+    loop DAGElementI : DagElementQ
+        Middleware -> Orchestrator: run DAGElementI
+        Orchestrator -> Orchestrator: register request
+        Orchestrator -> Middleware: orchestratorAsyncId
+        Middleware -> KafkaManager: orchestratorAsyncId
+    end
+
+    loop DAGElementI : DagElementQ:
+        par async flow
+            loop DAGElementI not processed on a device:
+                KafkaManager -> Middleware: check orchestratorAsyncId
+                Middleware -> Orchestrator: check orchestratorAsyncId
+                Orchestrator -> Middleware: status of orchestratorAsyncId
+                Middleware -> KafkaManager: status of orchestratorAsyncId
+            end
+            Middleware -> Middleware: DagElementQ.enqueue(DAGElementI.AllChildren)
+        end
+    end
+
+
+end
+
+@enduml
