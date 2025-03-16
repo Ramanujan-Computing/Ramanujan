@@ -454,3 +454,67 @@ For executing code file:
 ```java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>```
 
 
+# Code-Flow:
+![Dev-Console request flow](./diagrams/OverviewRequestFlowDevConsole.png)
+
+The code is submitted to DevConsole process which would be present in the path: `developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar`.
+The process would submit the code to the Middleware server, which would be responsible for converting the submitted code
+to the intermediate code. The Middleware server would then work with the orchestrator server to process the required DAG.
+Once the code gets converted to the intermediate code, the Middleware server would return back an asyncId which the
+DevConsole would use to get the result of the code execution.
+
+![Middleware-Orchestrator flow](./diagrams/OverviewRequestFlowMiddleware.png)
+
+The Middleware server after creating the intermediate code, would start submitting the DAG-nodes to the orchestrator server.
+Whenever a DAG-node gets processed, the Middleware server would submit children - DAG elements to the orchestrator server.
+Once, the whole DAG is computed, the Middleware server sets the status of the whole processing as SUCCESS.
+
+Pseudocode of the DAG computation is as follows:
+```
+DagElementQueue = new Queue();
+DagElementQueue.add(rootDagElement);
+isDone = false;
+while(!isDone) {
+   while(DagElementQueue is not empty) {
+       DagElement currentElement = DagElementQueue.poll();
+       asyncTasks = []
+       children = []
+       if(currentElement is not processed) {
+           asyncTask = asyncCode(currentElement.process(), callback={
+              if(currentElement has children) {
+                  for(DagElement child : currentElement.children) {
+                      children.add(child);
+                  }
+              }
+           })
+           asyncTasks.add(asyncTask);
+       }
+   }
+    for(asyncTask : asyncTasks) {
+         asyncTask.wait();
+    }
+    if(children is empty) {
+        isDone = true;
+    } else {
+        for(DagElement child : children) {
+            DagElementQueue.add(child);
+        }
+    }
+}
+```
+
+![Orchestrator flow](./diagrams/OverviewRequestFlowOrchestrator.png)
+
+Middleware end of the orchestrator:<br>
+The Middleware server would submit a computation task to the Orchestrator server. The Orchestrator server would instantly
+return back an asyncId that the Middleware server would use to get the result of the computation. The Orchestrator server
+would then check for an available device, and will assign the computation task to the device.
+
+Device end of the orchestrator:<br>
+Any device-client that is available on the Ramanujan platform, would keep pinging to the Orchestrator server. Currently,
+the pings contains the deviceId, but in future it would send in the device-stats as well. The Orchestrator server would
+keep track of the devices that are available on the network. On the ping API request, the Orchestrator server would return
+back a suitable computation task mapped to the device. The device would then execute the task and return back the result to the
+Orchestrator server.
+
+
