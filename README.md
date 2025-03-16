@@ -475,10 +475,10 @@ DagElementQueue = new Queue();
 DagElementQueue.add(rootDagElement);
 isDone = false;
 while(!isDone) {
+   asyncTasks = []
+   children = []
    while(DagElementQueue is not empty) {
        DagElement currentElement = DagElementQueue.poll();
-       asyncTasks = []
-       children = []
        if(currentElement is not processed) {
            asyncTask = asyncCode(currentElement.process(), callback={
               if(currentElement has children) {
