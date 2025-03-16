@@ -518,3 +518,15 @@ back a suitable computation task mapped to the device. The device would then exe
 Orchestrator server.
 
 
+#### Use of Kafka-Manager:
+This service helps the system to resume in case the Middleware server goes down. This server becomes a part of a PubSub system.
+It can be part of Apache-Kafka, GCP-PubSub, and a local PubSub system. The producers and consumer in the server code can
+be extended to use any of the PubSub systems.
+
+In addition to this, the Middleware servers are stateless and do not have the track of the asyncIds. The Kafka-Manager server keeps the track
+of the asyncIds. The messages on the PubSub queue contains the asyncId and the status of the computation. The consumer of
+the Kafka-Manager server would ping the Middleware server with the asyncId to get the result of the computation. This helps
+the Middleware server to move forward with the DAG computation.
+
+
+
