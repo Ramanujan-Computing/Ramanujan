@@ -1,5 +1,6 @@
 package in.ramanujan.rule.engine;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,7 +15,18 @@ public class NativeProcessor {
     public ArrayList debugPoints;
 
     static {
-//        loadLibrary("native");
-        load("/Users/pranav/Desktop/ramanujan/ramanujan-native/native/cmake-build-debug/libnative.dylib");
+        String nativeLibPath = System.getenv("NATIVE_LIB_PATH");
+        if (nativeLibPath != null) {
+            System.setProperty("java.library.path", nativeLibPath);
+            // This is necessary to reset the library path
+            try {
+                final Field fieldSysPath = ClassLoader.class.getDeclaredField("sys_paths");
+                fieldSysPath.setAccessible(true);
+                fieldSysPath.set(null, null);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to reset library path", e);
+            }
+        }
+        loadLibrary("native");
     }
 }
