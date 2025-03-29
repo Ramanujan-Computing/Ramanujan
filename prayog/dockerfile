@@ -23,7 +23,9 @@ RUN export JAVA_HOME
 WORKDIR /
 COPY rest/target/rest-1.0-SNAPSHOT-fat.jar rest-1.0-SNAPSHOT-fat.jar
 COPY config/application-config.json config.json
-COPY config/libnative.dylib libnative.dylib
+COPY libnative.dylib libnative.dylib
+# Set env variable of NATIVE_LIB_PATH with he path of the native library
+ENV NATIVE_LIB_PATH /libnative.dylib
 MAINTAINER PSAXENA
 EXPOSE 8887:8887/tcp
 CMD ["java","-jar","rest-1.0-SNAPSHOT-fat.jar", "-conf", "config.json"]

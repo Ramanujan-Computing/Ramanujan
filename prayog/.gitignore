@@ -4,3 +4,6 @@ rest/target/*
 service/target/*
 data/target/*
 *iml
+*.dylib
+*.so
+*.dll
