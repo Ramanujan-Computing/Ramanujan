@@ -1,5 +1,6 @@
 package in.ramanujan.orchestrator.rest.verticles;
 
+import in.ramanujan.db.layer.constants.Config;
 import in.ramanujan.orchestrator.base.configuration.ConfigurationGetter;
 import in.ramanujan.orchestrator.data.dao.StorageDao;
 import in.ramanujan.orchestrator.rest.handlers.*;
@@ -61,7 +62,10 @@ public class HttpVerticle extends AbstractVerticle {
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-        queryExecutor.init(context, ConfigurationGetter.getDBType());
+        QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
+                ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
+                ConfigurationGetter.getString(Config.DB_NAME));
+        queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
         storageDao.init(context, ConfigurationGetter.getStorageType());
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
             @Override
