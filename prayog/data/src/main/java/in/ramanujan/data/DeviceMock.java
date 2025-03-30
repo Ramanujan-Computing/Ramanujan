@@ -1,13 +1,10 @@
 package in.ramanujan.data;
 
 import in.ramanujan.devices.common.Config;
-import in.ramanujan.devices.common.Credentials.Credentials;
 import in.ramanujan.devices.common.RamanujanController;
-import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.rule.engine.Processor;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
-import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,9 +34,9 @@ public class DeviceMock {
 
             try {
                 //runMachine(vertx);
-                JsonObject config = vertx.getOrCreateContext().config();
                 logger.info(Thread.currentThread().getName());
-                RamanujanController ramanujanController = new RamanujanController(config.getString(Config.ORCHESTRATOR_URL),
+                logger.info(PrayogConfig.getString(Config.ORCHESTRATOR_URL));
+                RamanujanController ramanujanController = new RamanujanController(PrayogConfig.getString(Config.ORCHESTRATOR_URL),
                         new in.ramanujan.data.logging.LoggerFactory());
                 ramanujanController.startOrchestrations();
             } catch (Exception e) {

@@ -12,7 +12,7 @@ public class OrchestratorApiCallHelper {
     static String host = "";
 
     static synchronized  void setHost(String host) {
-        if(!host.isEmpty())
+        if(!OrchestratorApiCallHelper.host.isEmpty())
         {
             return;
         }

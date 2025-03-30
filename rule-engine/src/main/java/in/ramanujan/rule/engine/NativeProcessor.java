@@ -17,6 +17,7 @@ public class NativeProcessor {
     static {
         String nativeLibPath = System.getenv("NATIVE_LIB_PATH");
         if (nativeLibPath != null) {
+            System.out.println("Setting java.library.path to " + nativeLibPath);
             System.setProperty("java.library.path", nativeLibPath);
             // This is necessary to reset the library path
             try {
@@ -26,7 +27,10 @@ public class NativeProcessor {
             } catch (Exception e) {
                 throw new RuntimeException("Failed to reset library path", e);
             }
+            loadLibrary("native");
+        } else {
+            System.out.println("NATIVE_LIB_PATH not set, skipping loading of native library");
         }
-        loadLibrary("native");
+
     }
 }
