@@ -2,6 +2,9 @@
 #define PROCESSOR_RES_H
 
 #include <list>
+#include <unordered_map>
+#include <string>
+#include <vector>
 
 class ArrayValueDataContainer;
 class VariableRE;

@@ -3,6 +3,7 @@
 
 #include <string>
 #include <list>
+#include <vector>
 #include "Variable.hpp"
 #include "Command.hpp"
 #include "If.hpp"

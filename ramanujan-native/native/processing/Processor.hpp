@@ -2,6 +2,7 @@
 #define PROCESSOR_H
 
 #include<unordered_map>
+#include<vector>
 #include<list>
 #include<string>
 
