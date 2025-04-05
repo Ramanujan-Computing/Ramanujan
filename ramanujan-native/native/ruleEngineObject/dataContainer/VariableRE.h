@@ -11,6 +11,7 @@
 #include "../processing/ProcessingResult.hpp"
 #include "array/ArrayValue.h"
 #include <stack>
+#include <cmath>
 
 class DoublePtr : public RuleEngineInputUnits{
 public:
