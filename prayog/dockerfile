@@ -36,6 +36,17 @@ RUN apt-get update && \
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME
 
+ENV JDK_HOME /usr/lib/jvm/java-8-openjdk-arm64
+
+# ls on the JDK_HOME directory
+RUN ls -l $JDK_HOME
+
+# RUN export JDK_HOME
+
+# Echo the environment variables
+RUN echo $JAVA_HOME
+RUN echo $JDK_HOME
+
 WORKDIR /
 COPY rest/target/rest-1.0-SNAPSHOT-fat.jar rest-1.0-SNAPSHOT-fat.jar
 COPY config/application-config.json config.json
@@ -46,6 +57,7 @@ WORKDIR /native
 RUN mkdir -p /build
 WORKDIR /native/build
 RUN rm -f CMakeCache.txt
+#RUN cmake  -DJDK_HOME=/usr/lib/jvm/java-8-openjdk-arm64 ..
 RUN cmake ..
 RUN cmake --build .
 
