@@ -3,6 +3,7 @@
 
 #include <string>
 #include <list>
+#include <vector>
 #include "FunctionCall.hpp"
 #include "ArrayCommand.hpp"
 #include "RuleEngineInputUnit.hpp"

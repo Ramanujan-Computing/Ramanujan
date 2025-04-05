@@ -10,7 +10,7 @@
 #include "dataContainer/DataContainerRE.h"
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
-#include "math.h"
+#include <cmath>
 #include "DebugPoint.h"
 
 

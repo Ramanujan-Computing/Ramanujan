@@ -403,21 +403,30 @@ the syntax of Python3. It should be able to take in all the python dependencies 
 Use `mvn clean install`. Following is the dependency hierarchy:
 ### Lower level dependencies:
 1. commons
-2. ramanujan-device-common
-3. developer-console-model
-4. monitoring-utils
-5. db-layer
+2. rule-engine
+3. ramanujan-device-common
+4. developer-console-model
+5. monitoring-utils
+6. db-layer
 
 ### Second level dependencies:
-1. rule-engine
-2. kafka-manager
-3. orchestrator
+1. kafka-manager
+2. orchestrator
 
 ### Third level dependencies:
 1. middlware
 
 ### Fourth level dependencies:
 1. developer-console
+
+### Ramanujan-native:
+```
+cd ramanujan-native/native
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
 
 ## Usage:
 ### Docker build:

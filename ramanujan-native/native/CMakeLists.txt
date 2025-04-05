@@ -14,7 +14,11 @@ include_directories(${JSONCPP_INCLUDE_DIRS})
 link_directories(${JSONCPP_LIBRARY_DIRS})
 
 include_directories($ENV{JDK_HOME}/include)
-include_directories($ENV{JDK_HOME}/include/darwin)
+IF(UNIX AND NOT APPLE)
+    include_directories($ENV{JDK_HOME}/include/linux)
+ELSEIF(APPLE)
+    include_directories($ENV{JDK_HOME}/include/darwin)
+ENDIF()
 
 add_definitions(-D_GNU_SOURCE)
 

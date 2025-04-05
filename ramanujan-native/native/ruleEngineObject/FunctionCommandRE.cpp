@@ -6,6 +6,7 @@
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
 #include "DebugPoint.h"
+#include <list>
 
 FunctionCommandRE::FunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo) {
     this->functionCommandInfo = functionCommand;
