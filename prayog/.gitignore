@@ -7,3 +7,4 @@ data/target/*
 *.dylib
 *.so
 *.dll
+*/native/

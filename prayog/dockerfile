@@ -3,11 +3,27 @@
 
 # Pull base image.
 FROM ubuntu:16.04
+# Specify the platform as AMD64
+# FROM --platform=linux/amd64 ubuntu:16.04
 
 # Install OpenJDK-8
 RUN apt-get update && \
     apt-get install -y openjdk-8-jdk && \
     apt-get install -y ant && \
+    apt-get install -y libjsoncpp-dev && \
+    apt-get install -y clang && \
+    apt-get install -y make && \
+apt-get install -y wget && \
+apt-get install -y libssl-dev && \
+apt-get install -y pkg-config && \
+    wget https://cmake.org/files/v4.0/cmake-4.0.0.tar.gz && \
+    tar -xzvf cmake-4.0.0.tar.gz && \
+    cd cmake-4.0.0 && \
+    ./bootstrap && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf cmake-4.0.0 cmake-4.0.0.tar.gz && \
     apt-get clean;
 
 # Fix certificate issues
@@ -23,9 +39,21 @@ RUN export JAVA_HOME
 WORKDIR /
 COPY rest/target/rest-1.0-SNAPSHOT-fat.jar rest-1.0-SNAPSHOT-fat.jar
 COPY config/application-config.json config.json
-COPY libnative.dylib libnative.dylib
+
+#compile native project
+COPY native native
+WORKDIR /native
+RUN mkdir -p /build
+WORKDIR /native/build
+RUN rm -f CMakeCache.txt
+RUN cmake ..
+RUN cmake --build .
+
+WORKDIR /
+
+RUN cp native/build/libnative.so libnative.so
 # Set env variable of NATIVE_LIB_PATH with he path of the native library
-ENV NATIVE_LIB_PATH /libnative.dylib
+ENV NATIVE_LIB_PATH /
 MAINTAINER PSAXENA
 EXPOSE 8887:8887/tcp
 CMD ["java","-jar", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5008", "rest-1.0-SNAPSHOT-fat.jar", "-conf", "config.json"]
