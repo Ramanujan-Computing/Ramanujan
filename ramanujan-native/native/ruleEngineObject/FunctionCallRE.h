@@ -39,14 +39,14 @@ public:
         }
         firstCommandId = functionCall->firstCommandId;
         commmandRe = dynamic_cast<CommandRE *>(getFromMap(map, firstCommandId));
-        argSize = functionCall->arguments.size();
+        argSize = functionCall->argumentsSize;
         arguments = new RuleEngineInputUnits*[argSize];
-        std::vector<std::string>::iterator itr = functionCall->arguments.begin();
-        for (int i = 0; i < functionCall->arguments.size() && itr != functionCall->arguments.end(); i++, itr++) {
+        auto itr = functionCall->arguments.begin();
+        for (int i = 0; i < functionCall->argumentsSize && itr != functionCall->arguments.end(); i++, itr++) {
             arguments[i] = map->at(*itr);
         }
-        allVariablesInMethod = new RuleEngineInputUnits*[functionCall->allVariablesInMethod.size()];
-        for (int i=0; i< functionCall->allVariablesInMethod.size(); i++) {
+        allVariablesInMethod = new RuleEngineInputUnits*[functionCall->allVariablesInMethodSize];
+        for (int i=0; i< functionCall->allVariablesInMethodSize; i++) {
             allVariablesInMethod[i] = map->at(functionCall->allVariablesInMethod[i]);
         }
         setFieldDone = true;

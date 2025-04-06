@@ -7,14 +7,14 @@
 ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     this->array = array;
 
-    dimensionSize = array->dimension.size();
+    dimensionSize = array->dimensionSize;
     dimensions = new int[dimensionSize];
     if(dimensionSize == 0) {
         return;
     }
 
-    if(array->dimension.size() > 0) {
-        sizeAtIndex = new int[array->dimension.size()];
+    if(dimensionSize > 0) {
+        sizeAtIndex = new int[dimensionSize];
     }
     int i = 0;
     for (int dim : array->dimension) {
@@ -22,13 +22,13 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
         dimensions[i++] = dim;
     }
 
-    totalSize = getTotalSize(dimensions, 0, array->dimension.size());
+    totalSize = getTotalSize(dimensions, 0, dimensionSize);
     val = new double[totalSize]();
-    for(std::unordered_map<std::string, double>::iterator it = array->values.begin(); it != array->values.end(); ++it) {
-        std::string key = it->first;
-        double value = it->second;
+    for(auto & it : array->values) {
+        std::string key = it.first;
+        double value = it.second;
         //TODO: check if the size is faring correct.
-        add(getIndexFromStr(key, array->dimension.size()), value);
+        add(getIndexFromStr(key, dimensionSize), value);
     }
 }
 
