@@ -116,7 +116,7 @@ set(SOURCE_FILES
 )
 
 # Normal build target
-add_executable(native ${SOURCE_FILES})
+add_library(native SHARED ${SOURCE_FILES})
 target_include_directories(native PRIVATE ${JSONCPP_INCLUDE_DIRS})
 target_link_libraries(native ${JSONCPP_LIBRARIES})
 
