@@ -13,6 +13,7 @@ class Array : public RuleEngineInputUnit {
     public:
         std::string dataType, name, frameCount;
         std::vector<int> dimension;
+        int dimensionSize = 0;
         std::unordered_map<std::string, double> values;
 
         Array(Json::Value* value) {
@@ -22,6 +23,7 @@ class Array : public RuleEngineInputUnit {
             this->frameCount = (*value)["frameCount"].asString();
             for (int i = 0; i < (*value)["dimension"].size(); i++) {
                 this->dimension.push_back((*value)["dimension"][i].asInt());
+                dimensionSize++;
             }
 
             /*element values be of format
