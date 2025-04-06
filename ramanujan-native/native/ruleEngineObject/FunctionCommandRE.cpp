@@ -25,7 +25,7 @@ FunctionCommandRE::FunctionCommandRE(FunctionCall* functionCommand, FunctionCall
 void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
     functionInfoRE->setFields(map);
 
-    argSize = functionCommandInfo->arguments.size();
+    argSize = functionCommandInfo->argumentsSize;
 
     firstCommand = functionInfoRE->commmandRe;
     if (firstCommand == nullptr) {
@@ -81,7 +81,7 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     std::list<double*> methodArgVariableAddrList;
     std::list<ArrayValue**> methodArgArrayAddrList;
 
-    for(int i = 0; i < functionInfoRE->functionCall->allVariablesInMethod.size(); i++) {
+    for(int i = 0; i < functionInfoRE->functionCall->allVariablesInMethodSize; i++) {
         if(dynamic_cast<ArrayRE*>(functionInfoRE->allVariablesInMethod[i]) != nullptr) {
             totalArrCount++;
             methodArgArrayAddrList.push_back(((ArrayRE*)functionInfoRE->allVariablesInMethod[i])->getValPtr());

@@ -27,9 +27,9 @@ private:
     IfRE* ifCommandRE;
     ConstantRE* constantRE;
     VariableRE* variableRE;
-    FunctionCommandRE* functionCommandRE;
+    FunctionCommandRE* functionCommandRE = nullptr;
     ConditionRE* conditionRe;
-    ArrayCommandRE* arrayCommandRE;
+    ArrayCommandRE* arrayCommandRE = nullptr;
     Command * command;
 
     RuleEngineInputUnits* unit;
