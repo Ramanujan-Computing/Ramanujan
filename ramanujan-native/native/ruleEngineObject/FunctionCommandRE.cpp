@@ -8,6 +8,9 @@
 #include "DebugPoint.h"
 #include <list>
 
+#include <limits>
+#include <random>
+
 FunctionCommandRE::FunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo) {
     this->functionCommandInfo = functionCommand;
     this->functionInfoRE = functionInfo;
@@ -182,5 +185,87 @@ void FunctionCommandRE::process() {
     }
 
 
+}
 
+void NINF::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = -std::numeric_limits<double>::infinity();
+    }
+
+    if(arrCount == 1)
+    {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = -std::numeric_limits<double>::infinity();
+        }
+    }
+}
+
+void PINF::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::numeric_limits<double>::infinity();
+    }
+
+    if(arrCount == 1)
+    {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = std::numeric_limits<double>::infinity();
+        }
+    }
+}
+
+static std::random_device rd;  // Non-deterministic random seed
+static std::mt19937 gen(rd()); // Mersenne Twister engine
+static std::uniform_real_distribution<> dis(0.0, 1.0);
+
+void RAND::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = dis(gen);
+    }
+
+    if(arrCount == 1)
+    {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = dis(gen);
+        }
+    }
+}
+
+// All variable based built-in methods:
+void ABS::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::abs(*methodArgVariableAddr[0]);
+    }
+}
+
+void SIN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::sin(*methodArgVariableAddr[0]);
+    }
+}
+
+void COS::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::cos(*methodArgVariableAddr[0]);
+    }
+}
+
+void TAN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::tan(*methodArgVariableAddr[0]);
+    }
+}
+
+void ASIN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::asin(*methodArgVariableAddr[0]);
+    }
+}
+
+void ACOS::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::acos(*methodArgVariableAddr[0]);
+    }
 }
