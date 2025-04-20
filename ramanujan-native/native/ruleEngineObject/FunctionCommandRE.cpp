@@ -187,6 +187,35 @@ void FunctionCommandRE::process() {
 
 }
 
+void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    std::list<double *> methodArgVariableAddrList;
+    std::list<ArrayValue **> methodArgArrayAddrList;
+
+    for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
+        auto arg = map->at(functionCommandInfo->arguments[i]);
+        if (dynamic_cast<ArrayRE *>(arg) != nullptr) {
+            arrCount++;
+            methodArgArrayAddrList.push_back(((ArrayRE *) arg)->getValPtr());
+        } else {
+            varCount++;
+            methodArgVariableAddrList.push_back(((DoublePtr *) arg)->getValPtrPtr());
+        }
+    }
+
+    methodArgVariableAddr = new double *[varCount];
+    methodArgArrayAddr = new ArrayValue **[arrCount];
+
+    for (int i = 0; i < varCount; i++) {
+        methodArgVariableAddr[i] = methodArgVariableAddrList.front();
+        methodArgVariableAddrList.pop_front();
+    }
+
+    for (int i = 0; i < arrCount; i++) {
+        methodArgArrayAddr[i] = methodArgArrayAddrList.front();
+        methodArgArrayAddrList.pop_front();
+    }
+}
+
 void NINF::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = -std::numeric_limits<double>::infinity();

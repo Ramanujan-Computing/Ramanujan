@@ -20,11 +20,12 @@ class FunctionCommandRE : public RuleEngineInputUnits {
 protected:
     FunctionCallRE* functionCommandRE = nullptr;
     FunctionCallRE* functionInfoRE = nullptr;
+    FunctionCall* functionCommandInfo = nullptr;
 
     int varCount = 0;
     int arrCount = 0;
 private:
-    FunctionCall* functionCommandInfo = nullptr;
+
 //    DataContainerRE** arguments;
 //    DataContainerRE** functionInfoArgs;
 
@@ -118,9 +119,6 @@ public:
     void process();
     void processMethod();
 
-protected:
-    FunctionCommandRE(){};
-
 };
 
 enum BuiltInFunctions {
@@ -140,7 +138,9 @@ protected:
     ArrayValue*** methodArgArrayAddr = nullptr;
     double** methodArgVariableAddr = nullptr;
 public:
-    BuiltInFunctionsImpl() {};
+
+    BuiltInFunctionsImpl(FunctionCall *pCall) : FunctionCommandRE(pCall, nullptr) {}
+
 
     void destroy() override {
         if(methodArgVariableAddr != nullptr) {
@@ -151,95 +151,62 @@ public:
         }
     }
 
-    void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
-        std::list<double*> methodArgVariableAddrList;
-        std::list<ArrayValue**> methodArgArrayAddrList;
-
-        for(int i = 0; i < functionInfoRE->argSize; i++) {
-            if(dynamic_cast<ArrayRE*>(functionInfoRE->arguments[i]) != nullptr) {
-                arrCount++;
-                methodArgArrayAddrList.push_back(((ArrayRE*)functionInfoRE->arguments[i])->getValPtr());
-            } else {
-                varCount++;
-                methodArgVariableAddrList.push_back(((DoublePtr*)functionInfoRE->arguments[i])->getValPtrPtr());
-            }
-        }
-
-        methodArgVariableAddr = new double*[varCount];
-        methodArgArrayAddr = new ArrayValue**[arrCount];
-
-        for(int i = 0; i < varCount; i++) {
-            methodArgVariableAddr[i] = methodArgVariableAddrList.front();
-            methodArgVariableAddrList.pop_front();
-        }
-
-        for(int i = 0; i < arrCount; i++) {
-            methodArgArrayAddr[i] = methodArgArrayAddrList.front();
-            methodArgArrayAddrList.pop_front();
-        }
-    }
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override;
 };
 
 class NINF : public BuiltInFunctionsImpl {
 public:
-    NINF() {};
+
+    NINF(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
 
     void process() override;
 };
 
 class PINF : public BuiltInFunctionsImpl {
 public:
-    PINF() {};
-
+    PINF(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class RAND : public BuiltInFunctionsImpl {
 public:
-    RAND() {};
-
+    RAND(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class ABS : public BuiltInFunctionsImpl {
 public:
-    ABS() {};
-
+    ABS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class SIN : public BuiltInFunctionsImpl {
 public:
-    SIN() {};
-
+    SIN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class COS : public BuiltInFunctionsImpl {
 public:
-    COS() {};
-
+    COS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class TAN : public BuiltInFunctionsImpl {
 public:
-    TAN() {};
-
+    TAN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class ASIN : public BuiltInFunctionsImpl {
 public:
-    ASIN() {};
-
+    ASIN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
 class ACOS : public BuiltInFunctionsImpl {
 public:
-    ACOS() {};
-
+    ACOS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
     void process() override;
 };
 
@@ -248,23 +215,23 @@ static FunctionCommandRE* GetFunctionCommandRE(FunctionCall* functionCommand, st
 {
     // match id with the built-in methods, if yes, then create object of that type. Else, create FunctionCommandRE
     if(id == "NINF") {
-        return new class NINF();
+        return new class NINF(functionCommand);
     } else if(id == "PINF") {
-        return new class PINF();
+        return new class PINF(functionCommand);
     } else if(id == "RAND") {
-        return new class RAND();
+        return new class RAND(functionCommand);
     } else if(id == "ABS") {
-        return new class ABS();
+        return new class ABS(functionCommand);
     } else if(id == "SIN") {
-        return new class SIN();
+        return new class SIN(functionCommand);
     } else if(id == "COS") {
-        return new class COS();
+        return new class COS(functionCommand);
     } else if(id == "TAN") {
-        return new class TAN();
+        return new class TAN(functionCommand);
     } else if(id == "ASIN") {
-        return new class ASIN();
+        return new class ASIN(functionCommand);
     } else if(id == "ACOS") {
-        return new class ACOS();
+        return new class ACOS(functionCommand);
     }
 
     return new FunctionCommandRE(functionCommand, (FunctionCallRE *) map->at(functionCommand->id));

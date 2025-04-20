@@ -54,8 +54,7 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
          * pointed by functionCall.id;
          * FunctionCallRE has to be created in Processor.
          */
-        functionCommandRE = new FunctionCommandRE(command->functionCall,
-                                                  (FunctionCallRE *) map->at(command->functionCall->id));
+        functionCommandRE = GetFunctionCommandRE(command->functionCall, command->functionCall->id, map);
         functionCommandRE->setFields(map);
     }
 
