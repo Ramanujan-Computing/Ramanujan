@@ -1,0 +1,387 @@
+
+def F1(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F2(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F3(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F4(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F5(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F6(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F7(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F8(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F9(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+def F10(var lb : integer, var ub : integer, var dim : integer)
+{
+}
+
+
+def Get_Functions_details(var fnId: integervar lb : integer, var ub : integer, var dim : integer)
+{
+    if(fnId == 1) {
+        exec F1(lb, ub, dim);
+    }
+
+    if(fnId == 2) {
+        exec F2(lb, ub, dim);
+    }
+
+    if(fnId == 3) {
+        exec F3(lb, ub, dim);
+    }
+
+    if(fnId == 4) {
+        exec F4(lb, ub, dim);
+    }
+
+    if(fnId == 5) {
+        exec F5(lb, ub, dim);
+    }
+
+    if(fnId == 6) {
+        exec F6(lb, ub, dim);
+    }
+
+    if(fnId == 7) {
+        exec F7(lb, ub, dim);
+    }
+
+    if(fnId == 8) {
+        exec F8(lb, ub, dim);
+    }
+
+    if(fnId == 9) {
+        exec F9(lb, ub, dim);
+    }
+
+    if(fnId == 10) {
+        exec F10(lb, ub, dim);
+    }
+}
+
+//define execF1 .... execF9
+def execF1(var fitness: double, var x : array)
+{
+
+}
+
+def execF2(var fitness: double, var x : array)
+{
+
+}
+
+def execF3(var fitness: double, var x : array)
+{
+
+}
+
+def execF4(var fitness: double, var x : array)
+{
+
+}
+
+def execF5(var fitness: double, var x : array)
+{
+
+}
+
+def execF6(var fitness: double, var x : array)
+{
+
+}
+
+def execF7(var fitness: double, var x : array)
+{
+
+}
+
+def execF8(var fitness: double, var x : array)
+{
+
+}
+
+def execF9(var fitness: double, var x : array)
+{
+
+}
+
+def execF10(var fitness: double, var x : array)
+{
+
+}
+
+
+def execExactFunc(var fncId : integer, var x : array, var fitness: double)
+{
+    if(fncId == 1) {
+        exec execF1(fitness, x);
+    }
+
+    if(fncId == 2) {
+        exec execF2(fitness, x);
+    }
+
+    if(fncId == 3) {
+        exec execF3(fitness, x);
+    }
+
+    if(fncId == 4) {
+        exec execF4(fitness, x);
+    }
+
+    if(fncId == 5) {
+        exec execF5(fitness, x);
+    }
+
+    if(fncId == 6) {
+        exec execF6(fitness, x);
+    }
+
+    if(fncId == 7) {
+        exec execF7(fitness, x);
+    }
+
+    if(fncId == 8) {
+        exec execF8(fitness, x);
+    }
+
+    if(fncId == 9) {
+        exec execF9(fitness, x);
+    }
+
+    if(fncId == 10) {
+        exec execF10(fitness, x);
+    }
+}
+
+
+var searchAgents: integer;
+searchAgents = 30;
+
+var maxIterations: integer;
+maxIterations = 500;
+
+
+def execForAnOptimizationFunc(var fnId: integer)
+{
+    var lb: integer;
+    var ub: integer;
+    var dim: integer;
+
+    exec Get_Functions_details(fnId, lb, ub, dim);
+
+    var Leader_pos[dim] : array;
+    var Positions[searchAgents][dim] : array;
+
+    var Leader_score: double;
+    PINF(Leader_score);
+
+    exec RAND(Positions);
+    var iterSearchAgents, iterDim: integer;
+    iterSearchAgents = 0;
+    iterDim = 0;
+    while (iter < searchAgents)
+    {
+        while (iterDim < dim)
+        {
+            Positions[iterSearchAgents][iterDim] = Positions[iterSearchAgents][iterDim] * (ub - lb) + lb;
+            iterDim = iterDim + 1;
+        }
+        iterSearchAgents = iterSearchAgents + 1;
+    }
+
+    var Convergence_curve[maxIterations] : array;
+    var iter : integer;
+    iter = 0;
+    while (iter < maxIterations) {
+        Convergence_curve[iter] = 0;
+        iter = iter + 1;
+    }
+
+    iter = 0;
+    while (iter < maxIterations) {
+        var iterPosition : integer;
+        iterPosition = 0;
+        while (iterPosition < searchAgents) {
+            var iterDim : integer;
+            iterDim = 0;
+            while (iterDim < dim) {
+                if(Positions[iterPosition][iterDim] > ub) {
+                    Positions[iterPosition][iterDim] = ub;
+                }
+                if(Positions[iterPosition][iterDim] < lb) {
+                    Positions[iterPosition][iterDim] = lb;
+                }
+
+                iterDim = iterDim + 1;
+            }
+
+            var fitness : double;
+            exec execExactFunc(fnId, Positions[iterPosition], fitness);
+
+            if(fitness < Leader_score)
+            {
+                Leader_score = fitness;
+                var iterDim : integer;
+                iterDim = 0;
+                while (iterDim < dim) {
+                    Leader_pos[iterDim] = Positions[iterPosition][iterDim];
+                    iterDim = iterDim + 1;
+                }
+            }
+
+            iterPosition = iterPosition + 1;
+        }
+
+        var a : double;
+        a = 2 - iter * ((2) / maxIterations);
+        var a2 : double;
+        a2 = -1 + iter * ((-1) / maxIterations);
+
+        iterPosition = 0;
+        while ( iterPosition < searchAgents) {
+            var r1 : double;
+            exec RAND(r1);
+
+            var r2 : double;
+            exec RAND(r2);
+
+            var A : double;
+            A = 2 * a * r1 - a;
+            var C : double;
+            C = 2 * r2;
+
+            var rand : double;
+            exec RAND(rand);
+
+            var b : double;
+            b = 1;
+
+            var l : double;
+            l = (a2 -1)*rand + 1;
+
+            var p : double;
+            exec RAND(p);
+
+            var j : integer;
+            j = 0;
+            while (j < dim) {
+                if(p < 0.5) {
+                    var absA : double;
+                    exec ABS(absA);
+
+                    if(absA < 1) {
+                        var D_Leader : double;
+                        D_Leader = C * Leader_pos[j] - Positions[iterPosition][j];
+                        exec ABS(D_Leader);
+                        Positions[iterPosition][j] = Leader_pos[j] - A * D_Leader;
+                    } else {
+                        var rand1 : double;
+                        exec RAND(rand1);
+                        var rand_leader_index: double;
+                        rand_leader_index = rand1 * searchAgents + 1;
+                        exec FLOOR(rand_leader_index);
+                        var X_rand[dim] : array;
+                        var k : double;
+                        k = 0;
+                        while (k < dim) {
+                            X_rand[k] = Positions[iterPosition][k];
+                            k = k + 1;
+                        }
+                        var D_X_rand : double;
+                        D_X_rand = C * X_rand[j] - Positions[rand_leader_index][j];
+                        exec ABS(D_X_rand);
+                        Positions[iterPosition][j] = X_rand[j] - A * D_X_rand;
+                    }
+
+                } else {
+                    var distanceToLeader : double;
+                    distanceToLeader = (Leader_pos[j] - Positions[iterPosition][j]);
+                    exec ABS(distanceToLeader);
+                    var exp : double;
+                    exp =  (b * l);
+                    exec EXP(exp);
+                    
+                    var cos = l*2*3.14;
+                    exec COS(cos);
+
+                    Positions[iterPosition][j] = distanceToLeader * exp * cos + Leader_pos[j];
+                    
+                }
+
+                j = j + 1;
+            }
+            iterPosition = iterPosition + 1;
+        }
+        iter = iter + 1;
+        Convergence_curve[iter] = Leader_score;
+    }
+}
+
+threadStart(t0) {
+    exec execForAnOptimizationFunc(1);
+}
+
+threadStart(t1) {
+    exec execForAnOptimizationFunc(2);
+}
+
+threadStart(t2) {
+    exec execForAnOptimizationFunc(3);
+}
+
+threadStart(t3) {
+    exec execForAnOptimizationFunc(4);
+}
+
+threadStart(t4) {
+    exec execForAnOptimizationFunc(5);
+}
+
+threadStart(t5) {
+    exec execForAnOptimizationFunc(6);
+}
+
+threadStart(t6) {
+    exec execForAnOptimizationFunc(7);
+}
+
+threadStart(t7) {
+    exec execForAnOptimizationFunc(8);
+}
+
+threadStart(t8) {
+    exec execForAnOptimizationFunc(9);
+}
+
+threadStart(t9) {
+    exec execForAnOptimizationFunc(10);
+}
+
+threadOnEnd(t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,1) {
+
+}
