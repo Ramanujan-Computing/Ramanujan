@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.27)
 project(native)
 
@@ -36,6 +35,7 @@ set(SOURCE_FILES
         input/RuleEngineInputUnit.hpp
         input/Variable.hpp
         input/While.hpp
+        input/RedefineArrayCommand.hpp
         processing/ProcessingResult.hpp
         processing/Processor.cpp
         processing/Processor.hpp
@@ -54,6 +54,8 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/AbstractDataContainer.h
         ruleEngineObject/dataContainer/DataContainerRE.h
         ruleEngineObject/CommandRE.cpp
+        ruleEngineObject/RedefineArrayCommandRE.h
+        ruleEngineObject/RedefineArrayCommandRE.cpp
         input/Command.cpp
         ruleEngineObject/dataContainer/VaraiableRE.cpp
         input/Variable.cpp
@@ -109,6 +111,7 @@ set(SOURCE_FILES
         ruleEngineObject/processingDefinition/FunctionReProcessing.h
         ruleEngineObject/processingDefinition/ConditionReProcessing.h
         ruleEngineObject/processingDefinition/DefaultProcessing.h
+        ruleEngineObject/processingDefinition/RedefineArrayCommandReProcessing.h
         ruleEngineObject/DefaultRuleEngineUnits.h
         ruleEngineObject/dataContainer/DataContainerValue.h
         processing/DebugPoint.h

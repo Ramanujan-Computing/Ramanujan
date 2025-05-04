@@ -10,6 +10,7 @@ import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand;
 import in.ramanujan.utils.Constants;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +22,10 @@ import java.util.UUID;
 public class VariableInitLogicConverter implements CodeConverterLogic {
     @Override
     public void populateCommand(Command command, RuleEngineInputUnits ruleEngineInputUnits) {
-
+        if(ruleEngineInputUnits instanceof RedefineArrayCommand)
+        {
+            command.setRedefineArrayCommand((RedefineArrayCommand) ruleEngineInputUnits);
+        }
     }
 
     @Override
@@ -34,25 +38,54 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
             if (Constants.array.equalsIgnoreCase(dataType)) {
                 Array array = null;
                 for (String variableName : variableNames) {
-                    /*
-                    * arr[dim1][dim2]...[dimN]
-                    * Developer can give any dimensional array. for ex: arr[4][5][6]: this creates a 3D array, with
-                    * first dimension can have 4, second can have 5, third can have 6.
-                    */
                     String variableNameTrimmed = variableName.trim();
                     String[] variableNameTrimmedWithIndex = variableNameTrimmed.split("\\[");
                     variableName = variableNameTrimmedWithIndex[0].trim();
-                    array = new Array();
+                    
+                    boolean hasNonConstantDimension = false;
+                    List<Integer> constantDims = new java.util.ArrayList<>();
+                    List<String> resolvedDims = new java.util.ArrayList<>();
                     for(int index = 1; index < variableNameTrimmedWithIndex.length; index++) {
-                        array.getDimension().add(Integer.parseInt(variableNameTrimmedWithIndex[index]
-                                .replace("]", "").trim()));
+                        String dimStr = variableNameTrimmedWithIndex[index].replace("]", "").trim();
+                        try {
+                            int dim = Integer.parseInt(dimStr);
+                            constantDims.add(dim);
+                            resolvedDims.add(dimStr); // keep integer as string
+                        } catch (NumberFormatException nfe) {
+                            hasNonConstantDimension = true;
+                            constantDims.add(1); // Use a placeholder for now
+                            // Resolve variable name to variable ID
+                            Variable dimVar = in.ramanujan.middleware.base.utils.CodeConversionUtils.getVariable(
+                                codeConverter.getVariableMap(), dimStr, variableScope);
+                            if (dimVar != null) {
+                                resolvedDims.add(dimVar.getId());
+                            } else {
+                                throw new CompilationException(null, null, "Dimension variable '" + dimStr + "' not found in scope");
+                            }
+                        }
                     }
+                    array = new Array();
                     array.setId((variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "") +
                             UUID.randomUUID().toString());
                     array.setName(variableName);
                     array.setDataType(dataType);
+                    if(!hasNonConstantDimension) {
+
+                        array.setDimension(constantDims);
+
+                    }
                     ruleEngineInput.getArrays().add(array);
+                    
                     codeConverter.setArray(array, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
+
+                    // If any dimension is not a constant, emit RedefineArrayCommand
+                    if (hasNonConstantDimension) {
+                        in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand redefineCmd = new in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand();
+                        redefineCmd.setId(UUID.randomUUID().toString());
+                        redefineCmd.setArrayId(array.getId());
+                        redefineCmd.setNewDimensions(resolvedDims);
+                        return redefineCmd;
+                    }
                 }
                 return array;
             }

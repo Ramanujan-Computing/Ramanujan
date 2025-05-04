@@ -117,6 +117,24 @@ public class CompileErrorChecker {
         }
     }
 
+    //Built in methods in native lib:
+    private final static Set<String> builtInMethods = new HashSet<String>() {{
+        add("RAND");
+        add("ABS");
+        add("SIN");
+        add("COS");
+        add("TAN");
+        add("ASIN");
+        add("ACOS");
+        add("ATAN");
+        add("PINF");
+        add("NINF");
+        add("CEIL");
+        add("FLOOR");
+        add("EXP");
+        add("SQRT");
+        add("POW");
+    }};
 
     private void checkFunctionCalls(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException {
         Map<String, List<String>> functionNamesInCompilation = new HashMap<>();
@@ -149,6 +167,10 @@ public class CompileErrorChecker {
                 SimpleCodeCommand simpleCodeCommand = getStringUtils().parseForSimpleCodeCommand(CodeToken.functionExec,
                         code.substring(index), new IndexWrapper(0));
                 List<String> argumentsInOriginalFunction = functionNamesInCompilation.get(simpleCodeCommand.getPlaceHolder());
+                if(argumentsInOriginalFunction == null && builtInMethods.contains(simpleCodeCommand.getPlaceHolder())) {
+                    //TODO: include in the set better, and check for arg size.
+                    continue;
+                }
                 if(argumentsInOriginalFunction == null) {
                     throw compilationErrorCreator(index, newLines, tabs, "Function " + simpleCodeCommand.getPlaceHolder() +
                             " not implemented");

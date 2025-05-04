@@ -13,15 +13,19 @@
 #include "dataContainer/VariableRE.h"
 #include "FunctionCallRE.h"
 #include<unordered_map>
-
-
+#include <list>
 
 
 class FunctionCommandRE : public RuleEngineInputUnits {
-private:
-    FunctionCall* functionCommandInfo = nullptr;
+protected:
     FunctionCallRE* functionCommandRE = nullptr;
     FunctionCallRE* functionInfoRE = nullptr;
+    FunctionCall* functionCommandInfo = nullptr;
+
+    int varCount = 0;
+    int arrCount = 0;
+private:
+
 //    DataContainerRE** arguments;
 //    DataContainerRE** functionInfoArgs;
 
@@ -38,9 +42,6 @@ private:
 
     int argSize = 0;
     CommandRE* firstCommand;
-
-    int varCount = 0;
-    int arrCount = 0;
 
     int totalVarCount = 0;
     int totalArrCount = 0;
@@ -119,4 +120,172 @@ public:
     void processMethod();
 
 };
+
+enum BuiltInFunctions {
+    NINF, // neg infinte
+    PINF, // pos infinite
+    RAND, // random
+    ABS, // absolute
+    SIN, // sin
+    COS, // cos
+    TAN, // tan
+    ASIN, // asin
+    ACOS, // acos
+    ATAN, // atan
+    FLOOR,
+    CEIL,
+    EXP,
+};
+
+class BuiltInFunctionsImpl : public FunctionCommandRE {
+protected:
+    ArrayValue*** methodArgArrayAddr = nullptr;
+    double** methodArgVariableAddr = nullptr;
+public:
+
+    BuiltInFunctionsImpl(FunctionCall *pCall) : FunctionCommandRE(pCall, nullptr) {}
+
+
+    void destroy() override {
+        if(methodArgVariableAddr != nullptr) {
+            delete[] methodArgVariableAddr;
+        }
+        if(methodArgArrayAddr != nullptr) {
+            delete[] methodArgArrayAddr;
+        }
+    }
+
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override;
+};
+
+class NINF : public BuiltInFunctionsImpl {
+public:
+
+    NINF(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+    void process() override;
+};
+
+class PINF : public BuiltInFunctionsImpl {
+public:
+    PINF(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class RAND : public BuiltInFunctionsImpl {
+public:
+    RAND(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class ABS : public BuiltInFunctionsImpl {
+public:
+    ABS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class SIN : public BuiltInFunctionsImpl {
+public:
+    SIN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class COS : public BuiltInFunctionsImpl {
+public:
+    COS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class TAN : public BuiltInFunctionsImpl {
+public:
+    TAN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class ASIN : public BuiltInFunctionsImpl {
+public:
+    ASIN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class ACOS : public BuiltInFunctionsImpl {
+public:
+    ACOS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class ATAN : public BuiltInFunctionsImpl {
+public:
+    ATAN(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class FLOOR : public BuiltInFunctionsImpl {
+public:
+    FLOOR(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class CEIL : public BuiltInFunctionsImpl {
+public:
+    CEIL(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class EXP : public BuiltInFunctionsImpl {
+public:
+    EXP(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class SQRT : public BuiltInFunctionsImpl {
+public:
+    SQRT(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+class POW : public BuiltInFunctionsImpl {
+public:
+    POW(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+    void process() override;
+};
+
+static FunctionCommandRE* GetFunctionCommandRE(FunctionCall* functionCommand, std::string& id, std::unordered_map<std::string, RuleEngineInputUnits *> *map)
+{
+    // match id with the built-in methods, if yes, then create object of that type. Else, create FunctionCommandRE
+    if(id == "NINF") {
+        return new class NINF(functionCommand);
+    } else if(id == "PINF") {
+        return new class PINF(functionCommand);
+    } else if(id == "RAND") {
+        return new class RAND(functionCommand);
+    } else if(id == "ABS") {
+        return new class ABS(functionCommand);
+    } else if(id == "SIN") {
+        return new class SIN(functionCommand);
+    } else if(id == "COS") {
+        return new class COS(functionCommand);
+    } else if(id == "TAN") {
+        return new class TAN(functionCommand);
+    } else if(id == "ASIN") {
+        return new class ASIN(functionCommand);
+    } else if(id == "ACOS") {
+        return new class ACOS(functionCommand);
+    } else if(id == "ATAN") {
+        return new class ATAN(functionCommand);
+    } else if(id == "FLOOR") {
+        return new class FLOOR(functionCommand);
+    } else if(id == "CEIL") {
+        return new class CEIL(functionCommand);
+    } else if(id == "EXP") {
+        return new class EXP(functionCommand);
+    } else if(id == "SQRT") {
+        return new class SQRT(functionCommand);
+    } else if(id == "POW") {
+        return new class POW(functionCommand);
+    }
+
+    return new FunctionCommandRE(functionCommand, (FunctionCallRE *) map->at(functionCommand->id));
+}
+
 #endif //NATIVE_FUNCTIONCOMMANDRE_H

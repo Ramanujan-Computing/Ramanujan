@@ -114,7 +114,7 @@ public class OperationLogicConverter implements CodeConverterLogic {
     /**
      * Get precedence of math operations. Have all from OperatorType enum.
      * */
-    private int getPrecedence(String operation) {
+    private static int getPrecedence(String operation) {
         switch (operation) {
             case "+":
             case "-":
@@ -143,8 +143,34 @@ public class OperationLogicConverter implements CodeConverterLogic {
         }
     }
 
-    //TODO: make it better.
-    private boolean isOperator(String operator) {
+    // Improved: Only treat as operator if it's a single operator symbol, not a negative number or variable
+    public static boolean isOperator(String operator) throws CompilationException {
+        // Exclude negative numbers or variables (e.g., -1, -x)
+        if (operator == null || operator.isEmpty()) return false;
+        // If it starts with a digit or letter after '-', it's not an operator
+        if (operator.length() > 1 && operator.charAt(0) == '-') {
+            char next = operator.charAt(1);
+            // Check all characters are digits or has only one '.'. If yes than its negative number and return false.
+            boolean isNegNumOperator = true;
+            int decimalCount = 0;
+            for(int i=1;i< operator.length();i++) {
+                if(!Character.isDigit(operator.charAt(i)) && operator.charAt(i) != '.') {
+                    if(operator.charAt(i) != '.')
+                    {
+                        decimalCount++;
+                    }
+                    isNegNumOperator = false;
+                }
+            }
+            if(decimalCount > 1)
+            {
+                throw new CompilationException(null, null, "invalid operand " + operator);
+            }
+            if(isNegNumOperator) {
+                return false;
+            }
+        }
+        // Only treat as operator if precedence is defined
         return getPrecedence(operator) != -1;
     }
 
@@ -159,16 +185,16 @@ public class OperationLogicConverter implements CodeConverterLogic {
         Stack<String> stack = new Stack<>();
         int codeLen = code.length();
         StringBuilder operand = new StringBuilder();
+        boolean expectUnary = true; // Track if a unary minus is expected
         for (int i = 0; i < codeLen; i++) {
             char c = code.charAt(i);
             if (c == ' ') {
                 continue;
             }
-            if (Character.isDigit(c) || Character.isAlphabetic(c) || c == '.') {
+            if (Character.isDigit(c) || Character.isAlphabetic(c) || c == '.' || c == '_') {
                 operand.append(c);
-            } else if(c == '['){
-              // operand is an array, parse the string till last correct stack-pop based ], there can be multiple
-                // inner arrays.
+                expectUnary = false;
+            } else if (c == '[') {
                 int j = i;
                 int openBrackets = 1;
                 while (j < codeLen && openBrackets > 0) {
@@ -184,8 +210,15 @@ public class OperationLogicConverter implements CodeConverterLogic {
                 }
                 operand.append(code.substring(i, j + 1));
                 i = j;
+                expectUnary = false;
             } else {
-                if(operand.length() > 0) {
+                // Handle unary minus
+                if (c == '-' && expectUnary) {
+                    operand.append('-');
+                    expectUnary = false;
+                    continue;
+                }
+                if (operand.length() > 0) {
                     String operandStr = operand.toString();
                     if(operandStr.split(".").length > 2) {
                         throw new CompilationException(null, null, "invalid operand " + operandStr);
@@ -194,7 +227,6 @@ public class OperationLogicConverter implements CodeConverterLogic {
                     operand = new StringBuilder();
                 }
                 if (c == '(') {
-                    // get all in the bracket as one string and put it in postFixResult. There can be nested brackets
                     int j = i;
                     int openBrackets = 1;
                     while (j < codeLen && openBrackets > 0) {
@@ -210,16 +242,10 @@ public class OperationLogicConverter implements CodeConverterLogic {
                     }
                     postFixResult.add(code.substring(i + 1, j));
                     i = j;
-                    //stack.push("(");
-//                } else if (c == ')') {
-//                    while (!stack.isEmpty() && !Objects.equals(stack.peek(), "(")) {
-//                        postFixResult.add(stack.pop());
-//                    }
-//                    stack.pop();
+                    expectUnary = true;
                 } else {
                     StringBuilder stringBuilder = new StringBuilder().append(c);
-                    // all two char ops are of the form <op>=
-                    if (code.charAt(i + 1) == '=') {
+                    if (i + 1 < codeLen && code.charAt(i + 1) == '=') {
                         stringBuilder.append("=");
                         i++;
                     }
@@ -230,8 +256,8 @@ public class OperationLogicConverter implements CodeConverterLogic {
                     while (!stack.isEmpty() && getPrecedence(stack.peek()) >= getPrecedence(op)) {
                         postFixResult.add(stack.pop());
                     }
-
                     stack.push(stringBuilder.toString());
+                    expectUnary = true;
                 }
             }
         }
@@ -242,33 +268,6 @@ public class OperationLogicConverter implements CodeConverterLogic {
             postFixResult.add(stack.pop());
         }
         return postFixResult;
-
-/*
-        List<String> operationPart = new ArrayList<>();
-        int codeLen = code.length();
-        int index = 0;
-        IndexWrapper indexWrapper = new IndexWrapper(index);
-        int indexForFirstOpeningBracket = code.indexOf("{", index);
-        if (indexForFirstOpeningBracket == -1) {
-            throw new CompilationException(null, null, "first attribute for " + useCase + " missing");
-        }
-        indexWrapper.setIndex(indexForFirstOpeningBracket + 1);
-        operationPart.add(getStringUtils().getInternalCode(code, indexWrapper));
-        index = indexWrapper.getIndex();
-        String operationType = "";
-        while (index < codeLen && code.charAt(index) != '{') {
-            operationType += code.charAt(index);
-            index++;
-        }
-        operationPart.add(operationType);
-        indexForFirstOpeningBracket = code.indexOf("{", index);
-        if (indexForFirstOpeningBracket == -1) {
-            throw new CompilationException(null, null, "second attribute for " + useCase + " missing");
-        }
-        indexWrapper.setIndex(indexForFirstOpeningBracket + 1);
-        operationPart.add(getStringUtils().getInternalCode(code, indexWrapper));
-        return operationPart;
- */
     }
 
 }

@@ -8,6 +8,7 @@
 #include "RuleEngineInputUnits.hpp"
 #include "dataContainer/DataContainerRE.h"
 #include "CommandTypeProcessingDefinition.h"
+#include "RedefineArrayCommandRE.h"
 
 class OperationRE;
 class IfRE;
@@ -31,6 +32,7 @@ private:
     ConditionRE* conditionRe;
     ArrayCommandRE* arrayCommandRE = nullptr;
     Command * command;
+    RedefineArrayCommandRE* redefineArrayCommandRE = nullptr;
 
     RuleEngineInputUnits* unit;
 
