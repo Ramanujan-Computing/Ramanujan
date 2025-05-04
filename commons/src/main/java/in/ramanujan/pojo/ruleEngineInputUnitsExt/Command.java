@@ -3,6 +3,7 @@ package in.ramanujan.pojo.ruleEngineInputUnitsExt;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.ArrayCommand;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand;
 import lombok.Data;
 
 import java.util.List;
@@ -21,8 +22,16 @@ public class Command extends RuleEngineInputUnits {
     private ArrayCommand arrayCommand;
     private FunctionCall functionCall;
     private String whileId;
+    private RedefineArrayCommand redefineArrayCommand;
 
     public Command() {
         setClazz(Command.class);
+    }
+
+    public void setRedefineArrayCommand(RedefineArrayCommand redefineArrayCommand) {
+        this.redefineArrayCommand = redefineArrayCommand;
+    }
+    public RedefineArrayCommand getRedefineArrayCommand() {
+        return this.redefineArrayCommand;
     }
 }

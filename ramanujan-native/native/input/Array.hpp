@@ -16,6 +16,8 @@ class Array : public RuleEngineInputUnit {
         int dimensionSize = 0;
         std::unordered_map<std::string, double> values;
 
+        Array() = default;
+
         Array(Json::Value* value) {
             this->id = (*value)["id"].asString();
             this->dataType = (*value)["dataType"].asString();

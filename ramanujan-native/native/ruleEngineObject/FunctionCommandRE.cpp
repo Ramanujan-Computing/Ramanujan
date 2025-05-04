@@ -298,3 +298,39 @@ void ACOS::process() {
         *methodArgVariableAddr[0] = std::acos(*methodArgVariableAddr[0]);
     }
 }
+
+void ATAN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::atan(*methodArgVariableAddr[0]);
+    }
+}
+
+void FLOOR::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::floor(*methodArgVariableAddr[0]);
+    }
+}
+
+void CEIL::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::ceil(*methodArgVariableAddr[0]);
+    }
+}
+
+void EXP::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::exp(*methodArgVariableAddr[0]);
+    }
+}
+
+void SQRT::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::sqrt(*methodArgVariableAddr[0]);
+    }
+}
+
+void POW::process() {
+    if(varCount == 2) {
+        *methodArgVariableAddr[0] = std::pow(*methodArgVariableAddr[0], *methodArgVariableAddr[1]);
+    }
+}

@@ -118,7 +118,6 @@ public class CompileErrorChecker {
     }
 
     //Built in methods in native lib:
-    //[rand, abs, sin, cos, tan, asin, acos, atan, pinf, ninf]]
     private final static Set<String> builtInMethods = new HashSet<String>() {{
         add("RAND");
         add("ABS");
@@ -130,6 +129,11 @@ public class CompileErrorChecker {
         add("ATAN");
         add("PINF");
         add("NINF");
+        add("CEIL");
+        add("FLOOR");
+        add("EXP");
+        add("SQRT");
+        add("POW");
     }};
 
     private void checkFunctionCalls(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException {

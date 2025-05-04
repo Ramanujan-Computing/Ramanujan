@@ -1,5 +1,3 @@
-
-
 #include "Processor.hpp"
 #include<unordered_map>
 #include<string>
@@ -134,6 +132,7 @@ std::unordered_map<std::string, RuleEngineInputUnits*>* Processor::createMap(Rul
     storeInIdMap(map, ruleEngineInput.functionCalls);
     storeInIdMap(map, ruleEngineInput.whileBlocks);
     storeInIdMap(map, ruleEngineInput.commands);
+    storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
     return map;
 }
 
@@ -217,6 +216,12 @@ void Processor::fixGraph(std::unordered_map<std::string, RuleEngineInputUnits *>
 //
 //
 //        }
+    }
+}
+
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<RedefineArrayCommand*>* list1) {
+    for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
+        pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
     }
 }
 
