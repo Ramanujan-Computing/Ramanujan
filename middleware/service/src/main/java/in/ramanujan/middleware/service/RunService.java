@@ -107,7 +107,7 @@ public class RunService {
                 }
                 dbOperations.add(variableValueDao.createVariableNameIdMap(asyncId, array.getId(), array.getName()));
                 for(String index : array.getValues().keySet()) {
-                    dbOperations.add(variableValueDao.storeArrayValue(asyncId, array.getId(), index,
+                    dbOperations.add(variableValueDao.storeArrayValue(asyncId, array.getId(), array.getName(), index,
                             array.getValues().get(index)));
                 }
             }

@@ -6,6 +6,8 @@ import in.ramanujan.db.layer.enums.QueryType;
 import in.ramanujan.db.layer.schema.ArrayIdNameMap;
 import in.ramanujan.db.layer.schema.VariableMapping;
 import in.ramanujan.db.layer.utils.QueryExecutor;
+import in.ramanujan.middleware.base.pojo.ArrayMappingLite;
+import in.ramanujan.middleware.base.pojo.VariableMappingLite;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.db.layer.constants.Keys;
 import in.ramanujan.db.layer.enums.QueryType;
@@ -13,6 +15,7 @@ import in.ramanujan.db.layer.schema.ArrayIdNameMap;
 import in.ramanujan.db.layer.schema.ArrayMapping;
 import in.ramanujan.db.layer.schema.VariableMapping;
 import in.ramanujan.db.layer.utils.QueryExecutor;
+import in.ramanujan.middleware.base.pojo.VariableAndArrayResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -102,7 +105,7 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     }
 
     @Override
-    public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, Map<String, Object> indexValueMap) {
+    public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, String arrayName, Map<String, Object> indexValueMap) {
         Future<Void> future = Future.future();
         try {
             List<Object> list = new ArrayList<>();
@@ -110,7 +113,7 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
                 Object value = indexValueMap.get(index);
                 ArrayMapping arrayMapping = new ArrayMapping();
                 arrayMapping.setAsyncId(asyncId);
-                arrayMapping.setArrayName("");
+                arrayMapping.setArrayName(arrayName);
                 arrayMapping.setArrayId(arrayId);
                 arrayMapping.setIndexStr(index);
                 if(value != null) {
@@ -133,12 +136,12 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     }
 
     @Override
-    public Future<Void> storeArrayValue(String asyncId, String arrayId, String index, Object value) {
+    public Future<Void> storeArrayValue(String asyncId, String arrayId, String arrayName, String index, Object value) {
         Future<Void> future = Future.future();
         try {
             ArrayMapping arrayMapping = new ArrayMapping();
             arrayMapping.setAsyncId(asyncId);
-            arrayMapping.setArrayName("");
+            arrayMapping.setArrayName(arrayName);
             arrayMapping.setArrayId(arrayId);
             arrayMapping.setIndexStr(index);
             if(value != null) {
@@ -258,8 +261,8 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     }
 
     @Override
-    public Future<Object> getAllValuesForAsyncId(String asyncId) {
-        Future<Object> future = Future.future();
+    public Future<VariableAndArrayResult> getAllValuesForAsyncId(String asyncId) {
+        Future<VariableAndArrayResult> future = Future.future();
         try {
             Future<Object> variableFetchFuture = Future.future();
             Future<Object> arrayFetchFuture = Future.future();
@@ -287,10 +290,33 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
 
             CompositeFuture.all(variableFetchFuture, arrayFetchFuture).setHandler(handler -> {
                 if(handler.succeeded()) {
-                    List<Object> list = new ArrayList<>();
-                    list.addAll((List)variableFetchFuture.result());
-                    list.addAll((List)arrayFetchFuture.result());
-                    future.complete(list);
+                    List<VariableMappingLite> variables = new ArrayList<>();
+                    for (Object obj : (List<?>) variableFetchFuture.result()) {
+                        if (obj instanceof VariableMapping) {
+                            VariableMapping v = (VariableMapping) obj;
+                            variables.add(new VariableMappingLite(
+                                v.getVariableId(),
+                                v.getVariableName(),
+                                v.getAsyncId(),
+                                getObject(v.getObject())
+                            ));
+                        }
+                    }
+                    List<ArrayMappingLite> arrays = new ArrayList<>();
+                    for (Object obj : (List<?>) arrayFetchFuture.result()) {
+                        if (obj instanceof ArrayMapping) {
+                            ArrayMapping a = (ArrayMapping) obj;
+                            arrays.add(new ArrayMappingLite(
+                                a.getArrayId(),
+                                a.getArrayName(),
+                                a.getAsyncId(),
+                                a.getIndexStr(),
+                                getObject(a.getObject())
+                            ));
+                        }
+                    }
+                    VariableAndArrayResult result = new VariableAndArrayResult(variables, arrays);
+                    future.complete(result);
                 } else {
                     future.fail(handler.cause());
                 }
