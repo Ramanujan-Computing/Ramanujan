@@ -9,7 +9,16 @@ public class OrchestratorApiCallHelper {
     static OkHttpClient okHttpClient;
 
 
-    static String host = "http://192.168.1.151:8890";
+    static String host = "";
+
+    static synchronized  void setHost(String host) {
+        if(!OrchestratorApiCallHelper.host.isEmpty())
+        {
+            return;
+        }
+        OrchestratorApiCallHelper.host = host;
+    }
+
     static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
 
