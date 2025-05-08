@@ -72,6 +72,10 @@ public class ExecutorImpl implements Operation {
                                             // Use ArrayMappingLite for type safety
                                             ArrayMappingLite arr = new ObjectMapper().convertValue(arrObj, ArrayMappingLite.class);
                                             String name = arr.getArrayId();
+                                            if(name.contains("func")) {
+                                                continue;
+                                            }
+                                            name = name.split("_name_")[1];
                                             String indexStr = arr.getIndexStr();
                                             Object value = arr.getObject();
                                             Map<String, Object> arrMap = arrayStore.getOrDefault(name, new java.util.HashMap<>());
