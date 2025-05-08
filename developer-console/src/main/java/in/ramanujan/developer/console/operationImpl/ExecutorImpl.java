@@ -85,43 +85,7 @@ public class ExecutorImpl implements Operation {
                                     }
                                 }
                                 // Start interactive console for querying variables/arrays
-                                java.util.Scanner scanner = new java.util.Scanner(System.in);
-                                System.out.println("\n--- Query Console ---");
-                                System.out.println("Type 'var <variableName>' or 'arr <arrayName> <index>' to query. Type 'exit' to quit.");
-                                while (true) {
-                                    System.out.print("> ");
-                                    String line = scanner.nextLine();
-                                    if (line == null) break;
-                                    line = line.trim();
-                                    if (line.equalsIgnoreCase("exit")) break;
-                                    if (line.startsWith("var ")) {
-                                        String[] parts = line.split(" ", 2);
-                                        if (parts.length == 2) {
-                                            Object val = variableStore.get(parts[1]);
-                                            if (val != null) {
-                                                System.out.println(parts[1] + " = " + val);
-                                            } else {
-                                                System.out.println("Variable not found.");
-                                            }
-                                        } else {
-                                            System.out.println("Usage: var <variableName>");
-                                        }
-                                    } else if (line.startsWith("arr ")) {
-                                        String[] parts = line.split(" ");
-                                        if (parts.length == 3) {
-                                            Map<String, Object> arr = arrayStore.get(parts[1]);
-                                            if (arr != null && arr.containsKey(parts[2])) {
-                                                System.out.println(parts[1] + "[" + parts[2] + "] = " + arr.get(parts[2]));
-                                            } else {
-                                                System.out.println("Array or index not found.");
-                                            }
-                                        } else {
-                                            System.out.println("Usage: arr <arrayName> <index>");
-                                        }
-                                    } else {
-                                        System.out.println("Unknown command. Use 'var <variableName>' or 'arr <arrayName> <index>' or 'exit'.");
-                                    }
-                                }
+                                startQueryConsole();
                                 break;
                             }
                         }
@@ -135,6 +99,59 @@ public class ExecutorImpl implements Operation {
         } catch (JsonProcessingException e) {
             System.out.println("Console error");
         }
+    }
+
+    /**
+     * Exposes the interactive console for querying variable and array values after execution.
+     */
+    public static void startQueryConsole() {
+        java.util.Scanner scanner = new java.util.Scanner(System.in);
+        System.out.println("\n--- Query Console ---");
+        System.out.println("Type 'var <variableName>' or 'arr <arrayName> <index>' to query. Type 'exit' to quit.");
+        while (true) {
+            System.out.print("> ");
+            String line = scanner.nextLine();
+            if (line == null) break;
+            line = line.trim();
+            if (line.equalsIgnoreCase("exit")) break;
+            if (line.startsWith("var ")) {
+                String[] parts = line.split(" ", 2);
+                if (parts.length == 2) {
+                    Object val = variableStore.get(parts[1]);
+                    if (val != null) {
+                        System.out.println(parts[1] + " = " + val);
+                    } else {
+                        System.out.println("Variable not found.");
+                    }
+                } else {
+                    System.out.println("Usage: var <variableName>");
+                }
+            } else if (line.startsWith("arr ")) {
+                String[] parts = line.split(" ");
+                if (parts.length == 3) {
+                    Map<String, Object> arr = arrayStore.get(parts[1]);
+                    if (arr != null && arr.containsKey(parts[2])) {
+                        System.out.println(parts[1] + "[" + parts[2] + "] = " + arr.get(parts[2]));
+                    } else {
+                        System.out.println("Array or index not found.");
+                    }
+                } else {
+                    System.out.println("Usage: arr <arrayName> <index>");
+                }
+            } else {
+                System.out.println("Unknown command. Use 'var <variableName>' or 'arr <arrayName> <index>' or 'exit'.");
+            }
+        }
+    }
+
+    /**
+     * Set the variableStore and arrayStore maps for the interactive console.
+     */
+    public static void setStores(Map<String, Object> variableMap, Map<String, Map<String, Object>> arrayMap) {
+        variableStore.clear();
+        if (variableMap != null) variableStore.putAll(variableMap);
+        arrayStore.clear();
+        if (arrayMap != null) arrayStore.putAll(arrayMap);
     }
 
     public static CodeRunRequest createJson(List<String> args) throws JsonProcessingException {
