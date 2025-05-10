@@ -1,10 +1,6 @@
 package in.ramanujan.data.db.dao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.cloud.storage.BlobId;
-import com.google.cloud.storage.BlobInfo;
-import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 import in.ramanujan.middleware.base.UserReadableDebugPoints;
 import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.monitoringutils.MonitoringHandler;
@@ -12,9 +8,6 @@ import in.ramanujan.pojo.RuleEngineInput;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import org.springframework.stereotype.Component;
-
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 
 @Component
 public abstract class  StorageDao {
