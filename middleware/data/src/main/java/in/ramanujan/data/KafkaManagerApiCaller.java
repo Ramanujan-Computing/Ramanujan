@@ -11,9 +11,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
-import org.springframework.stereotype.Component;
 
-@Component
 public class KafkaManagerApiCaller {
     private WebClient webClient;
 

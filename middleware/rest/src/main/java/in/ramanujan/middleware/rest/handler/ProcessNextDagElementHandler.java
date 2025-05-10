@@ -7,17 +7,13 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.RoutingContext;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
 import java.util.Set;
 
-@Component
 public class ProcessNextDagElementHandler extends CommonHandler {
 
-    @Autowired
-    private ProcessNextDagElementService processNextDagElementService;
+    public ProcessNextDagElementService processNextDagElementService;
 
     private Logger logger = LoggerFactory.getLogger(ProcessNextDagElementHandler.class);
 

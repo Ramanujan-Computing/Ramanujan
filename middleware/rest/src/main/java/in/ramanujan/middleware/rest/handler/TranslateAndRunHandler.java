@@ -17,21 +17,13 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.util.*;
 
-@Component
 public class TranslateAndRunHandler implements Handler<RoutingContext> {
-    @Autowired
-    private TranslateService translateService;
-
-    @Autowired
-    private RunService runService;
-
-    @Autowired
-    private CompileErrorChecker compileErrorChecker;
+    public TranslateService translateService;
+    public RunService runService;
+    public CompileErrorChecker compileErrorChecker;
 
     private static ObjectMapper objectMapper = new ObjectMapper();
 

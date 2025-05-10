@@ -28,7 +28,7 @@ import java.util.Map;
 public class VariableValueSqlDbImpl implements VariableValueDao {
 
     @Autowired
-    private QueryExecutor queryExecutor;
+    public QueryExecutor queryExecutor;
 
     @Override
     public Future<Void> createVariable(String asyncId, String variableId, String variableName, Object value) {

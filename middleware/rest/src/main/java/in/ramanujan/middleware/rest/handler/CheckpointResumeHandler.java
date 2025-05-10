@@ -8,16 +8,12 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.MultiMap;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-@Component
 public class CheckpointResumeHandler extends CommonHandler {
 
-    @Autowired
-    private CheckpointResumeService checkpointResumeService;
+    public CheckpointResumeService checkpointResumeService;
 
     private ObjectMapper objectMapper = new ObjectMapper();
 

@@ -1,6 +1,5 @@
 package in.ramanujan.middleware.rest.handler;
 
-
 import in.ramanujan.middleware.base.pojo.ApiResponse;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import in.ramanujan.middleware.service.TaskStatusService;
@@ -8,14 +7,10 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
-@Component
 public class StatusHandler implements Handler<RoutingContext> {
 
-    @Autowired
-    private TaskStatusService taskStatusService;
+    public TaskStatusService taskStatusService;
 
     @Override
     public void handle(RoutingContext event) {

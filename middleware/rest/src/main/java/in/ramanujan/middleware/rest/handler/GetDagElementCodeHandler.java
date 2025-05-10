@@ -5,13 +5,9 @@ import in.ramanujan.middleware.service.GetDagElementCodeService;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.MultiMap;
 import io.vertx.ext.web.RoutingContext;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
-@Component
 public class GetDagElementCodeHandler extends CommonHandler {
-    @Autowired
-    private GetDagElementCodeService getDagElementCodeService;
+    public GetDagElementCodeService getDagElementCodeService;
 
     @Override
     public void handle(RoutingContext routingContext) {
