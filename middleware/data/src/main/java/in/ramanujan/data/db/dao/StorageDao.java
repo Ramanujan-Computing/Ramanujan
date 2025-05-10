@@ -1,10 +1,10 @@
 package in.ramanujan.data.db.dao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import in.ramanujan.middleware.base.UserReadableDebugPoints;
 import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.pojo.RuleEngineInput;
+import in.ramanujan.translation.codeConverter.UserReadableDebugPoints;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import org.springframework.stereotype.Component;

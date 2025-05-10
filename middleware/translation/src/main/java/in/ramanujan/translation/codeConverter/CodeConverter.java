@@ -21,8 +21,6 @@ public class CodeConverter {
 
     private Map<String, Variable> variableMap ;
     private Map<String, Array> arrayMap;
-    private CodeConverterLogicFactory codeConverterLogicFactory;
-    private StringUtils stringUtils;
     private Map<String, String> csvDataMap;
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
@@ -63,8 +61,6 @@ public class CodeConverter {
     public CodeConverter(CodeConverterLogicFactory codeConverterLogicFactory, StringUtils stringUtils) {
         variableMap = new HashMap<>();
         arrayMap = new HashMap<>();
-        this.codeConverterLogicFactory = codeConverterLogicFactory;
-        this.stringUtils = stringUtils;
     }
 
     public Map<String, Variable> getVariableMap() {
@@ -96,7 +92,7 @@ public class CodeConverter {
             command.setId("command_" + UUID.randomUUID().toString());
             ruleEngineInput.getCommands().add(command);
             commandInThisCodeChunk.add(command);
-            CodeConverterLogic codeConverterLogic = codeConverterLogicFactory.getCodeConverterLogicImpl(chunkType, codeChunk);
+            CodeConverterLogic codeConverterLogic = CodeConverterLogicFactory.getCodeConverterLogicImpl(chunkType, codeChunk);
             RuleEngineInputUnits ruleEngineInputUnits = null;
             if(codeConverterLogic == null) {
                 CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, variableScope);
@@ -168,8 +164,8 @@ public class CodeConverter {
     public List<String> getCodeChunks(String code) {
         List<String> codeChunks = new ArrayList<>();
         int index = 0;
-        List<Integer> ifKeywordList = stringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "if", '(');
-        List<Integer> whileKeywordList = stringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "while", '(');
+        List<Integer> ifKeywordList = StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "if", '(');
+        List<Integer> whileKeywordList = StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "while", '(');
 
         int ifKeywordListIndex = 0, whileKeywordListIndex = 0;
 
@@ -199,7 +195,7 @@ public class CodeConverter {
                 }
                 addSemiColonSeperatedCommands(code.substring(index, ifKeywordIndex), codeChunks);
                 IndexWrapper codeContainerIndex = new IndexWrapper(0);
-                CodeContainer codeContainer = stringUtils.parseForIfCodeContainer("if", code.substring(ifKeywordIndex), codeContainerIndex);
+                CodeContainer codeContainer = StringUtils.parseForIfCodeContainer("if", code.substring(ifKeywordIndex), codeContainerIndex);
                 StringBuilder stringBuilder = new StringBuilder("if(").append(codeContainer.getArguments().get(0)).append(") {")
                                 .append(codeContainer.getCode()).append("}");
                 codeChunks.add(stringBuilder.toString());
@@ -212,7 +208,7 @@ public class CodeConverter {
                 }
                 addSemiColonSeperatedCommands(code.substring(index, whileKeywordIndex), codeChunks);
                 IndexWrapper codeContainerIndex = new IndexWrapper(0);
-                stringUtils.parseForCodeContainer("while", code.substring(whileKeywordIndex), codeContainerIndex);
+                StringUtils.parseForCodeContainer("while", code.substring(whileKeywordIndex), codeContainerIndex);
                 codeChunks.add(code.substring(whileKeywordIndex, whileKeywordIndex + codeContainerIndex.getIndex()));
                 index = codeContainerIndex.getIndex() + whileKeywordIndex;
             }

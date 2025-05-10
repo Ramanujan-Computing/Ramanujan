@@ -1,29 +1,16 @@
-package in.ramanujan.middleware.base.utils.compilation;
+package in.ramanujan.translation.codeConverter.utils.compilation;
 
-import in.ramanujan.middleware.base.pojo.IndexWrapper;
-import in.ramanujan.middleware.base.pojo.grammar.CodeContainer;
-import in.ramanujan.middleware.base.pojo.grammar.SimpleCodeCommand;
-import in.ramanujan.middleware.base.constants.CodeToken;
-import in.ramanujan.middleware.base.exception.CompilationException;
-import in.ramanujan.middleware.base.utils.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
+
+import in.ramanujan.translation.codeConverter.constants.CodeToken;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
+import in.ramanujan.translation.codeConverter.grammar.CodeContainer;
+import in.ramanujan.translation.codeConverter.grammar.SimpleCodeCommand;
+import in.ramanujan.translation.codeConverter.pojo.IndexWrapper;
+import in.ramanujan.translation.codeConverter.utils.StringUtils;
 
 import java.util.*;
 
-@Component
 public class CompileErrorChecker {
-
-    @Autowired
-    private StringUtils stringUtils;
-
-    public StringUtils getStringUtils() {
-        return stringUtils;
-    }
-
-    public void setStringUtils(StringUtils stringUtils) {
-        this.stringUtils = stringUtils;
-    }
 
     private CompilationException compilationErrorCreator(int index, List<Integer> newLines, List<Integer> tabs, String message) {
         int lineNumber = getRank(newLines, index), tab = getRank(tabs, index);
@@ -49,8 +36,8 @@ public class CompileErrorChecker {
     }
 
     public void checkCompilationEntryPoint(String code) throws CompilationException {
-        List<Integer> newLines = getStringUtils().getAllInstancesOfPattern(code, "\n");
-        List<Integer> tabs = getStringUtils().getAllInstancesOfPattern(code, "\t");
+        List<Integer> newLines = StringUtils.getAllInstancesOfPattern(code, "\n");
+        List<Integer> tabs = StringUtils.getAllInstancesOfPattern(code, "\t");
         checkCompilation(code, newLines, tabs);
     }
 
@@ -65,16 +52,12 @@ public class CompileErrorChecker {
         checkFunctionCalls(code, newLines, tabs);
     }
 
-
-
-
-
     protected void checkThreadManagements(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException {
         Set<String> threadNameSet = new HashSet<>();
-        for(int index : getStringUtils().getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.threadStart, '(')) {
+        for(int index : StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.threadStart, '(')) {
 
             try {
-                SimpleCodeCommand simpleCodeCommand = getStringUtils().parseForSimpleCodeCommand(CodeToken.threadStart,
+                SimpleCodeCommand simpleCodeCommand = StringUtils.parseForSimpleCodeCommand(CodeToken.threadStart,
                         code.substring(index), new IndexWrapper(0));
                 if(simpleCodeCommand.getArguments() == null || simpleCodeCommand.getArguments().size() == 0) {
                     throw compilationErrorCreator(index, newLines, tabs, "No thread name in threadStart command");
@@ -91,9 +74,9 @@ public class CompileErrorChecker {
             }
         }
 
-        for(int index : getStringUtils().getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.threadTriggerOnSomeThreadCompleteion,'(')) {
+        for(int index : StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.threadTriggerOnSomeThreadCompleteion,'(')) {
             try {
-                SimpleCodeCommand simpleCodeCommand = getStringUtils().parseForSimpleCodeCommand(
+                SimpleCodeCommand simpleCodeCommand = StringUtils.parseForSimpleCodeCommand(
                         CodeToken.threadTriggerOnSomeThreadCompleteion, code.substring(index), new IndexWrapper(0));
                 if(simpleCodeCommand.getArguments() == null || simpleCodeCommand.getArguments().size() < 2) {
                     throw compilationErrorCreator(index, newLines, tabs, "Insufficient number of arguments in threadOnEnd");
@@ -141,9 +124,9 @@ public class CompileErrorChecker {
         /*
         * Checking the function declarations
         * */
-        for(int index : getStringUtils().getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionDef, ' ')) {
+        for(int index : StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionDef, ' ')) {
             try {
-                CodeContainer codeContainer = getStringUtils().parseForCodeContainer(CodeToken.functionDef,
+                CodeContainer codeContainer = StringUtils.parseForCodeContainer(CodeToken.functionDef,
                         code.substring(index), new IndexWrapper(0));
                 if(codeContainer.getPlaceHolder() == null) {
                     throw compilationErrorCreator(index, newLines, tabs, "No name of the function while declaring");
@@ -162,9 +145,9 @@ public class CompileErrorChecker {
         /*
         * Checking the function being executed are in the program
         * */
-        for(int index : getStringUtils().getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionExec, ' ')) {
+        for(int index : StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionExec, ' ')) {
             try {
-                SimpleCodeCommand simpleCodeCommand = getStringUtils().parseForSimpleCodeCommand(CodeToken.functionExec,
+                SimpleCodeCommand simpleCodeCommand = StringUtils.parseForSimpleCodeCommand(CodeToken.functionExec,
                         code.substring(index), new IndexWrapper(0));
                 List<String> argumentsInOriginalFunction = functionNamesInCompilation.get(simpleCodeCommand.getPlaceHolder());
                 if(argumentsInOriginalFunction == null && builtInMethods.contains(simpleCodeCommand.getPlaceHolder())) {
@@ -188,9 +171,9 @@ public class CompileErrorChecker {
     }
 
     protected void checkWhileSignatures(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException{
-        for(int index : getStringUtils().getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "while",'(')) {
+        for(int index : StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "while",'(')) {
             try {
-                CodeContainer codeContainer = getStringUtils().parseForCodeContainer("while",
+                CodeContainer codeContainer = StringUtils.parseForCodeContainer("while",
                         code.substring(index), new IndexWrapper(0));
                 if(codeContainer.getArguments() == null || codeContainer.getArguments().size() == 0) {
                     throw compilationErrorCreator(index, newLines, tabs, "There are no arguments in while");
@@ -204,9 +187,9 @@ public class CompileErrorChecker {
     }
 
     protected void checkIfSignatures(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException{
-        for(int index : getStringUtils().getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "if",'(')) {
+        for(int index : StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, "if",'(')) {
             try {
-                CodeContainer codeContainer = getStringUtils().parseForCodeContainer("if",
+                CodeContainer codeContainer = StringUtils.parseForCodeContainer("if",
                         code.substring(index), new IndexWrapper(0));
                 if(codeContainer.getArguments() == null || codeContainer.getArguments().size() == 0) {
                     throw compilationErrorCreator(index, newLines, tabs, "There are no arguments in if");
@@ -218,7 +201,6 @@ public class CompileErrorChecker {
             }
         }
     }
-
 
     private Boolean checkIfBracketsAreCorrect(String code, int index, String character, String reverseCharacter) {
         Stack<Boolean> stack = new Stack<>();
@@ -238,19 +220,19 @@ public class CompileErrorChecker {
 
     protected void checkBrackets(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException {
         String message = "Brackets not in sync";
-        for(int index : getStringUtils().getAllInstancesOfPattern(code, "{")) {
+        for(int index : StringUtils.getAllInstancesOfPattern(code, "{")) {
             if(!checkIfBracketsAreCorrect(code, index, "{", "}")) {
                 throw compilationErrorCreator(index, newLines, tabs, message);
             }
         }
 
-        for(int index : getStringUtils().getAllInstancesOfPattern(code, "(")) {
+        for(int index : StringUtils.getAllInstancesOfPattern(code, "(")) {
             if(!checkIfBracketsAreCorrect(code, index, "(", ")")) {
                 throw compilationErrorCreator(index, newLines, tabs, message);
             }
         }
 
-        for(int index : getStringUtils().getAllInstancesOfPattern(code, "[")) {
+        for(int index : StringUtils.getAllInstancesOfPattern(code, "[")) {
             if(!checkIfBracketsAreCorrect(code, index, "[", "]")) {
                 throw compilationErrorCreator(index, newLines, tabs, message);
             }

@@ -11,7 +11,7 @@ import java.util.Stack;
 
 
 public class StringUtils {
-    public List<Integer> getAllInstancesOfPattern(String string, String pattern) {
+    public static List<Integer> getAllInstancesOfPattern(String string, String pattern) {
         List<Integer> instancePositions = new ArrayList<>();
         int lastIndex = 0;
         while(lastIndex != -1) {
@@ -24,7 +24,7 @@ public class StringUtils {
         return  instancePositions;
     }
 
-    public List<Integer> getAllInstancesOfPatternNotSubstringOfOtherKeyword(String string, String pattern, Character whatToEndWith) {
+    public static List<Integer> getAllInstancesOfPatternNotSubstringOfOtherKeyword(String string, String pattern, Character whatToEndWith) {
         List<Integer> allInstances = getAllInstancesOfPattern(string, pattern);
         List<Integer> result = new ArrayList<>();
         for(Integer index : allInstances) {
@@ -35,7 +35,7 @@ public class StringUtils {
         return result;
     }
 
-    private Boolean isPartofSomeVariable(String code, String keyword, int index, Character whatToEndWith) {
+    private static Boolean isPartofSomeVariable(String code, String keyword, int index, Character whatToEndWith) {
         if(keyword == null) {
             return false;
         }
@@ -53,11 +53,11 @@ public class StringUtils {
         return false;
     }
 
-    private Boolean validateIfNotSuffixOfMethod(Character c) {
+    private static Boolean validateIfNotSuffixOfMethod(Character c) {
         return (!Character.isAlphabetic(c) && !Character.isDigit(c));
     }
 
-    public List<String> getArguments(String commaSeperatedArguments) {
+    public static List<String> getArguments(String commaSeperatedArguments) {
         if(commaSeperatedArguments.length() == 0) {
             return new ArrayList<>();
         }
@@ -82,7 +82,7 @@ public class StringUtils {
     * threadStart(t1) {code} : codeCommand is threadStart, arguments if t1<br>
     * threadOnEnd(r1,t2,3) {code} : codeCommand is threadOnEnd, <r1,t2,3> is arguments
     * */
-    public CodeContainer parseForCodeContainer(String codeCommand, String code, IndexWrapper indexWrapper) {
+    public static CodeContainer parseForCodeContainer(String codeCommand, String code, IndexWrapper indexWrapper) {
         CodeContainer codeContainer = new CodeContainer();
         if(code == null) {
             return codeContainer;
@@ -109,7 +109,7 @@ public class StringUtils {
      *
      * Reason for this is that IfLogicConverter will be able to parse the code easily.
      * */
-    public CodeContainer parseForIfCodeContainer(String codeCommand, String code, IndexWrapper indexWrapper) {
+    public static CodeContainer parseForIfCodeContainer(String codeCommand, String code, IndexWrapper indexWrapper) {
         CodeContainer codeContainer = new CodeContainer(parseForSimpleCodeCommand(codeCommand, code, indexWrapper));
         int index = indexWrapper.getIndex();
 
@@ -152,7 +152,7 @@ public class StringUtils {
     * indexWrapper.getIndex() is the first character after the opening bracket.
     * After completion of the the parser, indexWrapper.getIndex() will give the next index after last end-bracket
     * */
-    public String getInternalCode(String code, IndexWrapper indexWrapper) {
+    public static String getInternalCode(String code, IndexWrapper indexWrapper) {
         String internalCode ="";
         Stack<Boolean> bracketStack = new Stack<>();
         int index = indexWrapper.getIndex();
@@ -179,7 +179,7 @@ public class StringUtils {
     * this function is for something like
     * codeCommand placeholder(arguments)
     * */
-    public SimpleCodeCommand parseForSimpleCodeCommand(String codeCommand, String code, IndexWrapper indexWrapper) {
+    public static SimpleCodeCommand parseForSimpleCodeCommand(String codeCommand, String code, IndexWrapper indexWrapper) {
         SimpleCodeCommand codeContainer = new SimpleCodeCommand();
         codeContainer.setCodeCommand(codeCommand);
         int firstOccurenceIndex = code.indexOf(codeCommand);

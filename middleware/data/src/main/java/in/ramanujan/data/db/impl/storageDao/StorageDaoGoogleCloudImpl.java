@@ -6,7 +6,6 @@ import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import com.google.common.collect.Lists;
-import in.ramanujan.middleware.base.UserReadableDebugPoints;
 import io.vertx.core.Context;
 
 import java.io.ByteArrayInputStream;

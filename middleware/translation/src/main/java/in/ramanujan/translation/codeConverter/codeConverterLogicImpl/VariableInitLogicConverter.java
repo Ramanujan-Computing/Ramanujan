@@ -3,22 +3,21 @@ package in.ramanujan.translation.codeConverter.codeConverterLogicImpl;
 import in.ramanujan.enums.DataType;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogic;
-import in.ramanujan.middleware.base.exception.CompilationException;
-import in.ramanujan.middleware.base.pojo.grammar.DebugLevelCodeCreator;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
+import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
+import in.ramanujan.translation.codeConverter.utils.CodeConversionUtils;
 import in.ramanujan.utils.Constants;
-import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@Component
 public class VariableInitLogicConverter implements CodeConverterLogic {
     @Override
     public void populateCommand(Command command, RuleEngineInputUnits ruleEngineInputUnits) {
@@ -55,7 +54,7 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
                             hasNonConstantDimension = true;
                             constantDims.add(1); // Use a placeholder for now
                             // Resolve variable name to variable ID
-                            Variable dimVar = in.ramanujan.middleware.base.utils.CodeConversionUtils.getVariable(
+                            Variable dimVar = CodeConversionUtils.getVariable(
                                 codeConverter.getVariableMap(), dimStr, variableScope);
                             if (dimVar != null) {
                                 resolvedDims.add(dimVar.getId());

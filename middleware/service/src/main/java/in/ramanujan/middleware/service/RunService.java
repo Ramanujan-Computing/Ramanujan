@@ -8,9 +8,9 @@ import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.data.KafkaManagerApiCaller;
 import in.ramanujan.data.OrchestrationApiCaller;
 import in.ramanujan.developer.console.model.pojo.FirstDebugPointPayload;
-import in.ramanujan.middleware.base.BasicDagElement;
-import in.ramanujan.middleware.base.DagElement;
 
+import in.ramanujan.translation.codeConverter.BasicDagElement;
+import in.ramanujan.translation.codeConverter.DagElement;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import in.ramanujan.pojo.RuleEngineInput;

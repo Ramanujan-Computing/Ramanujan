@@ -25,10 +25,6 @@ import java.util.*;
 
 public class TranslateUtil {
 
-
-    private final StringUtils stringUtils = new StringUtils();
-
-
     private final CodeConverterLogicFactory codeConverterLogicFactory = new CodeConverterLogicFactory();
 
     /*
@@ -97,7 +93,7 @@ public class TranslateUtil {
     }
 
     public CodeConverter getNewCodeConverter(List<CsvInformation> csvInformationList) {
-        return new CodeConverter(codeConverterLogicFactory, stringUtils, csvInformationList);
+        return new CodeConverter(codeConverterLogicFactory, null, csvInformationList);
     }
 
     private Boolean validateIfSuffixOfMethod(Character c) {
@@ -158,10 +154,6 @@ public class TranslateUtil {
         return toBeConsidered;
     }
 
-    public StringUtils getStringUtils() {
-        return stringUtils;
-    }
-
     private void parseThreadStartCode(String code, StringWrapper extractedCode, IndexWrapper indexWrapper, int threadStartCodeIndex,
                                       Map<String, CodeSnippetElement> threadCodeSnippetMap,
                                       Map<String, List<CodeSnippetElement>> mappingToBeResolved,
@@ -173,7 +165,7 @@ public class TranslateUtil {
         }
         indexWrapper.setIndex(threadStartCodeIndex);
 
-        CodeContainer codeContainer = getStringUtils().parseForCodeContainer(CodeToken.threadStart, code.substring(indexWrapper.getIndex()), indexWrapper);
+        CodeContainer codeContainer = StringUtils.parseForCodeContainer(CodeToken.threadStart, code.substring(indexWrapper.getIndex()), indexWrapper);
         CodeSnippetElement childSnippet = getCodeSnippets(codeContainer.getCode(), threadCodeSnippetMap, mappingToBeResolved, cloningToBeResolved);
         String threadName = codeContainer.getArguments().get(0);
         threadCodeSnippetMap.put(threadName, childSnippet);
@@ -208,7 +200,7 @@ public class TranslateUtil {
         }
         indexWrapper.setIndex(threadEndCodeIndex);
 
-        CodeContainer codeContainer = getStringUtils().parseForCodeContainer(CodeToken.threadTriggerOnSomeThreadCompleteion,
+        CodeContainer codeContainer = StringUtils.parseForCodeContainer(CodeToken.threadTriggerOnSomeThreadCompleteion,
                 code.substring(indexWrapper.getIndex()), indexWrapper);
         indexWrapper.setIndex(indexWrapper.getIndex() + threadEndCodeIndex);
         CodeSnippetElement childSnippet = getCodeSnippets(codeContainer.getCode(), threadCodeSnippetMap, mappingToBeResolved, cloningToBeResolved);
@@ -346,7 +338,7 @@ public class TranslateUtil {
     public ExtractedCodeAndFunctionCode extractCodeWithoutAbstractCodeDeclaration(String code,
                                                                                   Map<String, RuleEngineInput> functionCallsRuleEngineInputMap, ActualDebugCodeCreator actualDebugCodeCreator)
             throws CompilationException {
-        List<Integer> allInstaces = stringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionDef, ' ');
+        List<Integer> allInstaces = StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionDef, ' ');
         String extractedCode = "";
         int lastIndex = 0;
         int iteration = 0;
@@ -385,7 +377,7 @@ public class TranslateUtil {
 
 
         IndexWrapper codeContainerIndex = new IndexWrapper(0);
-        CodeContainer functionCodeInformation = stringUtils.parseForCodeContainer(CodeToken.functionDef,
+        CodeContainer functionCodeInformation = StringUtils.parseForCodeContainer(CodeToken.functionDef,
                 code.substring(indexWrapper1.getIndex()), codeContainerIndex);
 
         CodeConverter codeConverter = getNewCodeConverter(new ArrayList<>());

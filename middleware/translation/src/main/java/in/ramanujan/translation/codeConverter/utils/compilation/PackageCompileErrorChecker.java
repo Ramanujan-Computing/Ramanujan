@@ -1,25 +1,21 @@
-package in.ramanujan.middleware.base.utils.compilation;
+package in.ramanujan.translation.codeConverter.utils.compilation;
 
-import in.ramanujan.middleware.base.pojo.IndexWrapper;
-import in.ramanujan.middleware.base.pojo.grammar.CodeContainer;
-import in.ramanujan.middleware.base.pojo.grammar.SimpleCodeCommand;
+
 import in.ramanujan.developer.console.model.pojo.PackageRunInput;
-import in.ramanujan.middleware.base.constants.CodeToken;
-import in.ramanujan.middleware.base.exception.CompilationException;
-import in.ramanujan.middleware.base.utils.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
+import in.ramanujan.translation.codeConverter.constants.CodeToken;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
+import in.ramanujan.translation.codeConverter.grammar.CodeContainer;
+import in.ramanujan.translation.codeConverter.grammar.SimpleCodeCommand;
+import in.ramanujan.translation.codeConverter.pojo.IndexWrapper;
+import in.ramanujan.translation.codeConverter.utils.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Component
 public class PackageCompileErrorChecker extends CompileErrorChecker{
 
-    @Autowired
-    private StringUtils stringUtils;
 
     public void checkPackageForCompilation(PackageRunInput packageRunInput) throws CompilationException {
         Map<String, List<String>> functionAndArgumentsMap = new HashMap<>();
@@ -99,9 +95,9 @@ public class PackageCompileErrorChecker extends CompileErrorChecker{
     }
 
     private void populateAllFunctionCallFromThisCode(String code, Map<String, List<List<String>>> functionCallsAndArgumentsMap) {
-        List<Integer> indexes = stringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionExec, ' ');
+        List<Integer> indexes = StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionExec, ' ');
         for(Integer index : indexes) {
-            SimpleCodeCommand simpleCodeCommand = stringUtils.parseForSimpleCodeCommand(CodeToken.functionExec,
+            SimpleCodeCommand simpleCodeCommand = StringUtils.parseForSimpleCodeCommand(CodeToken.functionExec,
                     code.substring(index), new IndexWrapper(0));
             List<List<String>> arguementByDifferentCalls = functionCallsAndArgumentsMap.get(simpleCodeCommand.getPlaceHolder());
             if(arguementByDifferentCalls == null) {
@@ -120,12 +116,12 @@ public class PackageCompileErrorChecker extends CompileErrorChecker{
     private String functionCodeContainerListCreater(String code, String extractedCode, List<CodeContainer> functionCodeContainers) {
         int lastIndex = 0;
         int iteration = 0;
-        List<Integer> allInstaces = stringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionDef, ' ');
+        List<Integer> allInstaces = StringUtils.getAllInstancesOfPatternNotSubstringOfOtherKeyword(code, CodeToken.functionDef, ' ');
         while (iteration < allInstaces.size()) {
             int instanceIndex = allInstaces.get(iteration);
             extractedCode = extractedCode + code.substring(lastIndex, instanceIndex);
             IndexWrapper indexWrapper = new IndexWrapper(0);
-            functionCodeContainers.add(stringUtils.parseForCodeContainer(CodeToken.functionDef, code.substring(instanceIndex), indexWrapper));
+            functionCodeContainers.add(StringUtils.parseForCodeContainer(CodeToken.functionDef, code.substring(instanceIndex), indexWrapper));
             lastIndex = indexWrapper.getIndex() + instanceIndex;
             iteration++;
         }

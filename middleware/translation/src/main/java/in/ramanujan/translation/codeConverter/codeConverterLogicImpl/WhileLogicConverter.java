@@ -2,24 +2,23 @@ package in.ramanujan.translation.codeConverter.codeConverterLogicImpl;
 
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogic;
-import in.ramanujan.middleware.base.exception.CompilationException;
-import in.ramanujan.middleware.base.pojo.IndexWrapper;
-import in.ramanujan.middleware.base.pojo.grammar.CodeContainer;
-import in.ramanujan.middleware.base.pojo.grammar.DebugLevelCodeCreator;
-import in.ramanujan.middleware.base.pojo.grammar.debugLevelCodeCreatorImpl.NoConcatImpl;
-import in.ramanujan.middleware.base.utils.StringUtils;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Condition;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.*;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
+import in.ramanujan.translation.codeConverter.grammar.CodeContainer;
+import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
+import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.NoConcatImpl;
+import in.ramanujan.translation.codeConverter.pojo.IndexWrapper;
+import in.ramanujan.translation.codeConverter.utils.StringUtils;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 public class WhileLogicConverter implements CodeConverterLogic {
-    private final StringUtils stringUtils = new StringUtils();
     private final ConditionLogicConverter conditionLogicConverter = new ConditionLogicConverter();
 
     @Override
@@ -35,7 +34,7 @@ public class WhileLogicConverter implements CodeConverterLogic {
                                             Map<Integer, RuleEngineInputUnits> functionFrameVariableMap, Integer[] frameVariableCounterId) throws CompilationException {
         IndexWrapper indexWrapper = new IndexWrapper(0);
         try {
-            CodeContainer codeContainer = stringUtils.parseForCodeContainer("while", code, new IndexWrapper(0));
+            CodeContainer codeContainer = StringUtils.parseForCodeContainer("while", code, new IndexWrapper(0));
 
             While whileBlock = new While();
             whileBlock.setId("while_" + UUID.randomUUID().toString());
@@ -70,9 +69,5 @@ public class WhileLogicConverter implements CodeConverterLogic {
 
     public ConditionLogicConverter getConditionLogicConverter() {
         return conditionLogicConverter;
-    }
-
-    public StringUtils getStringUtils() {
-        return stringUtils;
     }
 }

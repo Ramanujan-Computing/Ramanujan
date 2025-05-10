@@ -6,16 +6,16 @@ import in.ramanujan.translation.codeConverter.codeConverterLogicImpl.*;
 import in.ramanujan.translation.codeConverter.constants.CodeToken;
 
 public class CodeConverterLogicFactory {
-    private final IfLogicConverter ifLogicConverter = new IfLogicConverter();
-    private final ForLogicConverter forLogicConverter = new ForLogicConverter();
-    private final WhileLogicConverter whileLogicConverter = new WhileLogicConverter();
-    private final FunctionLogicConverter functionLogicConverter = new FunctionLogicConverter();
-    private final VariableInitLogicConverter variableInitLogicConverter = new VariableInitLogicConverter();
-    private final ConditionLogicConverter conditionLogicConverter = new ConditionLogicConverter();
-    private final OperationLogicConverter operationLogicConverter = new OperationLogicConverter();
-    private final CsvImporter csvImporter = new CsvImporter();
+    private static final IfLogicConverter ifLogicConverter = new IfLogicConverter();
+    private static final ForLogicConverter forLogicConverter = new ForLogicConverter();
+    private static final WhileLogicConverter whileLogicConverter = new WhileLogicConverter();
+    private static final FunctionLogicConverter functionLogicConverter = new FunctionLogicConverter();
+    private static final VariableInitLogicConverter variableInitLogicConverter = new VariableInitLogicConverter();
+    private static final ConditionLogicConverter conditionLogicConverter = new ConditionLogicConverter();
+    private static final OperationLogicConverter operationLogicConverter = new OperationLogicConverter();
+    private static final CsvImporter csvImporter = new CsvImporter();
 
-    public CodeConverterLogic getCodeConverterLogicImpl(String token, String codeChunk) {
+    public static CodeConverterLogic getCodeConverterLogicImpl(String token, String codeChunk) {
         if (token.equalsIgnoreCase("if"))
             return ifLogicConverter;
         if (token.equalsIgnoreCase("import_csv")) {
@@ -39,7 +39,7 @@ public class CodeConverterLogicFactory {
         return null;
     }
 
-    private Boolean isOperation(String codeChunk) {
+    private static Boolean isOperation(String codeChunk) {
         if (codeChunk.charAt(0) == '-') {
             int index = 1;
             boolean isNegNumOperator = true;
@@ -65,7 +65,7 @@ public class CodeConverterLogicFactory {
         return false;
     }
 
-    private Boolean isConditionOperation(String codeChunk) {
+    private static Boolean isConditionOperation(String codeChunk) {
         for(ConditionType conditionType : ConditionType.values()) {
             if(codeChunk.contains(conditionType.getConditionTypeString())) {
                 return true;
