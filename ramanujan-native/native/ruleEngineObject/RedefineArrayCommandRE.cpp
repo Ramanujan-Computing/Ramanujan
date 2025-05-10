@@ -42,10 +42,4 @@ void RedefineArrayCommandRE::process() {
         oldArrayValue->destroy();
         delete oldArrayValue;
     }
-
-    // 5. Clean up newArray if not needed elsewhere
-    // (ArrayValue takes ownership of Array*)
-
-    for (int i = 0; i < dimsCount; ++i) std::cout << dims[i] << " ";
-    std::cout << std::endl;
 }
