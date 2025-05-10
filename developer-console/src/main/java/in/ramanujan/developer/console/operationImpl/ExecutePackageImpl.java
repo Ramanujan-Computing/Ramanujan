@@ -15,6 +15,7 @@ import okhttp3.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,6 +30,10 @@ import java.util.Map;
 public class ExecutePackageImpl implements Operation {
 
     private ObjectMapper objectMapper = new ObjectMapper();
+
+    // Static maps to store variables and arrays for querying
+    public static final Map<String, Object> variableStore = new HashMap<>();
+    public static final Map<String, Map<String, Object>> arrayStore = new HashMap<>();
 
     @Override
     public void execute(List<String> args) {
@@ -61,7 +66,7 @@ public class ExecutePackageImpl implements Operation {
         try {
             OkHttpClient httpClient = new OkHttpClient();
             String json = objectMapper.writeValueAsString(packageRunInput);
-            RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
+            RequestBody requestBody = RequestBody.create(json, MediaType.get("application/json; charset=utf-8"));
             Request request = new Request.Builder().url("http://localhost:8888/run/package").post(requestBody).build();
             try {
                 Response response = httpClient.newCall(request).execute();
@@ -81,9 +86,35 @@ public class ExecutePackageImpl implements Operation {
                         }
                         ApiResponse apiResponse = objectMapper.readValue(response.body().string(), ApiResponse.class);
                         if("200 OK".equalsIgnoreCase(apiResponse.getStatus())) {
-                            Map asyncTask = (Map) apiResponse.getData();
+                            Map<String, Object> asyncTask = (Map<String, Object>) apiResponse.getData();
                             if("SUCCESS".equalsIgnoreCase((String) asyncTask.get("taskStatus")) || "FAILED".equalsIgnoreCase((String) asyncTask.get("taskStatus"))) {
                                 System.out.println(asyncTask);
+                                // Extract and store variable/array values
+                                Object resultObj = asyncTask.get("result");
+                                if (resultObj instanceof Map) {
+                                    Map<String, Object> resultMap = (Map<String, Object>) resultObj;
+                                    Object variablesObj = resultMap.get("variables");
+                                    Object arraysObj = resultMap.get("arrays");
+                                    if (variablesObj instanceof List) {
+                                        List<Map<String, Object>> variables = (List<Map<String, Object>>) variablesObj;
+                                        for (Map<String, Object> var : variables) {
+                                            String name = (String) var.get("variableName");
+                                            Object value = var.get("object");
+                                            variableStore.put(name, value);
+                                        }
+                                    }
+                                    if (arraysObj instanceof List) {
+                                        List<Map<String, Object>> arrays = (List<Map<String, Object>>) arraysObj;
+                                        for (Map<String, Object> arr : arrays) {
+                                            String name = (String) arr.get("arrayId");
+                                            String indexStr = (String) arr.get("indexStr");
+                                            Object value = arr.get("object");
+                                            Map<String, Object> arrMap = arrayStore.getOrDefault(name, new HashMap<>());
+                                            arrMap.put(indexStr, value);
+                                            arrayStore.put(name, arrMap);
+                                        }
+                                    }
+                                }
                                 break;
                             }
                         }

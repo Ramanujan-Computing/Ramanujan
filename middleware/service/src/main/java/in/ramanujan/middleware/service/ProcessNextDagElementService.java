@@ -170,7 +170,7 @@ public class ProcessNextDagElementService {
                     for(String index : arrayIndexMap.keySet()) {
                         Future<Void> updateVariableFuture = Future.future();
                         updateVariableFutures.add(updateVariableFuture);
-                        variableValueDao.storeArrayValue(asyncId, arrayId, index, arrayIndexMap.get(index))
+                        variableValueDao.storeArrayValue(asyncId, arrayId, null, index, arrayIndexMap.get(index))
                                 .setHandler(arrayIndexUpdateHandler -> {
                                     if(arrayIndexUpdateHandler.succeeded()) {
                                         updateVariableFuture.complete();
@@ -209,7 +209,7 @@ public class ProcessNextDagElementService {
             arrayIndexFuture.complete();
             return;
         }
-        variableValueDao.storeArrayValue(asyncId, arrayId, (String)indexes[index], arrayIndexMap.get(indexes[index])).setHandler(handler -> {
+        variableValueDao.storeArrayValue(asyncId, arrayId, null, (String)indexes[index], arrayIndexMap.get(indexes[index])).setHandler(handler -> {
            if(handler.succeeded()) {
                updateArrayOnIndex(indexes, arrayIndexFuture, arrayId, index + 1, arrayIndexMap, asyncId);
            } else {
