@@ -14,7 +14,7 @@ public class NativeProcessor {
     public ArrayList debugPoints;
 
     static {
-//        loadLibrary("native");
-        load("/Users/pranav/Desktop/ramanujan/ramanujan-native/native/cmake-build-debug/libnative.dylib");
+       loadLibrary("native");
+        // load("/Users/pranav/Desktop/ramanujan/ramanujan-native/native/cmake-build-debug/libnative.dylib");
     }
 }
