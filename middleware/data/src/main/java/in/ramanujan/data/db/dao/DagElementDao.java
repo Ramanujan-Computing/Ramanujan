@@ -1,9 +1,9 @@
 package in.ramanujan.data.db.dao;
 
-import in.ramanujan.middleware.base.BasicDagElement;
-import in.ramanujan.middleware.base.DagElement;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
+import in.ramanujan.translation.codeConverter.BasicDagElement;
+import in.ramanujan.translation.codeConverter.DagElement;
 import io.vertx.core.Future;
 import org.springframework.stereotype.Component;
 

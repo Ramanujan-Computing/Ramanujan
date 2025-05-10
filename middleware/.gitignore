@@ -8,4 +8,5 @@ base/target/*
 rest/target/*
 service/target/*
 data/target/*
+translation/target/*
 *iml

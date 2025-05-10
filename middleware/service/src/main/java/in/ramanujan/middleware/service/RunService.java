@@ -8,10 +8,10 @@ import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.data.KafkaManagerApiCaller;
 import in.ramanujan.data.OrchestrationApiCaller;
 import in.ramanujan.developer.console.model.pojo.FirstDebugPointPayload;
-import in.ramanujan.middleware.base.BasicDagElement;
-import in.ramanujan.middleware.base.DagElement;
 
-import in.ramanujan.middleware.base.pojo.TranslateResponse;
+import in.ramanujan.translation.codeConverter.BasicDagElement;
+import in.ramanujan.translation.codeConverter.DagElement;
+import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
@@ -20,37 +20,19 @@ import in.ramanujan.utils.Constants;
 import io.vertx.core.*;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.util.*;
 
-@Component
 public class RunService {
 
-    @Autowired
-    private OrchestrationApiCaller orchestrationApiCaller;
-
-    @Autowired
-    private AsyncTaskDao asyncTaskDao;
-
-    @Autowired
-    private OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
-
-    @Autowired
-    private DagElementDao dagElementDao;
-
-    @Autowired
-    private VariableValueDao variableValueDao;
-
-    @Autowired
-    private DagElementVariableDao dagElementVariableDao;
-
-    @Autowired
-    private KafkaManagerApiCaller kafkaManagerApiCaller;
-
-    @Autowired
-    private StorageDao storageDao;
+    public OrchestrationApiCaller orchestrationApiCaller;
+    public AsyncTaskDao asyncTaskDao;
+    public OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
+    public DagElementDao dagElementDao;
+    public VariableValueDao variableValueDao;
+    public DagElementVariableDao dagElementVariableDao;
+    public KafkaManagerApiCaller kafkaManagerApiCaller;
+    public StorageDao storageDao;
 
     private Set<String> dagElementIdRan = new HashSet<>();
 

@@ -1,21 +1,13 @@
 package in.ramanujan.middleware.service;
 
-
 import in.ramanujan.data.db.dao.AsyncTaskDao;
 import in.ramanujan.data.db.dao.VariableValueDao;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import io.vertx.core.Future;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
-@Component
 public class TaskStatusService {
-
-    @Autowired
-    private AsyncTaskDao asyncTaskDao;
-
-    @Autowired
-    private VariableValueDao variableValueDao;
+    public AsyncTaskDao asyncTaskDao;
+    public VariableValueDao variableValueDao;
 
     public Future<AsyncTask> getAsyncTaskStatus(String asyncTaskId) {
         Future<AsyncTask> future = Future.future();
