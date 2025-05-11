@@ -7,6 +7,9 @@ include_directories(input)
 include_directories(processing)
 
 include(FetchContent)
+set(BUILD_SHARED_LIBS OFF) # Ensure static build
+set(JSONCPP_WITH_PIC ON)   # Enable -fPIC for static lib
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_Declare(
     jsoncpp
     GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
