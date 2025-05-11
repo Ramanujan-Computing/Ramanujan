@@ -6,15 +6,23 @@ import in.ramanujan.data.db.dao.OrchestratorAsyncTaskDao;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+@Component
 public class WorkflowSuspendService {
-    public OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
-    public OrchestrationApiCaller orchestrationApiCaller;
-    public AsyncTaskDao asyncTaskDao;
+    @Autowired
+    private OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
+
+    @Autowired
+    private OrchestrationApiCaller orchestrationApiCaller;
+
+    @Autowired
+    private AsyncTaskDao asyncTaskDao;
 
     public Future<Void> suspendWf(String asyncId) throws Exception {
         Future<Void> future = Future.future();

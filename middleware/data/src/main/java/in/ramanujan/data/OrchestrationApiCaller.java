@@ -18,15 +18,24 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
 
 import java.util.HashMap;
 import java.util.Map;
 
+@Component
 public class OrchestrationApiCaller {
 
-    public OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
-    public AsyncTaskDao asyncTaskDao;
-    public StorageDao storageDao;
+    @Autowired
+    private OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
+
+    @Autowired
+    private AsyncTaskDao asyncTaskDao;
+
+    @Autowired
+    private StorageDao storageDao;
 
     private Logger logger = LoggerFactory.getLogger(OrchestrationApiCaller.class);
 

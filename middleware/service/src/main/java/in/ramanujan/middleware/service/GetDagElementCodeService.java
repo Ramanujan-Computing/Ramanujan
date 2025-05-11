@@ -3,9 +3,14 @@ package in.ramanujan.middleware.service;
 import in.ramanujan.data.db.dao.StorageDao;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+@Component
 public class GetDagElementCodeService {
-    public StorageDao storageDao;
+
+    @Autowired
+    private StorageDao storageDao;
 
     public Future<String> getCode(String asyncId, String dagElementId) {
         Future<String> future = Future.future();

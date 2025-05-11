@@ -5,10 +5,17 @@ import in.ramanujan.data.db.dao.StorageDao;
 import in.ramanujan.middleware.base.pojo.DebugInformation;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+@Component
 public class DebugInformationFetchService {
-    public StorageDao storageDao;
-    public DagElementDao dagElementDao;
+
+    @Autowired
+    private StorageDao storageDao;
+
+    @Autowired
+    private DagElementDao dagElementDao;
 
     public Future<DebugInformation> getDebugInformation(final String asyncId, final String dagElementId) {
         DebugInformation debugInformation = new DebugInformation();

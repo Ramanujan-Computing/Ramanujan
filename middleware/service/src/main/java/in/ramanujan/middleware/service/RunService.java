@@ -20,19 +20,37 @@ import in.ramanujan.utils.Constants;
 import io.vertx.core.*;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.*;
 
+@Component
 public class RunService {
 
-    public OrchestrationApiCaller orchestrationApiCaller;
-    public AsyncTaskDao asyncTaskDao;
-    public OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
-    public DagElementDao dagElementDao;
-    public VariableValueDao variableValueDao;
-    public DagElementVariableDao dagElementVariableDao;
-    public KafkaManagerApiCaller kafkaManagerApiCaller;
-    public StorageDao storageDao;
+    @Autowired
+    private OrchestrationApiCaller orchestrationApiCaller;
+
+    @Autowired
+    private AsyncTaskDao asyncTaskDao;
+
+    @Autowired
+    private OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
+
+    @Autowired
+    private DagElementDao dagElementDao;
+
+    @Autowired
+    private VariableValueDao variableValueDao;
+
+    @Autowired
+    private DagElementVariableDao dagElementVariableDao;
+
+    @Autowired
+    private KafkaManagerApiCaller kafkaManagerApiCaller;
+
+    @Autowired
+    private StorageDao storageDao;
 
     private Set<String> dagElementIdRan = new HashSet<>();
 

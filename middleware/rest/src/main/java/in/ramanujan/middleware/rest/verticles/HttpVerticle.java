@@ -15,25 +15,55 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+@Component
 public class HttpVerticle extends AbstractVerticle {
 
     private Logger logger = LoggerFactory.getLogger(HttpVerticle.class);
 
-    public TranslateAndRunHandler translateAndRunHandler;
-    public StatusHandler statusHandler;
-    public PackageRunner packageRunner;
-    public WorkflowSuspendHandler workflowSuspendHandler;
-    public ProcessNextDagElementHandler processNextDagElementHandler;
-    public OrchestrationApiCaller orchestrationApiCaller;
-    public KafkaManagerApiCaller kafkaManagerApiCaller;
-    public DebugInformationFetchHandler debugInformationFetchHandler;
-    public CheckpointResumeHandler checkpointResumeHandler;
-    public AddFirstDebugPointHandler addFirstDebugPointHandler;
-    public GetDagElementCodeHandler getDagElementCodeHandler;
-    public ConnectionCreator connectionCreator;
-    public StorageDao storageDao;
-    public QueryExecutor queryExecutor;
+    @Autowired
+    private TranslateAndRunHandler translateAndRunHandler;
+
+    @Autowired
+    private StatusHandler statusHandler;
+
+    @Autowired
+    private PackageRunner packageRunner;
+
+    @Autowired
+    private WorkflowSuspendHandler workflowSuspendHandler;
+
+    @Autowired
+    private ProcessNextDagElementHandler processNextDagElementHandler;
+
+    @Autowired
+    private OrchestrationApiCaller orchestrationApiCaller;
+
+    @Autowired
+    private KafkaManagerApiCaller kafkaManagerApiCaller;
+
+    @Autowired
+    private DebugInformationFetchHandler debugInformationFetchHandler;
+
+    @Autowired
+    private CheckpointResumeHandler checkpointResumeHandler;
+
+    @Autowired
+    private AddFirstDebugPointHandler addFirstDebugPointHandler;
+
+    @Autowired
+    private GetDagElementCodeHandler getDagElementCodeHandler;
+
+    @Autowired
+    private ConnectionCreator connectionCreator;
+
+    @Autowired
+    private StorageDao storageDao;
+
+    @Autowired
+    private QueryExecutor queryExecutor;
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {

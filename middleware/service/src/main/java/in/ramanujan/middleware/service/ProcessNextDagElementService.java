@@ -13,19 +13,37 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.*;
 
+@Component
 public class ProcessNextDagElementService {
 
-    public OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
-    public OrchestrationApiCaller orchestrationApiCaller;
-    public DagElementDao dagElementDao;
-    public AsyncTaskDao asyncTaskDao;
-    public RunService runService;
-    public KafkaManagerApiCaller kafkaManagerApiCaller;
-    public VariableValueDao variableValueDao;
-    public OrchestratorCallLockerDao orchestratorCallLockerDao;
+    @Autowired
+    private OrchestratorAsyncTaskDao orchestratorAsyncTaskDao;
+
+    @Autowired
+    private OrchestrationApiCaller orchestrationApiCaller;
+
+    @Autowired
+    private DagElementDao dagElementDao;
+
+    @Autowired
+    private AsyncTaskDao asyncTaskDao;
+
+    @Autowired
+    private RunService runService;
+
+    @Autowired
+    private KafkaManagerApiCaller kafkaManagerApiCaller;
+
+    @Autowired
+    private VariableValueDao variableValueDao;
+
+    @Autowired
+    private OrchestratorCallLockerDao orchestratorCallLockerDao;
 
     private Logger logger = LoggerFactory.getLogger(ProcessNextDagElementService.class);
 

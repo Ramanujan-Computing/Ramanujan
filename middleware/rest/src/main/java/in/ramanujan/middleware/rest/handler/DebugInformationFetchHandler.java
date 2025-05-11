@@ -3,10 +3,14 @@ package in.ramanujan.middleware.rest.handler;
 import in.ramanujan.middleware.service.DebugInformationFetchService;
 import io.vertx.core.MultiMap;
 import io.vertx.ext.web.RoutingContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+@Component
 public class DebugInformationFetchHandler extends CommonHandler {
 
-    public DebugInformationFetchService debugInformationFetchService;
+    @Autowired
+    private DebugInformationFetchService debugInformationFetchService;
 
     @Override
     public void handle(RoutingContext routingContext) {

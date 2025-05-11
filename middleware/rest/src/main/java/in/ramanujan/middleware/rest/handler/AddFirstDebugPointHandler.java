@@ -6,13 +6,17 @@ import in.ramanujan.middleware.base.pojo.ApiResponse;
 import in.ramanujan.middleware.service.RunService;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.ext.web.RoutingContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
+@Component
 public class AddFirstDebugPointHandler extends CommonHandler {
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    public RunService runService;
+    @Autowired
+    private RunService runService;
 
     @Override
     public void handle(RoutingContext routingContext) {

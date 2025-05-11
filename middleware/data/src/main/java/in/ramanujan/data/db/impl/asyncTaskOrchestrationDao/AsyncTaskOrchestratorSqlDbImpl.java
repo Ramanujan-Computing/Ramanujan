@@ -7,13 +7,17 @@ import in.ramanujan.db.layer.enums.QueryType;
 import in.ramanujan.db.layer.schema.OrchestratorMiddlewareMapping;
 import in.ramanujan.db.layer.utils.QueryExecutor;
 import io.vertx.core.Future;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Component
 public class AsyncTaskOrchestratorSqlDbImpl implements OrchestratorAsyncTaskDao {
-    public QueryExecutor queryExecutor;
+    @Autowired
+    private QueryExecutor queryExecutor;
 
     @Override
     public Future<Void> addMapping(String asyncTaskId, String orchestrationId, String dagElementId) {

@@ -8,13 +8,17 @@ import in.ramanujan.db.layer.utils.QueryExecutor;
 import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Component
 public class OrchestratorCallLockerSqlImpl implements OrchestratorCallLockerDao {
 
-    public QueryExecutor queryExecutor;
+    @Autowired
+    private QueryExecutor queryExecutor;
 
     private Logger logger = LoggerFactory.getLogger(OrchestratorCallLockerSqlImpl.class);
 

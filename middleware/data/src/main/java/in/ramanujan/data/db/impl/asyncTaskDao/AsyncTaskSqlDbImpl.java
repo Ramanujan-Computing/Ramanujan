@@ -9,13 +9,17 @@ import in.ramanujan.db.layer.utils.QueryExecutor;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTaskFields;
 import io.vertx.core.Future;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
+@Component
 public class AsyncTaskSqlDbImpl implements AsyncTaskDao {
 
-    public QueryExecutor queryExecutor;
+    @Autowired
+    private QueryExecutor queryExecutor;
 
     @Override
     public Future<Void> insert(AsyncTask asyncTask) {

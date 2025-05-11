@@ -12,9 +12,13 @@ import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 import io.vertx.core.Future;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
 import java.util.*;
 
 
+@Component
 public class TranslateService {
 
     private final TranslateUtil translateUtil = new TranslateUtil();

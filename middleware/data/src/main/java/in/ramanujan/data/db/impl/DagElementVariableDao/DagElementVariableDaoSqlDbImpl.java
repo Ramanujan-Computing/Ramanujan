@@ -6,9 +6,15 @@ import in.ramanujan.db.layer.schema.ArrayMappingDagElement;
 import in.ramanujan.db.layer.schema.VariableMappingDagElement;
 import in.ramanujan.db.layer.utils.QueryExecutor;
 import io.vertx.core.Future;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+@Component
 public class DagElementVariableDaoSqlDbImpl implements DagElementVariableDao {
-    public QueryExecutor queryExecutor;
+
+    @Autowired
+    private QueryExecutor queryExecutor;
+
 
     /**
      * For array, variableId -> arrayId:index1_index2_..._indexN

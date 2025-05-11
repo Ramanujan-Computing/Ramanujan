@@ -2,10 +2,14 @@ package in.ramanujan.middleware.rest.handler;
 
 import in.ramanujan.middleware.service.WorkflowSuspendService;
 import io.vertx.ext.web.RoutingContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
+@Component
 public class WorkflowSuspendHandler extends CommonHandler {
 
-    public WorkflowSuspendService workflowSuspendService;
+    @Autowired
+    private WorkflowSuspendService workflowSuspendService;
 
     @Override
     public void handle(RoutingContext routingContext) {
