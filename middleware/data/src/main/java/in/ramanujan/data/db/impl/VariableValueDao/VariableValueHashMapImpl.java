@@ -1,7 +1,7 @@
 package in.ramanujan.data.db.impl.VariableValueDao;
 
 import in.ramanujan.data.db.dao.VariableValueDao;
-import in.ramanujan.middleware.base.pojo.VariableAndArrayResult;
+import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
 import io.vertx.core.Future;
 
 import java.util.HashMap;

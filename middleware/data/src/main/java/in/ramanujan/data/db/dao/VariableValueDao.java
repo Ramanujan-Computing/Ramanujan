@@ -2,7 +2,7 @@ package in.ramanujan.data.db.dao;
 
 import io.vertx.core.Future;
 import org.springframework.stereotype.Component;
-import in.ramanujan.middleware.base.pojo.VariableAndArrayResult;
+import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
 
 import java.util.Map;
 

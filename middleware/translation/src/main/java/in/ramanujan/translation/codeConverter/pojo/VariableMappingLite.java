@@ -1,4 +1,4 @@
-package in.ramanujan.middleware.base.pojo;
+package in.ramanujan.translation.codeConverter.pojo;
 
 import java.io.Serializable;
 

@@ -9,8 +9,8 @@ import in.ramanujan.developer.console.model.pojo.CodeRunRequest;
 import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
 import in.ramanujan.developer.console.pojo.ApiResponse;
 import in.ramanujan.developer.console.utils.PackageBuildHelper;
-import in.ramanujan.middleware.base.pojo.VariableMappingLite;
-import in.ramanujan.middleware.base.pojo.ArrayMappingLite;
+import in.ramanujan.translation.codeConverter.pojo.VariableMappingLite;
+import in.ramanujan.translation.codeConverter.pojo.ArrayMappingLite;
 import okhttp3.*;
 
 import java.io.IOException;
