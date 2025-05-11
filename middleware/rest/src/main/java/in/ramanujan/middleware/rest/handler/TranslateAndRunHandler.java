@@ -4,15 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.developer.console.model.pojo.CodeRunAsyncResponse;
 import in.ramanujan.developer.console.model.pojo.CodeRunRequest;
 import in.ramanujan.developer.console.model.pojo.DagElementIdGraph;
-import in.ramanujan.middleware.base.DagElement;
-import in.ramanujan.middleware.base.exception.CompilationException;
+import in.ramanujan.translation.codeConverter.DagElement;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.middleware.base.pojo.ApiResponse;
-import in.ramanujan.middleware.base.pojo.TranslateResponse;
-import in.ramanujan.middleware.base.utils.compilation.CompileErrorChecker;
+import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.middleware.service.RunService;
 import in.ramanujan.middleware.service.TranslateService;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
+import in.ramanujan.translation.codeConverter.utils.compilation.CompileErrorChecker;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
@@ -30,8 +30,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
     @Autowired
     private RunService runService;
 
-    @Autowired
-    private CompileErrorChecker compileErrorChecker;
+    private final static CompileErrorChecker compileErrorChecker = new CompileErrorChecker();
 
     private static ObjectMapper objectMapper = new ObjectMapper();
 
