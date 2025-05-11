@@ -9,7 +9,6 @@
 
 void RedefineArrayCommandRE::process() {
     if (!arrayValuePtr) {
-        std::cerr << "[RedefineArrayCommandRE] arrayValuePtr is null for arrayId: " << arrayId << std::endl;
         return;
     }
     // 1. Compute new dimensions using the class field dims
@@ -19,7 +18,6 @@ void RedefineArrayCommandRE::process() {
         } else if (!isVariableDimension[i]) {
             dims[i] = staticDimensions[i];
         } else {
-            std::cerr << "[RedefineArrayCommandRE] Invalid dimension at index " << i << std::endl;
             dims[i] = 1; // fallback
         }
     }
@@ -44,11 +42,4 @@ void RedefineArrayCommandRE::process() {
         oldArrayValue->destroy();
         delete oldArrayValue;
     }
-
-    // 5. Clean up newArray if not needed elsewhere
-    // (ArrayValue takes ownership of Array*)
-
-    std::cout << "[RedefineArrayCommandRE] Redefined array: " << arrayId << " to new dimensions: ";
-    for (int i = 0; i < dimsCount; ++i) std::cout << dims[i] << " ";
-    std::cout << std::endl;
 }

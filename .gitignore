@@ -23,3 +23,8 @@
 *.DS_Store
 *.json
 */cmake.check_cache*
+
+# Ignore native libraries
+*.so
+*.dll
+*.dylib

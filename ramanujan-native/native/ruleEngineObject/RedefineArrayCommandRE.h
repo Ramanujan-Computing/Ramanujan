@@ -4,6 +4,7 @@
 #include "RuleEngineInputUnits.hpp"
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
+#include <algorithm>
 #include <vector>
 #include <string>
 

@@ -462,7 +462,6 @@ def execForAnOptimizationFunc(var fnId: integer, var finalConvergenceCurve: arra
                         var D_Leader : double;
                         D_Leader = C * Leader_pos[j] - Positions[iterPosition][j];
                         exec ABS(D_Leader);
-                        exec POW(D_Leader, 2.0);
                         Positions[iterPosition][j] = Leader_pos[j] - A * D_Leader;
                     } else {
                         var rand1 : double;
@@ -478,9 +477,8 @@ def execForAnOptimizationFunc(var fnId: integer, var finalConvergenceCurve: arra
                             k = k + 1;
                         }
                         var D_X_rand : double;
-                        D_X_rand = C * X_rand[j] - Positions[rand_leader_index][j];
+                        D_X_rand = C * X_rand[j] - Positions[iterPosition][j];
                         exec ABS(D_X_rand);
-                        exec POW(D_X_rand, 2.0);
                         Positions[iterPosition][j] = X_rand[j] - A * D_X_rand;
                     }
 
@@ -488,7 +486,6 @@ def execForAnOptimizationFunc(var fnId: integer, var finalConvergenceCurve: arra
                     var distanceToLeader : double;
                     distanceToLeader = (Leader_pos[j] - Positions[iterPosition][j]);
                     exec ABS(distanceToLeader);
-                    exec POW(distanceToLeader, 2.0);
                     var exp : double;
                     exp =  (b * l);
                     exec EXP(exp);

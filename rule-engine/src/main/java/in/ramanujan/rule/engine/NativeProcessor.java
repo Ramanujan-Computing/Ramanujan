@@ -7,6 +7,9 @@ import java.util.Map;
 import static java.lang.System.load;
 import static java.lang.System.loadLibrary;
 
+import in.ramanujan.rule.engine.util.NativeLibraryLoader;
+import java.io.IOException;
+
 public class NativeProcessor {
     public native void process(String ruleEngineInputJson, String firstCommandId);
 
@@ -14,7 +17,10 @@ public class NativeProcessor {
     public ArrayList debugPoints;
 
     static {
-//        loadLibrary("native");
-        load("/Users/pranav/Desktop/ramanujan/ramanujan-native/native/cmake-build-debug/libnative.dylib");
+        try {
+            NativeLibraryLoader.load("native");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load native library", e);
+        }
     }
 }

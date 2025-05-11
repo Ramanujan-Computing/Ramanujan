@@ -64,8 +64,10 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
                         }
                     }
                     array = new Array();
-                    array.setId((variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "") +
-                            UUID.randomUUID().toString());
+                    String uuid = UUID.randomUUID().toString();
+                    // TODO: have a better way to persist the name of the array. Maybe on database layer, we might need
+                    // an extra table to persist the name of the array and its id.
+                    array.setId((!variableScope.isEmpty() && !variableScope.get(0).isEmpty()? variableScope.get(variableScope.size() - 1) + uuid: uuid + "_name_" + variableName));
                     array.setName(variableName);
                     array.setDataType(dataType);
                     if(!hasNonConstantDimension) {
