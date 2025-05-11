@@ -1,7 +1,7 @@
 package in.ramanujan.middleware.rest.handler;
 
-import in.ramanujan.middleware.base.DagElement;
-import in.ramanujan.middleware.base.pojo.TranslateResponse;
+import in.ramanujan.translation.codeConverter.DagElement;
+import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.pojo.RuleEngineInput;
 import org.junit.jupiter.api.Test;
 

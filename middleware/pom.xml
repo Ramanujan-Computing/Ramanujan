@@ -11,9 +11,9 @@
     <modules>
         <module>base</module>
         <module>rest</module>
-
         <module>service</module>
         <module>data</module>
+        <module>translation</module>
     </modules>
 
 
@@ -128,5 +128,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>

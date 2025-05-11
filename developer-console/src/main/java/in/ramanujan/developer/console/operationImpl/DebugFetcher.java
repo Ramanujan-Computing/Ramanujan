@@ -3,8 +3,8 @@ package in.ramanujan.developer.console.operationImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import in.ramanujan.middleware.base.DagElement;
 import in.ramanujan.rule.engine.NativeDebugger;
+import in.ramanujan.translation.codeConverter.DagElement;
 
 import java.io.File;
 import java.io.FileOutputStream;

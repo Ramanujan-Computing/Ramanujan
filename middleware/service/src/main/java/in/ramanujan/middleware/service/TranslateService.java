@@ -1,15 +1,15 @@
 package in.ramanujan.middleware.service;
 
 import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
-import in.ramanujan.middleware.base.CodeSnippetElement;
-import in.ramanujan.middleware.base.DagElement;
-import in.ramanujan.middleware.base.pojo.ExtractedCodeAndFunctionCode;
-import in.ramanujan.middleware.base.pojo.TranslateResponse;
-import in.ramanujan.middleware.base.pojo.grammar.debugLevelCodeCreatorImpl.ActualDebugCodeCreator;
-import in.ramanujan.middleware.base.utils.TranslateUtil;
+import in.ramanujan.translation.codeConverter.CodeSnippetElement;
+import in.ramanujan.translation.codeConverter.DagElement;
+import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
+import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
+import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.ActualDebugCodeCreator;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
+import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 import io.vertx.core.Future;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,8 +21,7 @@ import java.util.*;
 @Component
 public class TranslateService {
 
-    @Autowired
-    private TranslateUtil translateUtil;
+    private final TranslateUtil translateUtil = new TranslateUtil();
 
     /*
     * Translate the given code to graph of DagElement.
