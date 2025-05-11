@@ -34,12 +34,14 @@ var y:double;
 ```
 
 ### Arrays:
-Arrays in `ramanujan` are declared using the `var` keyword. The size of the array has to be explicitly given. This is a
-special kind of variable and the data type has to be given as `array`.
+Arrays in `ramanujan` are declared using the `var` keyword. The size of the array be both variable and explicitly given. This is a special kind of variable and the data type has to be given as `array`.
 
 Example:
 ```
 var arr[100]:array;
+var n : double;
+n =10;
+var arr1[n]: array
 ```
 
 ### Functions:
