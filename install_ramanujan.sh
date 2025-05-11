@@ -54,34 +54,4 @@ grep -q 'alias rj=' "$PROFILE" && sed -i.bak '/alias rj=/d' "$PROFILE"
 echo "$ALIAS_LINE" >> "$PROFILE"
 echo "[INFO] Alias 'rj' added to $PROFILE"
 
-# Check for libjsoncpp
-check_jsoncpp() {
-    if command -v pkg-config >/dev/null 2>&1; then
-        pkg-config --exists jsoncpp && return 0
-    fi
-    if [ "$ios" = "Darwin" ]; then
-        brew list jsoncpp >/dev/null 2>&1 && return 0
-    else
-        ldconfig -p | grep -q jsoncpp && return 0
-        dpkg -l | grep -q jsoncpp && return 0
-    fi
-    return 1
-}
-
-if check_jsoncpp; then
-    echo "[INFO] libjsoncpp is already installed."
-else
-    echo "[INFO] libjsoncpp not found. Installing..."
-    if [ "$ios" = "Darwin" ]; then
-        if ! command -v brew >/dev/null 2>&1; then
-            echo "[ERROR] Homebrew not found. Please install Homebrew first: https://brew.sh/"
-            exit 1
-        fi
-        brew install jsoncpp
-    else
-        sudo apt-get update && sudo apt-get install -y libjsoncpp-dev
-    fi
-    echo "[INFO] libjsoncpp installed."
-fi
-
 echo "[SUCCESS] Ramanujan installer completed. Please restart your terminal or run: source $PROFILE"
