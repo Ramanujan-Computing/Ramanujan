@@ -1,30 +1,24 @@
 package in.ramanujan.developer.console.operationImpl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import in.ramanujan.developer.console.Operation;
-import in.ramanujan.developer.console.model.pojo.CodeRunAsyncResponse;
 import in.ramanujan.developer.console.model.pojo.CodeRunRequest;
 import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
-import in.ramanujan.developer.console.pojo.ApiResponse;
-import in.ramanujan.developer.console.pojo.DebugResult;
-import in.ramanujan.middleware.base.CodeSnippetElement;
-import in.ramanujan.middleware.base.DagElement;
-import in.ramanujan.middleware.base.exception.CompilationException;
-import in.ramanujan.middleware.base.pojo.ExtractedCodeAndFunctionCode;
-import in.ramanujan.middleware.base.pojo.TranslateResponse;
-import in.ramanujan.middleware.base.pojo.grammar.debugLevelCodeCreatorImpl.ActualDebugCodeCreator;
-import in.ramanujan.middleware.base.spring.SpringConfig;
-import in.ramanujan.middleware.base.utils.TranslateUtil;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeDebugger;
 import in.ramanujan.rule.engine.NativeProcessor;
+import in.ramanujan.translation.codeConverter.CodeSnippetElement;
+import in.ramanujan.translation.codeConverter.DagElement;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
+import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.ActualDebugCodeCreator;
+import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
+import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
+import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 import okhttp3.*;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -37,14 +31,9 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
 
 public class DebugFetcher implements Operation {
 
-    private final TranslateUtil translateUtil;
+    private final TranslateUtil translateUtil = new TranslateUtil();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    public DebugFetcher() {
-        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext(SpringConfig.class);
-        translateUtil = applicationContext.getBean(TranslateUtil.class);
-    }
 
     class DebugInfoGatherElement {
         String dagElementId;
