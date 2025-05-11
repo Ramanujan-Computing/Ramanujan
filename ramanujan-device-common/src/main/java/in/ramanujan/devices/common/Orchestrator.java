@@ -142,8 +142,7 @@ public class Orchestrator {
     }
 
 
-    public Orchestrator(final Credentials credentials, final LoggerFactory loggerFactory) {
-        this.credentials = credentials;
+    public Orchestrator(final LoggerFactory loggerFactory) {
         this.logger = loggerFactory.getLogger(Orchestrator.class);
     }
 

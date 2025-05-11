@@ -14,6 +14,8 @@ import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.SqlConnection;
 import io.vertx.sqlclient.PreparedQuery;
 import io.vertx.sqlclient.Tuple;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +30,15 @@ import java.util.List;
 
 @Component
 public class QueryExecutor {
+
+    @AllArgsConstructor
+    @Data
+    public static class DBConfig {
+        private String jdbcUrl;
+        private String username;
+        private String password;
+        private String dbName;
+    }
 
     @Autowired
     ConnectionCreator connectionCreator;
@@ -59,16 +70,17 @@ public class QueryExecutor {
         }
     }
 
-    public void init(Context context, DB_TYPE dbType) {
+    public void init(Context context, DB_TYPE dbType, DBConfig dbConfig) {
         if(dbType == DB_TYPE.IN_MEM) {
             this.dbType = DB_TYPE.IN_MEM;
             inMemQueryExecutor.init(context);
         } else {
             this.dbType = DB_TYPE.GCP;
             this.context = context;
-            config.setJdbcUrl("jdbc:mysql://34.30.175.195:3306/ramanujan");
-            config.setUsername("ramanujan_ro");
-            config.setPassword("ramaS@1234");
+            config.setJdbcUrl("jdbc:mysql://" + dbConfig.getJdbcUrl() + "/" + dbConfig.getDbName());
+            config.setUsername(dbConfig.getUsername());
+            config.setPassword(dbConfig.getPassword());
+
             config.setMaximumPoolSize(50);
             dataSource = new HikariDataSource(config);
         }
