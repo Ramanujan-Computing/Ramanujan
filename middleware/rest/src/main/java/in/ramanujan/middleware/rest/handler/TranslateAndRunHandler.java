@@ -30,8 +30,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
     @Autowired
     private RunService runService;
 
-    @Autowired
-    private CompileErrorChecker compileErrorChecker;
+    private final static CompileErrorChecker compileErrorChecker = new CompileErrorChecker();
 
     private static ObjectMapper objectMapper = new ObjectMapper();
 

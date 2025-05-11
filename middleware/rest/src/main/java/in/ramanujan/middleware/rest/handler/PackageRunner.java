@@ -13,8 +13,7 @@ public class PackageRunner extends TranslateAndRunHandler {
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    @Autowired
-    private PackageCompileErrorChecker packageCompileErrorChecker;
+    private final static PackageCompileErrorChecker packageCompileErrorChecker = new PackageCompileErrorChecker();
 
     @Override
     public void handle(RoutingContext routingContext) {
