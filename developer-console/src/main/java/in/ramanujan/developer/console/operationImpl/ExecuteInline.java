@@ -75,6 +75,7 @@ public class ExecuteInline implements Operation {
     @Override
     public void execute(List<String> args) throws IOException {
         try {
+            long startTime = System.currentTimeMillis();
             Map<String, Variable> variableMap = new HashMap<>();
             Map<String, Array> arrayMap = new HashMap<>();
             CodeRunRequest codeRunRequest = createJson(args);
@@ -112,6 +113,9 @@ public class ExecuteInline implements Operation {
             for(DagElement dagElement : dagElementList) {
                 dagElements.add(dagElement);
             }
+            System.out.println("compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
+
+            startTime = System.currentTimeMillis();
             while(true) {
                 Set<DagElement> dagElementsWaiting = new HashSet<>();
                 while (!dagElementQueue.isEmpty()) {
@@ -143,6 +147,8 @@ public class ExecuteInline implements Operation {
                     dagElementQueue.addAll(dagElementsWaiting);
                 }
             }
+
+            System.out.println("execution time: " + (System.currentTimeMillis() - startTime) + "ms");
 
             // Convert variableMap to <String, Object> for the console
             Map<String, Object> variableStoreMap = new HashMap<>();
