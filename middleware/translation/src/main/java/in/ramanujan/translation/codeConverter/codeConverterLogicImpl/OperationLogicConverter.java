@@ -92,34 +92,35 @@ public class OperationLogicConverter implements CodeConverterLogic {
     }
 
     /**
-     * Get precedence of math operations. Have all from OperatorType enum.
+     * Get precedence of math and logical operations. Matches standard Java operator precedence.
+     * Higher number = higher precedence. Default is -1 for invalid operators.
      * */
     private static int getPrecedence(String operation) {
         switch (operation) {
-            case "+":
-            case "-":
-                return 4;
+            case "(":
+                return 7; // Parentheses (special handling, highest)
             case "*":
             case "/":
-                return 5;
-            case "=":
-            case "==":
-            case "!=":
+                return 6; // Multiplicative
+            case "+":
+            case "-":
+                return 5; // Additive
             case ">":
             case "<":
             case ">=":
             case "<=":
-                return 0;
-            case "||":
-                return 1;
+                return 4; // Relational
+            case "==":
+            case "!=":
+                return 3; // Equality
             case "&&":
-                return 2;
-            case "(":
-                return 3;
-
+                return 2; // Logical AND
+            case "||":
+                return 1; // Logical OR
+            case "=":
+                return 0; // Assignment (lowest valid)
             default:
-                return -1;
-
+                return -1; // Not an operator
         }
     }
 
@@ -225,9 +226,27 @@ public class OperationLogicConverter implements CodeConverterLogic {
                     expectUnary = true;
                 } else {
                     StringBuilder stringBuilder = new StringBuilder().append(c);
-                    if (i + 1 < codeLen && code.charAt(i + 1) == '=') {
-                        stringBuilder.append("=");
-                        i++;
+                    if (i + 1 < codeLen) {
+                        boolean nextCharPartOfOp = false;
+                        if(code.charAt(i + 1) == '=') {
+                            stringBuilder.append("=");
+                            nextCharPartOfOp = true;
+                        }
+                        
+                        
+                        if(code.charAt(i + 1) == '&')
+                        {
+                            stringBuilder.append('&');
+                            nextCharPartOfOp = true;
+                        }
+                        if(code.charAt(i + 1) == '|')
+                        {
+                            stringBuilder.append('|');
+                            nextCharPartOfOp = true;
+                        }
+                        if(nextCharPartOfOp) {
+                            i++;
+                        }
                     }
                     String op = stringBuilder.toString();
                     if(OperatorType.getOperatorTypeInfo(op) == null && ConditionType.getConditionType(op) == null) {
