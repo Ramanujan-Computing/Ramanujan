@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.27)
 project(native)
 
@@ -7,11 +6,16 @@ set(CMAKE_CXX_STANDARD 14)
 include_directories(input)
 include_directories(processing)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(JSONCPP REQUIRED jsoncpp)
-
-include_directories(${JSONCPP_INCLUDE_DIRS})
-link_directories(${JSONCPP_LIBRARY_DIRS})
+include(FetchContent)
+set(BUILD_SHARED_LIBS OFF) # Ensure static build
+set(JSONCPP_WITH_PIC ON)   # Enable -fPIC for static lib
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+FetchContent_Declare(
+    jsoncpp
+    GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
+    GIT_TAG 1.9.5
+)
+FetchContent_MakeAvailable(jsoncpp)
 
 include_directories($ENV{JDK_HOME}/include)
 IF(UNIX AND NOT APPLE)
@@ -36,6 +40,7 @@ set(SOURCE_FILES
         input/RuleEngineInputUnit.hpp
         input/Variable.hpp
         input/While.hpp
+        input/RedefineArrayCommand.hpp
         processing/ProcessingResult.hpp
         processing/Processor.cpp
         processing/Processor.hpp
@@ -54,6 +59,8 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/AbstractDataContainer.h
         ruleEngineObject/dataContainer/DataContainerRE.h
         ruleEngineObject/CommandRE.cpp
+        ruleEngineObject/RedefineArrayCommandRE.h
+        ruleEngineObject/RedefineArrayCommandRE.cpp
         input/Command.cpp
         ruleEngineObject/dataContainer/VaraiableRE.cpp
         input/Variable.cpp
@@ -109,6 +116,7 @@ set(SOURCE_FILES
         ruleEngineObject/processingDefinition/FunctionReProcessing.h
         ruleEngineObject/processingDefinition/ConditionReProcessing.h
         ruleEngineObject/processingDefinition/DefaultProcessing.h
+        ruleEngineObject/processingDefinition/RedefineArrayCommandReProcessing.h
         ruleEngineObject/DefaultRuleEngineUnits.h
         ruleEngineObject/dataContainer/DataContainerValue.h
         processing/DebugPoint.h
@@ -117,13 +125,11 @@ set(SOURCE_FILES
 
 # Normal build target
 add_library(native SHARED ${SOURCE_FILES})
-target_include_directories(native PRIVATE ${JSONCPP_INCLUDE_DIRS})
-target_link_libraries(native ${JSONCPP_LIBRARIES})
+target_link_libraries(native PRIVATE jsoncpp_static)
 
 # Debug build target
 add_library(native_debug SHARED ${SOURCE_FILES})
-target_include_directories(native_debug PRIVATE ${JSONCPP_INCLUDE_DIRS})
-target_link_libraries(native_debug ${JSONCPP_LIBRARIES})
+target_link_libraries(native_debug PRIVATE jsoncpp_static)
 set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
 set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
 

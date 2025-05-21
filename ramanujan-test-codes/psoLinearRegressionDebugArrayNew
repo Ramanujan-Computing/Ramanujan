@@ -111,9 +111,11 @@ def getBest(var train:array, var best:integer, var x1:array, var y1:array, var i
     var currentIter:integer;
     currentIter = iteration[thread];
     if(currentIter == 0) {
-  
-      x1[thread][currentIter]=thread;
-      y1[thread][currentIter]=thread;
+      var random:double;
+      exec RAND(random);
+      x1[thread][currentIter]=random;
+      exec RAND(random);
+      y1[thread][currentIter]=random;
     } else {
       var best :integer;
       best=0;

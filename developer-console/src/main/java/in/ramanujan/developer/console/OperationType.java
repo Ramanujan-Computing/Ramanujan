@@ -7,7 +7,8 @@ public enum OperationType {
     build("build", new Builder()),
     execute_all("executePackage", new ExecutePackageImpl()),
     suspend("suspend", new SuspendImpl()),
-    debug("debug", new DebugFetcher());
+    debug("debug", new DebugFetcher()),
+    execute_inline("execute_inline", new ExecuteInline());
 
     String type;
     Operation implementation;
@@ -39,6 +40,7 @@ public enum OperationType {
                 return operationType;
             }
         }
-        return null;
+        // Default to execute_inline
+        return execute_inline;
     }
 }

@@ -3,6 +3,7 @@ package in.ramanujan.pojo;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.*;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ public class RuleEngineInput {
     private List<Array> arrays;
     private List<FunctionCall> functionCalls;
     private List<While> whileBlocks;
+    private List<RedefineArrayCommand> redefineArrayCommands = new ArrayList<>();
 
     public RuleEngineInput() {
         variables = new ArrayList<>();
@@ -33,6 +35,13 @@ public class RuleEngineInput {
         functionCalls = new ArrayList<>();
     }
 
+    public List<RedefineArrayCommand> getRedefineArrayCommands() {
+        return redefineArrayCommands;
+    }
+    public void setRedefineArrayCommands(List<RedefineArrayCommand> redefineArrayCommands) {
+        this.redefineArrayCommands = redefineArrayCommands;
+    }
+
     public void addAllPartsOfGivenRuleEngineInput(RuleEngineInput ruleEngineInput) {
         variables.addAll(ruleEngineInput.getVariables());
         commands.addAll(ruleEngineInput.getCommands());
@@ -43,6 +52,7 @@ public class RuleEngineInput {
         functionCalls.addAll(ruleEngineInput.getFunctionCalls());
         arrays.addAll(ruleEngineInput.getArrays());
         whileBlocks.addAll(ruleEngineInput.getWhileBlocks());
+        redefineArrayCommands.addAll(ruleEngineInput.getRedefineArrayCommands());
     }
 
 }

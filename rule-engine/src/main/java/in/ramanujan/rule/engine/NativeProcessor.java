@@ -8,6 +8,9 @@ import java.util.Map;
 import static java.lang.System.load;
 import static java.lang.System.loadLibrary;
 
+import in.ramanujan.rule.engine.util.NativeLibraryLoader;
+import java.io.IOException;
+
 public class NativeProcessor {
     public native void process(String ruleEngineInputJson, String firstCommandId);
 
@@ -15,6 +18,7 @@ public class NativeProcessor {
     public ArrayList debugPoints;
 
     static {
+<<<<<<< HEAD
         String nativeLibPath = System.getenv("NATIVE_LIB_PATH");
         if (nativeLibPath != null) {
             System.out.println("Setting java.library.path to " + nativeLibPath);
@@ -32,5 +36,12 @@ public class NativeProcessor {
             System.out.println("NATIVE_LIB_PATH not set, skipping loading of native library");
         }
 
+=======
+        try {
+            NativeLibraryLoader.load("native");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load native library", e);
+        }
+>>>>>>> main
     }
 }

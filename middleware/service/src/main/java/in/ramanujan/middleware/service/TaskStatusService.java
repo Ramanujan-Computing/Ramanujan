@@ -1,10 +1,11 @@
 package in.ramanujan.middleware.service;
 
-
 import in.ramanujan.data.db.dao.AsyncTaskDao;
 import in.ramanujan.data.db.dao.VariableValueDao;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
+import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -18,22 +19,23 @@ public class TaskStatusService {
     private VariableValueDao variableValueDao;
 
     public Future<AsyncTask> getAsyncTaskStatus(String asyncTaskId) {
-        Future<AsyncTask> future = Future.future();
+        Promise<AsyncTask> promise = Promise.promise();
         asyncTaskDao.getAsyncTask(asyncTaskId).setHandler(handler -> {
             if(handler.succeeded()) {
                 AsyncTask asyncTask = handler.result();
                 if(asyncTask.getTaskStatus() == AsyncTask.TaskStatus.SUCCESS) {
                     variableValueDao.getAllValuesForAsyncId(asyncTaskId).setHandler(getValueHandler -> {
-                        asyncTask.setResult(getValueHandler.result());
-                        future.complete(asyncTask);
+                        VariableAndArrayResult result = getValueHandler.result();
+                        asyncTask.setResult(result);
+                        promise.complete(asyncTask);
                     });
                 } else {
-                    future.complete(handler.result());
+                    promise.complete(handler.result());
                 }
             } else {
-                future.fail(handler.cause());
+                promise.fail(handler.cause());
             }
         });
-        return future;
+        return promise.future();
     }
 }

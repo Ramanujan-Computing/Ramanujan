@@ -8,6 +8,9 @@
 #include "DebugPoint.h"
 #include <list>
 
+#include <limits>
+#include <random>
+
 FunctionCommandRE::FunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo) {
     this->functionCommandInfo = functionCommand;
     this->functionInfoRE = functionInfo;
@@ -182,5 +185,152 @@ void FunctionCommandRE::process() {
     }
 
 
+}
 
+void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    std::list<double *> methodArgVariableAddrList;
+    std::list<ArrayValue **> methodArgArrayAddrList;
+
+    for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
+        auto arg = map->at(functionCommandInfo->arguments[i]);
+        if (dynamic_cast<ArrayRE *>(arg) != nullptr) {
+            arrCount++;
+            methodArgArrayAddrList.push_back(((ArrayRE *) arg)->getValPtr());
+        } else {
+            varCount++;
+            methodArgVariableAddrList.push_back(((DoublePtr *) arg)->getValPtrPtr());
+        }
+    }
+
+    methodArgVariableAddr = new double *[varCount];
+    methodArgArrayAddr = new ArrayValue **[arrCount];
+
+    for (int i = 0; i < varCount; i++) {
+        methodArgVariableAddr[i] = methodArgVariableAddrList.front();
+        methodArgVariableAddrList.pop_front();
+    }
+
+    for (int i = 0; i < arrCount; i++) {
+        methodArgArrayAddr[i] = methodArgArrayAddrList.front();
+        methodArgArrayAddrList.pop_front();
+    }
+}
+
+void NINF::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = -std::numeric_limits<double>::infinity();
+    }
+
+    if(arrCount == 1)
+    {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = -std::numeric_limits<double>::infinity();
+        }
+    }
+}
+
+void PINF::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::numeric_limits<double>::infinity();
+    }
+
+    if(arrCount == 1)
+    {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = std::numeric_limits<double>::infinity();
+        }
+    }
+}
+
+static std::random_device rd;  // Non-deterministic random seed
+static std::mt19937 gen(rd()); // Mersenne Twister engine
+static std::uniform_real_distribution<> dis(0.0, 1.0);
+
+void RAND::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = dis(gen);
+    }
+
+    if(arrCount == 1)
+    {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = dis(gen);
+        }
+    }
+}
+
+// All variable based built-in methods:
+void ABS::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::abs(*methodArgVariableAddr[0]);
+    }
+}
+
+void SIN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::sin(*methodArgVariableAddr[0]);
+    }
+}
+
+void COS::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::cos(*methodArgVariableAddr[0]);
+    }
+}
+
+void TAN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::tan(*methodArgVariableAddr[0]);
+    }
+}
+
+void ASIN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::asin(*methodArgVariableAddr[0]);
+    }
+}
+
+void ACOS::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::acos(*methodArgVariableAddr[0]);
+    }
+}
+
+void ATAN::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::atan(*methodArgVariableAddr[0]);
+    }
+}
+
+void FLOOR::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::floor(*methodArgVariableAddr[0]);
+    }
+}
+
+void CEIL::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::ceil(*methodArgVariableAddr[0]);
+    }
+}
+
+void EXP::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::exp(*methodArgVariableAddr[0]);
+    }
+}
+
+void SQRT::process() {
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::sqrt(*methodArgVariableAddr[0]);
+    }
+}
+
+void POW::process() {
+    if(varCount == 2) {
+        *methodArgVariableAddr[0] = std::pow(*methodArgVariableAddr[0], *methodArgVariableAddr[1]);
+    }
 }

@@ -34,12 +34,14 @@ var y:double;
 ```
 
 ### Arrays:
-Arrays in `ramanujan` are declared using the `var` keyword. The size of the array has to be explicitly given. This is a
-special kind of variable and the data type has to be given as `array`.
+Arrays in `ramanujan` are declared using the `var` keyword. The size of the array be both variable and explicitly given. This is a special kind of variable and the data type has to be given as `array`.
 
 Example:
 ```
 var arr[100]:array;
+var n : double;
+n =10;
+var arr1[n]: array
 ```
 
 ### Functions:
@@ -462,6 +464,34 @@ Dockerfile is provided to containerize all the necessary services.
 For executing code file:
 ```java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>```
 
+## Installing Ramanujan Console for executing on-current-device (Ubuntu & macOS)
+
+To set up the Ramanujan developer console and required dependencies, run the provided installer script:
+
+```sh
+# Make the installer executable
+chmod +x install_ramanujan.sh
+
+# Run the installer
+./install_ramanujan.sh
+```
+
+- The script will prompt you for a workspace path and set the `RAMANUJAN_WS` environment variable.
+- It will download the latest developer console JAR to your workspace.
+- It will check for and install `libjsoncpp` if needed.
+- It will add an alias `rj` to your shell profile for easy usage.
+
+**After installation, restart your terminal or run:**
+
+```sh
+source ~/.zshrc   # or ~/.bashrc, ~/.bash_profile, depending on your shell
+```
+
+You can now run the developer console with:
+
+```sh
+rj <path-to-code-file>
+```
 
 # Code-Flow:
 ![Dev-Console request flow](./diagrams/OverviewRequestFlowDevConsole.png)

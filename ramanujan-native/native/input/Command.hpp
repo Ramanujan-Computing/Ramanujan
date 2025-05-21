@@ -6,6 +6,7 @@
 #include <vector>
 #include "FunctionCall.hpp"
 #include "ArrayCommand.hpp"
+#include "RedefineArrayCommand.hpp"
 #include "RuleEngineInputUnit.hpp"
 #include "../ruleEngineObject/FunctionCommandRE.h"
 #include <json/json.h>
@@ -25,6 +26,7 @@ class Command : public RuleEngineInputUnit {
         FunctionCall* functionCall = nullptr;
         std::vector<std::string> nextDagTriggerIds;
         ArrayCommand* arrayCommand = nullptr;
+        RedefineArrayCommand* redefineArrayCommand = nullptr;
 
         Command(Json::Value* value) {
             this->id = (*value)["id"].asString();
@@ -44,6 +46,10 @@ class Command : public RuleEngineInputUnit {
             Json::Value arrayCommandJSON = (*value)["arrayCommand"];
             if(!arrayCommandJSON.isNull()) {
                 this->arrayCommand = new ArrayCommand(&arrayCommandJSON);
+            }
+            Json::Value redefineArrayCommandJSON = (*value)["redefineArrayCommand"];
+            if(!redefineArrayCommandJSON.isNull()) {
+                this->redefineArrayCommand = new RedefineArrayCommand(&redefineArrayCommandJSON);
             }
             for (int i = 0; i < (*value)["nextDagTriggerIds"].size(); i++) {
                 this->nextDagTriggerIds.push_back((*value)["nextDagTriggerIds"][i].asString());

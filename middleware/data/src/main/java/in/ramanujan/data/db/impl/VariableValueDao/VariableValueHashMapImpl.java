@@ -1,6 +1,7 @@
 package in.ramanujan.data.db.impl.VariableValueDao;
 
 import in.ramanujan.data.db.dao.VariableValueDao;
+import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
 import io.vertx.core.Future;
 
 import java.util.HashMap;
@@ -42,12 +43,13 @@ public class VariableValueHashMapImpl implements VariableValueDao {
     }
 
     @Override
-    public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, Map<String, Object> indexValueMap) {
+    public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, String arrayName, Map<String, Object> indexValueMap) {
+        // No-op for arrayName in in-memory impl
         return Future.succeededFuture();
     }
 
     @Override
-    public Future<Void> storeArrayValue(String asyncId, String arrayId, String index, Object value) {
+    public Future<Void> storeArrayValue(String asyncId, String arrayId, String arrayName, String index, Object value) {
         Map<String, Map<String, Object>> map = arrayValueMap.get(asyncId);
         if(map == null) {
             map = new HashMap<>();
@@ -88,7 +90,7 @@ public class VariableValueHashMapImpl implements VariableValueDao {
     }
 
     @Override
-    public Future<Object> getAllValuesForAsyncId(String asyncId) {
+    public Future<VariableAndArrayResult> getAllValuesForAsyncId(String asyncId) {
         Map<String, Object> map = new HashMap<>();
         Map<String, Object> variableMap = variableValueMap.get(asyncId);
         if(variableMap != null) {
@@ -110,7 +112,7 @@ public class VariableValueHashMapImpl implements VariableValueDao {
             }
         }
 
-        return Future.succeededFuture(map);
+        return Future.succeededFuture(null);
     }
 
     @Override
