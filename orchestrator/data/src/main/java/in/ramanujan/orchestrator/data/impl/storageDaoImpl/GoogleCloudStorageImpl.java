@@ -15,10 +15,20 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
+
 public class GoogleCloudStorageImpl extends StorageDaoInternal {
     private GoogleCredentials storageWriteCredentials;
-
     private final String projectId = "ramanujan-340512";
+    private final String credentialsPath;
+
+    public GoogleCloudStorageImpl() {
+        // You can change ConfigKey.ORCHESTRATOR_GCS_CREDENTIALS_PATH to your actual config key
+        this.credentialsPath = ConfigurationGetter.getString(ConfigKey.ORCHESTRATOR_GCS_CREDENTIALS_PATH);
+    }
+
+    private GoogleCloudStorageImpl(String credentialsPath) {
+        this.credentialsPath = credentialsPath;
+    }
 
     private GoogleCredentials getStorageWriteCred() throws Exception {
         if(storageWriteCredentials == null) {
@@ -31,7 +41,7 @@ public class GoogleCloudStorageImpl extends StorageDaoInternal {
         if(storageWriteCredentials != null) {
             return;
         }
-        storageWriteCredentials = GoogleCredentials.fromStream(new FileInputStream("/OrchestratorCloudStorageWrite.json"))
+        storageWriteCredentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath))
                 .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
     }
 
