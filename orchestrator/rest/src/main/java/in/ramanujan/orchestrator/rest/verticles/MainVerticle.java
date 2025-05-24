@@ -22,8 +22,8 @@ public class MainVerticle extends AbstractVerticle {
                 HttpVerticle.class.getName(), 100
         ));
         final String projectId = "ramanujan-340512";
-        final MonitoringVerticle monitoringVerticle = new MonitoringVerticle(projectId, "/MetricPusherCred.json"
-        , ConfigurationGetter.getMonitoringType());
+        final String metricPusherCredPath = ConfigurationGetter.getString(in.ramanujan.orchestrator.base.configuration.ConfigKey.METRIC_PUSHER_CRED_PATH);
+        final MonitoringVerticle monitoringVerticle = new MonitoringVerticle(projectId, metricPusherCredPath, ConfigurationGetter.getMonitoringType());
         vertx.deployVerticle(monitoringVerticle, customDeploymentOption.getDeployOptions("MonitoringVerticle", 1));
 //        vertx.deployVerticle(applicationContext.getBean(PingerVerticle.class),customDeploymentOption
 //                .getDeployOptions(PingerVerticle.class.getName(), config().getInteger("pinger.worker.size")));
