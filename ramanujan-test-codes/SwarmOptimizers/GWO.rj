@@ -1,0 +1,561 @@
+def F1(var lb : double, var ub : double, var dim : double)
+{
+    lb = -100.0;
+    ub = 100.0;
+    dim = 30.0;
+}
+
+def F2(var lb : double, var ub : double, var dim : double)
+{
+    lb = -10.0;
+    ub = 10.0;
+    dim = 30.0;
+}
+
+def F3(var lb : double, var ub : double, var dim : double)
+{
+    lb = -100.0;
+    ub = 100.0;
+    dim = 30.0;
+}
+
+def F4(var lb : double, var ub : double, var dim : double)
+{
+    lb = -100.0;
+    ub = 100.0;
+    dim = 30.0;
+}
+
+def F5(var lb : double, var ub : double, var dim : double)
+{
+    lb = -30.0;
+    ub = 30.0;
+    dim = 30.0;
+}
+
+def F6(var lb : double, var ub : double, var dim : double)
+{
+    lb = -100.0;
+    ub = 100.0;
+    dim = 30.0;
+}
+
+def F7(var lb : double, var ub : double, var dim : double)
+{
+    lb = -1.28;
+    ub = 1.28;
+    dim = 30.0;
+}
+
+def F8(var lb : double, var ub : double, var dim : double)
+{
+    lb = -500.0;
+    ub = 500.0;
+    dim = 30.0;
+}
+
+def F9(var lb : double, var ub : double, var dim : double)
+{
+    lb = -5.12;
+    ub = 5.12;
+    dim = 30.0;
+}
+
+def F10(var lb : double, var ub : double, var dim : double)
+{
+    lb = -32.0;
+    ub = 32.0;
+    dim = 30.0;
+}
+
+def Get_Functions_details(var fnId: integer, var lb : integer, var ub : integer, var dim : integer)
+{
+    if(fnId == 1) {
+        exec F1(lb, ub, dim);
+    }
+
+    if(fnId == 2) {
+        exec F2(lb, ub, dim);
+    }
+
+    if(fnId == 3) {
+        exec F3(lb, ub, dim);
+    }
+
+    if(fnId == 4) {
+        exec F4(lb, ub, dim);
+    }
+
+    if(fnId == 5) {
+        exec F5(lb, ub, dim);
+    }
+
+    if(fnId == 6) {
+        exec F6(lb, ub, dim);
+    }
+
+    if(fnId == 7) {
+        exec F7(lb, ub, dim);
+    }
+
+    if(fnId == 8) {
+        exec F8(lb, ub, dim);
+    }
+
+    if(fnId == 9) {
+        exec F9(lb, ub, dim);
+    }
+
+    if(fnId == 10) {
+        exec F10(lb, ub, dim);
+    }
+}
+
+def execF1(var fitness: double, var x : array, var dim: integer)
+{
+    var sumsq : double;
+    sumsq = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        sumsq = sumsq + x[i]*x[i];
+        i = i + 1;
+    }
+    fitness = sumsq;
+}
+
+def execF2(var fitness: double, var x : array, var dim: integer)
+{
+    var sumabs : double;
+    var prodabs : double;
+    sumabs = 0;
+    prodabs = 1;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        var absx : double;
+        absx = x[i];
+        exec ABS(absx);
+        sumabs = sumabs + absx;
+        prodabs = prodabs * absx;
+        i = i + 1;
+    }
+    fitness = sumabs + prodabs;
+}
+
+def execF3(var fitness: double, var x : array, var dim: integer)
+{
+    var o : double;
+    o = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        var sumx : double;
+        sumx = 0;
+        var j : integer;
+        j = 0;
+        while (j <= i) {
+            sumx = sumx + x[j];
+            j = j + 1;
+        }
+        o = o + sumx*sumx;
+        i = i + 1;
+    }
+    fitness = o;
+}
+
+def execF4(var fitness: double, var x : array, var dim: integer)
+{
+    var maxabs : double;
+    maxabs = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        var absx : double;
+        absx = x[i];
+        exec ABS(absx);
+        if (absx > maxabs) {
+            maxabs = absx;
+        }
+        i = i + 1;
+    }
+    fitness = maxabs;
+}
+
+def execF5(var fitness: double, var x : array, var dim: integer)
+{
+    var sumval : double;
+    sumval = 0;
+    var i : integer;
+    i = 1;
+    while (i < dim) {
+        var prevIdx : integer;
+        prevIdx = i - 1;
+        var t1 : double;
+        t1 = x[i] - x[prevIdx]*x[prevIdx];
+        var t2 : double;
+        t2 = x[prevIdx] - 1;
+        sumval = sumval + 100*t1*t1 + t2*t2;
+        i = i + 1;
+    }
+    fitness = sumval;
+}
+
+def execF6(var fitness: double, var x : array, var dim: integer)
+{
+    var sumval : double;
+    sumval = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        var t : double;
+        t = x[i] + 0.5;
+        exec ABS(t);
+        sumval = sumval + t*t;
+        i = i + 1;
+    }
+    fitness = sumval;
+}
+
+def execF7(var fitness: double, var x : array, var dim: integer)
+{
+    var sumval : double;
+    sumval = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        sumval = sumval + (i+1)*x[i]*x[i]*x[i]*x[i];
+        i = i + 1;
+    }
+    var randval : double;
+    exec RAND(randval);
+    fitness = sumval + randval;
+}
+
+def execF8(var fitness: double, var x : array, var dim: integer)
+{
+    var sumval : double;
+    sumval = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        var absx : double;
+        absx = x[i];
+        exec ABS(absx);
+        var sqrtabsx : double;
+        sqrtabsx = absx;
+        exec SQRT(sqrtabsx);
+        var sinval : double;
+        sinval = sqrtabsx;
+        exec SIN(sinval);
+        sumval = sumval - x[i]*sinval;
+        i = i + 1;
+    }
+    fitness = sumval;
+}
+
+def execF9(var fitness: double, var x : array, var dim: integer)
+{
+    var sumval : double;
+    sumval = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        var cosval : double;
+        cosval = 2*3.141592653589793*x[i];
+        exec COS(cosval);
+        sumval = sumval + x[i]*x[i] - 10*cosval;
+        i = i + 1;
+    }
+    fitness = sumval + 10*dim;
+}
+
+def execF10(var fitness: double, var x : array, var dim: integer)
+{
+    var sumsq : double;
+    sumsq = 0;
+    var sumcos : double;
+    sumcos = 0;
+    var i : integer;
+    i = 0;
+    while (i < dim) {
+        sumsq = sumsq + x[i]*x[i];
+        var cosval : double;
+        cosval = 2*3.141592653589793*x[i];
+        exec COS(cosval);
+        sumcos = sumcos + cosval;
+        i = i + 1;
+    }
+    var exp1 : double;
+    exp1 = sumsq/dim;
+    exec SQRT(exp1);
+    exp1 = -0.2*exp1;
+    exec EXP(exp1);
+    var exp2 : double;
+    exp2 = sumcos/dim;
+    exec EXP(exp2);
+    fitness = -20*exp1 - exp2 + 20 + 2.718281828459045;
+}
+
+def execExactFunc(var fncId : integer, var x : array, var fitness: double, var dim: integer)
+{
+    if(fncId == 1) {
+        exec execF1(fitness, x, dim);
+    }
+
+    if(fncId == 2) {
+        exec execF2(fitness, x, dim);
+    }
+
+    if(fncId == 3) {
+        exec execF3(fitness, x, dim);
+    }
+
+    if(fncId == 4) {
+        exec execF4(fitness, x, dim);
+    }
+
+    if(fncId == 5) {
+        exec execF5(fitness, x, dim);
+    }
+
+    if(fncId == 6) {
+        exec execF6(fitness, x, dim);
+    }
+
+    if(fncId == 7) {
+        exec execF7(fitness, x, dim);
+    }
+
+    if(fncId == 8) {
+        exec execF8(fitness, x, dim);
+    }
+
+    if(fncId == 9) {
+        exec execF9(fitness, x, dim);
+    }
+
+    if(fncId == 10) {
+        exec execF10(fitness, x, dim);
+    }
+}
+
+def execForAnOptimizationFunc(var fnId: integer, var finalConvergenceCurve: array, var bestPos: array)
+{
+    var indexedToZero : integer;
+    indexedToZero = fnId - 1;
+    var searchAgents: integer;
+    searchAgents = 30;
+
+    var maxIterations: integer;
+    maxIterations = 500;
+
+    var lb: double;
+    var ub: double;
+    var dim: double;
+
+    exec Get_Functions_details(fnId, lb, ub, dim);
+    var Alpha_pos[dim] : array;
+    var Beta_pos[dim] : array;
+    var Delta_pos[dim] : array;
+    var Alpha_score : double;
+    var Beta_score : double;
+    var Delta_score : double;
+
+    var idx : integer;
+    idx = 0;
+    while (idx < dim) {
+        Alpha_pos[idx] = 0;
+        Beta_pos[idx] = 0;
+        Delta_pos[idx] = 0;
+        idx = idx + 1;
+    }
+    exec PINF(Alpha_score);
+    exec PINF(Beta_score);
+    exec PINF(Delta_score);
+
+    var Leader_pos[dim] : array;
+    var Positions[searchAgents][dim] : array;
+
+    var Leader_score: double;
+    exec PINF(Leader_score);
+
+    exec RAND(Positions);
+    var iterSearchAgents, iterDim: integer;
+    iterSearchAgents = 0;
+    while (iterSearchAgents < searchAgents)
+    {
+        iterDim = 0;
+        while (iterDim < dim)
+        {
+            Positions[iterSearchAgents][iterDim] = Positions[iterSearchAgents][iterDim] * (ub - lb) + lb;
+            iterDim = iterDim + 1;
+        }
+        iterSearchAgents = iterSearchAgents + 1;
+    }
+
+    var Convergence_curve[maxIterations] : array;
+    var iter : integer;
+    iter = 0;
+    while (iter < maxIterations) {
+        Convergence_curve[iter] = 0;
+        iter = iter + 1;
+    }
+
+    var IterationPosition[dim]: array;
+    iter = 0;
+    while (iter < maxIterations) {
+        var iterPosition : integer;
+        iterPosition = 0;
+        while (iterPosition < searchAgents) {
+            var iterDim : integer;
+            iterDim = 0;
+            while (iterDim < dim) {
+                if(Positions[iterPosition][iterDim] > ub) {
+                    Positions[iterPosition][iterDim] = ub;
+                }
+                if(Positions[iterPosition][iterDim] < lb) {
+                    Positions[iterPosition][iterDim] = lb;
+                }
+                IterationPosition[iterDim] = Positions[iterPosition][iterDim];
+
+                iterDim = iterDim + 1;
+            }
+
+            var fitness : double;
+
+            exec execExactFunc(fnId, IterationPosition, fitness, dim);
+            if(fitness < Alpha_score) {
+                
+                var iterDim : integer;
+                Alpha_score = fitness;
+                iterDim = 0;
+                while (iterDim < dim) {
+                    Alpha_pos[iterDim] = Positions[iterPosition][iterDim];
+                    bestPos[indexedToZero][iterDim] = Positions[iterPosition][iterDim];
+                    iterDim = iterDim + 1;
+                }
+            } else {}
+            if(fitness > Alpha_score && fitness < Beta_score) {
+                
+                var iterDim : integer;
+                Beta_score = fitness;
+                
+                while (iterDim < dim) {
+                    Beta_pos[iterDim] = Positions[iterPosition][iterDim];
+                    iterDim = iterDim + 1;
+                }
+            }  else {}
+            if(fitness > Alpha_score && fitness > Beta_score && fitness < Delta_score) {
+                Delta_score = fitness;
+                var iterDim : integer;
+                iterDim = 0;
+                while (iterDim < dim) {
+                    Delta_pos[iterDim] = Positions[iterPosition][iterDim];
+                    iterDim = iterDim + 1;
+                }
+            } else {}
+
+            iterPosition = iterPosition + 1;
+        }
+
+        var a : double;
+        a = 2 - iter * ((2) / maxIterations);
+        var a2 : double;
+        a2 = -1 + iter * ((-1) / maxIterations);
+
+        
+        iterPosition = 0;
+        while (iterPosition < searchAgents) {
+            var j : integer;
+            j = 0;
+            while (j < dim) {
+                
+                var r1 : double;
+                exec RAND(r1);
+                var r2 : double;
+                exec RAND(r2);
+                var A1 : double;
+                A1 = 2 * a * r1 - a;
+                var C1 : double;
+                C1 = 2 * r2;
+                var D_alpha : double;
+                D_alpha = C1 * Alpha_pos[j] - Positions[iterPosition][j];
+                exec ABS(D_alpha);
+                var X1 : double;
+                X1 = Alpha_pos[j] - A1 * D_alpha;
+
+                
+                exec RAND(r1);
+                exec RAND(r2);
+                var A2 : double;
+                A2 = 2 * a * r1 - a;
+                var C2 : double;
+                C2 = 2 * r2;
+                var D_beta : double;
+                D_beta = C2 * Beta_pos[j] - Positions[iterPosition][j];
+                exec ABS(D_beta);
+                var X2 : double;
+                X2 = Beta_pos[j] - A2 * D_beta;
+
+                
+                exec RAND(r1);
+                exec RAND(r2);
+                var A3 : double;
+                A3 = 2 * a * r1 - a;
+                var C3 : double;
+                C3 = 2 * r2;
+                var D_delta : double;
+                D_delta = C3 * Delta_pos[j] - Positions[iterPosition][j];
+                exec ABS(D_delta);
+                var X3 : double;
+                X3 = Delta_pos[j] - A3 * D_delta;
+
+                
+                Positions[iterPosition][j] = (X1 + X2 + X3) / 3;
+
+                j = j + 1;
+            }
+            iterPosition = iterPosition + 1;
+        }
+        iter = iter + 1;
+        Convergence_curve[iter] = Alpha_score;
+    }
+    var fnA : double;
+    fnA = fnId - 1;
+    var maxIterA : double;
+    maxIterA = maxIterations - 1;
+    finalConvergenceCurve[fnA] = Convergence_curve[maxIterA];
+}
+
+var n : double;
+n = 10;
+var finalConvergenceCurve[10] : array;
+
+var bestPos[10][30] : array;
+
+
+exec execForAnOptimizationFunc(1, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(2, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(3, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(4, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(5, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(6, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(7, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(8, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(9, finalConvergenceCurve, bestPos);
+exec execForAnOptimizationFunc(10, finalConvergenceCurve, bestPos);
+
+
+var best0, best1, best2, best3, best4, best5, best6, best7, best8, best9 : double;
+
+    best0 = finalConvergenceCurve[0];
+    best1 = finalConvergenceCurve[1];
+    best2 = finalConvergenceCurve[2];
+    best3 = finalConvergenceCurve[3];
+    best4 = finalConvergenceCurve[4];
+    best5 = finalConvergenceCurve[5];
+    best6 = finalConvergenceCurve[6];
+    best7 = finalConvergenceCurve[7];
+    best8 = finalConvergenceCurve[8];
+    best9 = finalConvergenceCurve[9];
