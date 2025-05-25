@@ -15,6 +15,12 @@ public class SpawnService {
     @Autowired
     private DeviceMock deviceMock;
 
+    public void init() {
+        for(int i= 0; i < 2* Runtime.getRuntime().availableProcessors(); i++) {
+            deviceMock.mock(Vertx.vertx());
+        }
+    }
+
     public Future<Void> startSpawn(int devicesToMock, Vertx vertx) {
         Future<Void> future = Future.future();
         List<Future> futureList = new ArrayList<>();

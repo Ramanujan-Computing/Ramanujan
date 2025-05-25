@@ -34,8 +34,13 @@ public class HttpVerticle extends AbstractVerticle {
     @Autowired
     private LoadHandler loadHandler;
 
+    @Autowired
+    private in.ramanujan.proyog.service.SpawnService spawnService;
+
     @Override
     public void start(Future<Void> startFuture) throws Exception {
+
+        spawnService.init();
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
             @Override
             public void handle(AsyncResult<HttpServer> httpServerAsyncResult) {
