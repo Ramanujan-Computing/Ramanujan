@@ -4,6 +4,7 @@ import in.ramanujan.data.KafkaManagerApiCaller;
 import in.ramanujan.data.OrchestrationApiCaller;
 import in.ramanujan.data.db.dao.StorageDao;
 import in.ramanujan.data.db.impl.storageDao.StorageDaoGoogleCloudImpl;
+import in.ramanujan.db.layer.constants.Config;
 import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.middleware.rest.handler.*;
 import in.ramanujan.db.layer.utils.ConnectionCreator;
@@ -68,10 +69,14 @@ public class HttpVerticle extends AbstractVerticle {
     @Override
     public void start(Future<Void> startFuture) throws Exception {
         connectionCreator.init(context);
-        queryExecutor.init(context, ConfigurationGetter.getDBType());
+        QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
+                ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
+                ConfigurationGetter.getString(Config.DB_NAME));
+        queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
         kafkaManagerApiCaller.vertx = vertx;
         orchestrationApiCaller.vertx = vertx;
         orchestrationApiCaller.context = context;
+        orchestrationApiCaller.initialize();
         storageDao.setContext(context, ConfigurationGetter.getStorageType());
 
         startWebApp(new Handler<AsyncResult<HttpServer>>() {

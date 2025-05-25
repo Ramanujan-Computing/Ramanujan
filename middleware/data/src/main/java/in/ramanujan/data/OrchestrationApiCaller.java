@@ -60,6 +60,13 @@ public class OrchestrationApiCaller {
     
     public Context context;
 
+    /**
+     * Call this after vertx/context are set to initialize urlStr from config.
+     */
+    public void initialize() {
+        initUrlStrFromConfig();
+    }
+
 
     private WebClient getWebClient() {
         if(webClient == null) {
@@ -74,7 +81,8 @@ public class OrchestrationApiCaller {
         return webClient;
     }
     
-    public String urlStr ="";
+    public String urlStr = "";
+
 
     public void setWebClient(String ip, int port) {
         webClient = WebClient.create(
@@ -85,6 +93,16 @@ public class OrchestrationApiCaller {
                         .setMaxPoolSize(100)
         );
         urlStr = "http://" + ip + ":" + port;
+    }
+
+    /**
+     * Initializes urlStr using configuration values for host and port.
+     * This should be called after vertx is set.
+     */
+    public void initUrlStrFromConfig() {
+        String host = ConfigurationGetter.getString(ConfigKey.ORCHESTRATOR_HOST_KEY);
+        int port = ConfigurationGetter.getInt(ConfigKey.ORCHESTRATOR_PORT_KEY);
+        urlStr = "http://" + host + ":" + port;
     }
 
 

@@ -13,16 +13,28 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 
 //@Component
+
 public class StorageDaoGoogleCloudImpl extends StorageDaoInternal {
 
     private final String projectId = "ramanujan-340512";
     private GoogleCredentials storageWriteCredentials;
     private Context context;
+    private final String credentialsPath;
 
+    public StorageDaoGoogleCloudImpl() {
+        // You can change ConfigKey.MIDDLEWARE_GCS_CREDENTIALS_PATH to your actual config key
+        this.credentialsPath = in.ramanujan.middleware.base.configuration.ConfigurationGetter.getString(
+            in.ramanujan.middleware.base.configuration.ConfigKey.MIDDLEWARE_GCS_CREDENTIALS_PATH
+        );
+    }
+
+    private StorageDaoGoogleCloudImpl(String credentialsPath) {
+        this.credentialsPath = credentialsPath;
+    }
 
     private GoogleCredentials getStorageWriteCred() throws Exception {
         if(storageWriteCredentials == null) {
-            storageWriteCredentials = GoogleCredentials.fromStream(new FileInputStream("/MiddlewareCloudStorageWrite.json"))
+            storageWriteCredentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath))
                     .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
         }
         return storageWriteCredentials;

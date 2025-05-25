@@ -10,4 +10,9 @@ public class ConfigKey {
     public static final String DB_TYPE_CONFIG_KEY = "db.type";
     public static final String STORAGE_TYPE = "storage.type";
     public static final String MONITORING_TYPE = "monitoring.type";
+
+    // Path to the GCS credentials file for middleware
+    public static final String MIDDLEWARE_GCS_CREDENTIALS_PATH = "middleware.gcs.credentials.path";
+    // Path to the MetricPusher credentials file for middleware
+    public static final String METRIC_PUSHER_CRED_PATH = "middleware.metric.pusher.cred.path";
 }

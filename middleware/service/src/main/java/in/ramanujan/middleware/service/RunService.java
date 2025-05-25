@@ -64,7 +64,7 @@ public class RunService {
                 future.complete(asyncId);
             }
             initDbEntries(asyncId, translateResponse).setHandler(new MonitoringHandler<>("initDbEntries", dbOperationHandler -> {
-                if(toBeDebugged) {
+                if (toBeDebugged) {
                     future.complete(asyncId);
                     return;
                 }

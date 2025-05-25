@@ -31,12 +31,12 @@ void ConditionRE::setCachedConditionFunctioning() {
             operandCommandRE1, operandCommandRE2);
     this->conditionFunctioning = cachedConditionFunctioning;
 
-    for(auto whileUser : whileUser) {
-        whileUser->conditionFunctioning = cachedConditionFunctioning;
+    for(auto whileUserIter : whileUser) {
+        whileUserIter->conditionFunctioning = cachedConditionFunctioning;
     }
 
-    for(auto ifUser : ifUser) {
-        ifUser->conditionFunctioning = cachedConditionFunctioning;
+    for(auto ifUserIter : ifUser) {
+        ifUserIter->conditionFunctioning = cachedConditionFunctioning;
     }
 
     isCached = true;

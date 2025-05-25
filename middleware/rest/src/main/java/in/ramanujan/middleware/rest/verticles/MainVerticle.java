@@ -23,7 +23,8 @@ public class MainVerticle extends AbstractVerticle {
         logger.info("deploying application verticles");
         vertx.deployVerticle(applicationContext.getBean(HttpVerticle.class), option.getDeployOptions("HttpVerticle", 250));
         final String projectId = "ramanujan-340512";
-        final MonitoringVerticle monitoringVerticle = new MonitoringVerticle(projectId, "/MetricPusherCred.json", ConfigurationGetter.getMonitoringType());
+        final String metricPusherCredPath = ConfigurationGetter.getString(in.ramanujan.middleware.base.configuration.ConfigKey.METRIC_PUSHER_CRED_PATH);
+        final MonitoringVerticle monitoringVerticle = new MonitoringVerticle(projectId, metricPusherCredPath, ConfigurationGetter.getMonitoringType());
         vertx.deployVerticle(monitoringVerticle, option.getDeployOptions("MonitoringVerticle", 1));
 //        applicationContext.getBean(ConnectionCreator.class).init(vertx);
     }
