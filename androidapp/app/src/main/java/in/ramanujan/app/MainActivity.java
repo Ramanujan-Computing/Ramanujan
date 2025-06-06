@@ -14,15 +14,29 @@ import in.ramanujan.rule.engine.NativeProcessor;
 public class MainActivity extends AppCompatActivity {
 
     private static class Logger1 implements  in.ramanujan.devices.common.logging.Logger {
+        private static final java.util.List<String> logs = new java.util.ArrayList<>();
+
         @Override
         public void info(Object o) {
-            System.out.println(o);
+            String msg = "INFO: " + String.valueOf(o);
+            logs.add(msg);
+            System.out.println(msg);
         }
 
         @Override
         public void error(Object o, Throwable throwable) {
-            System.out.println(o);
+            String msg = "ERROR: " + String.valueOf(o) + "\n" + android.util.Log.getStackTraceString(throwable);
+            logs.add(msg);
+            System.out.println(msg);
             throwable.printStackTrace();
+        }
+
+        public static java.util.List<String> getLogs() {
+            return new java.util.ArrayList<>(logs);
+        }
+
+        public static void clearLogs() {
+            logs.clear();
         }
     }
 
@@ -68,12 +82,30 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        // Example of a call to a native method
-        TextView tv = binding.sampleText;
-       // tv.setText(stringFromJNI());
 
-//        NativeProcessor nativeProcessor = new NativeProcessor();
-//        nativeProcessor.process(null, "");
+
+        // Add log button click listener
+        binding.showLogsButton.setOnClickListener(v -> {
+            java.util.List<String> logs = Logger1.getLogs();
+            StringBuilder sb = new StringBuilder();
+            for (String log : logs) {
+                sb.append(log).append("\n");
+            }
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Logs")
+                .setMessage(sb.length() > 0 ? sb.toString() : "No logs yet.")
+                .setPositiveButton("OK", null)
+                .show();
+        });
+
+        binding.clearLogsButton.setOnClickListener(v -> {
+            Logger1.clearLogs();
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Logs Cleared")
+                .setMessage("All logs have been cleared.")
+                .setPositiveButton("OK", null)
+                .show();
+        });
     }
 
     /**
@@ -82,3 +114,4 @@ public class MainActivity extends AppCompatActivity {
      */
 
 }
+
