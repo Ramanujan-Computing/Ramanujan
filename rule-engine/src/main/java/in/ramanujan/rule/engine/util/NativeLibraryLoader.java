@@ -8,6 +8,10 @@ public class NativeLibraryLoader {
     private static final String ENV_TMP_DIR = "RAMANUJAN_WS"; // Change as needed
 
     public static void load(String libBaseName) throws IOException {
+        // Check if its running in android, if so, return
+        if (System.getProperty("java.runtime.name").toLowerCase(Locale.ROOT).contains("android")) {
+            return; // Android environment, skip loading native libraries
+        }
         String os = detectOS();
         String arch = detectArch();
         String ext = getLibExtension(os);
