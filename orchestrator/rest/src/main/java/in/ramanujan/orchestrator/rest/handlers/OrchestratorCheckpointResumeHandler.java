@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.orchestrator.base.enums.Status;
 import in.ramanujan.orchestrator.base.pojo.ApiResponse;
 import in.ramanujan.orchestrator.base.pojo.CheckpointResumePayload;
-import in.ramanujan.orchestrator.service.CheckpointResumeService;
+import in.ramanujan.orchestrator.service.OrchestratorCheckpointResumeService;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
 import io.vertx.core.MultiMap;
@@ -16,12 +16,12 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 @Component
-public class CheckpointResumeHandler implements Handler<RoutingContext> {
+public class OrchestratorCheckpointResumeHandler implements Handler<RoutingContext> {
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
-    private CheckpointResumeService checkpointResumeService;
+    private OrchestratorCheckpointResumeService orchestratorCheckpointResumeService;
 
     @Override
     public void handle(RoutingContext event) {
@@ -31,7 +31,7 @@ public class CheckpointResumeHandler implements Handler<RoutingContext> {
         try {
             checkpointResumePayload = objectMapper.readValue(event.getBodyAsString(), CheckpointResumePayload.class);
         } catch (IOException ignored) {}
-        checkpointResumeService.resumeCheckpoint(asyncId, checkpointResumePayload).setHandler(handler -> {
+        orchestratorCheckpointResumeService.resumeCheckpoint(asyncId, checkpointResumePayload).setHandler(handler -> {
            if(handler.succeeded()) {
                event.response().setStatusCode(HttpResponseStatus.OK.code()).end(
                        JsonObject.mapFrom(new ApiResponse(

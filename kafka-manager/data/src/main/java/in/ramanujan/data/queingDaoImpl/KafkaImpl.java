@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 
-public class KafkaImpl implements QueueingDao {
+public class KafkaImpl extends QueueDaoImpl {
 
     private KafkaProducer<String, String> kafkaProducer;
     private KafkaConsumer<String, String> consumer;

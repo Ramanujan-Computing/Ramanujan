@@ -85,11 +85,11 @@ public class HostDaoStackImpl implements HostsDao {
             removeOldHosts();
             return future;
         }
-        logger.info("stack size: " + hostStack.size());
+        //logger.info("stack size: " + hostStack.size());
         asyncTaskHostMappingDao.getMapping(hostId).setHandler(handler -> {
            if(handler.succeeded()) {
                if(handler.result() == null || Status.FAILURE.getKeyName().equalsIgnoreCase(handler.result().getStatus())) {
-                   logger.info("No asyncTask for machine " + hostId + ", adding in stack");
+                   //logger.info("No asyncTask for machine " + hostId + ", adding in stack");
                    addInStack(hostId, future);
                } else {
                    logger.info("Machine " + hostId + " is assigned " + handler.result().getUuid());

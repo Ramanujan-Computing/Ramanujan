@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.orchestrator.base.pojo.ApiResponse;
 import in.ramanujan.orchestrator.base.enums.Status;
-import in.ramanujan.orchestrator.rest.verticles.HttpVerticle;
+import in.ramanujan.orchestrator.rest.verticles.OrchestratorHttpVerticle;
 import in.ramanujan.orchestrator.service.OrchestrateService;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
@@ -21,7 +21,7 @@ import java.util.List;
 @Component
 public class OrchestrateHandler implements Handler<RoutingContext> {
 
-    private Logger logger = LoggerFactory.getLogger(HttpVerticle.class);
+    private Logger logger = LoggerFactory.getLogger(OrchestratorHttpVerticle.class);
 
     @Autowired
     private OrchestrateService orchestrateService;

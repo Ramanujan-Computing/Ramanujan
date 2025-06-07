@@ -77,6 +77,9 @@ public class HttpVerticle extends AbstractVerticle {
                 ConfigurationGetter.getString(Config.DB_NAME));
         queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
         kafkaManagerApiCaller.vertx = vertx;
+        orchestrationApiCaller.vertx = vertx;
+        orchestrationApiCaller.context = context;
+        orchestrationApiCaller.initialize();
         storageDao.setContext(context, ConfigurationGetter.getStorageType());
 
         startWebApp(new Handler<AsyncResult<HttpServer>>() {

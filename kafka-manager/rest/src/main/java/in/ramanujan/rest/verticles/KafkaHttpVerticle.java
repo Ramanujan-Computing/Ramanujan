@@ -14,9 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class HttpVerticle extends AbstractVerticle {
+public class KafkaHttpVerticle extends AbstractVerticle {
 
-    private Logger logger = LoggerFactory.getLogger(HttpVerticle.class);
+    private Logger logger = LoggerFactory.getLogger(KafkaHttpVerticle.class);
 
     @Autowired
     private KafkaProduceRequestHandler kafkaProduceRequestHandler;

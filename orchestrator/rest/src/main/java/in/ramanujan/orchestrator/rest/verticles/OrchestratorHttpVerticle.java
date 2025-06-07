@@ -6,7 +6,6 @@ import in.ramanujan.orchestrator.data.dao.StorageDao;
 import in.ramanujan.orchestrator.rest.handlers.*;
 import in.ramanujan.db.layer.utils.QueryExecutor;
 import in.ramanujan.orchestrator.data.external.OrchestratorApiCaller;
-import in.ramanujan.orchestrator.data.impl.storageDaoImpl.GoogleCloudStorageImpl;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
@@ -19,15 +18,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class HttpVerticle extends AbstractVerticle {
+public class OrchestratorHttpVerticle extends AbstractVerticle {
 
-    private Logger logger = LoggerFactory.getLogger(HttpVerticle.class);
+    private Logger logger = LoggerFactory.getLogger(OrchestratorHttpVerticle.class);
 
     @Autowired
     private OrchestrateHandler orchestrateHandler;
 
     @Autowired
-    private StatusHandler statusHandler;
+    private OrchestratorStatusHandler orchestratorStatusHandler;
 
     @Autowired
     private OpenPingHandler openPingHandler;
@@ -39,7 +38,7 @@ public class HttpVerticle extends AbstractVerticle {
     private TaskCompleteHandler taskCompleteHandler;
 
     @Autowired
-    private CheckpointHandler checkpointHandler;
+    private OrchestratorCheckpointHandler orchestratorCheckpointHandler;
 
     @Autowired
     private SuspendWorkflowHandler suspendWorkflowHandler;
@@ -51,7 +50,7 @@ public class HttpVerticle extends AbstractVerticle {
     private DebugInfoPushHandler debugInfoPushHandler;
 
     @Autowired
-    private CheckpointResumeHandler checkpointResumeHandler;
+    private OrchestratorCheckpointResumeHandler orchestratorCheckpointResumeHandler;
 
     @Autowired
     private QueryExecutor queryExecutor;
@@ -115,7 +114,7 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void resumeCheckpoint(Router router) {
-        router.post("/checkpoint/resume").handler(checkpointHandler);
+        router.post("/checkpoint/resume").handler(orchestratorCheckpointHandler);
     }
 
     private void debugPushAPI(Router router) {
@@ -139,7 +138,7 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void statusCheck(Router router) {
-        router.get("/status").handler(statusHandler);
+        router.get("/status").handler(orchestratorStatusHandler);
     }
 
     private void orchestrate(Router router) {
@@ -151,7 +150,7 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void pingCheckpoint(Router router) {
-        router.post("/pings/checkpoint").handler(checkpointHandler);
+        router.post("/pings/checkpoint").handler(orchestratorCheckpointHandler);
     }
 
     private void suspendWorkflow(Router router) {

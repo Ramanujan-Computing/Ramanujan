@@ -16,7 +16,7 @@ import java.util.Date;
 
 
 @Component
-public class TaskStatusService {
+public class OrchestratorTaskStatusService {
 
     @Autowired
     private AsyncTaskDao asyncTaskDao;
@@ -33,7 +33,7 @@ public class TaskStatusService {
     @Autowired
     private AsyncTaskHostMappingDao asyncTaskHostMappingDao;
 
-    private Logger logger= LoggerFactory.getLogger(TaskStatusService.class);
+    private Logger logger= LoggerFactory.getLogger(OrchestratorTaskStatusService.class);
 
     public Future<AsyncTask> getAsyncTaskStatus(String asyncTaskId) {
         Future<AsyncTask> future = Future.future();

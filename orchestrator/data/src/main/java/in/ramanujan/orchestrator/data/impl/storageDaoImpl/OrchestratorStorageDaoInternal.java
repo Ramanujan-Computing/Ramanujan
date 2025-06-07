@@ -1,15 +1,14 @@
 package in.ramanujan.orchestrator.data.impl.storageDaoImpl;
 
 import in.ramanujan.db.layer.enums.StorageType;
-import in.ramanujan.orchestrator.base.configuration.ConfigurationGetter;
 import in.ramanujan.orchestrator.data.dao.StorageDao;
 import io.vertx.core.Context;
 import org.springframework.stereotype.Component;
 
 @Component
-public class StorageDaoInternal extends StorageDao {
+public class OrchestratorStorageDaoInternal extends StorageDao {
 
-    private StorageDaoInternal storageDaoInternal;
+    private OrchestratorStorageDaoInternal storageDaoInternal;
 
     @Override
     public void init(Context context, StorageType storageType) {
