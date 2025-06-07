@@ -1,6 +1,7 @@
 package in.ramanujan.data.db.impl.storageDao;
 
 import in.ramanujan.data.db.dao.StorageDao;
+import in.ramanujan.db.layer.enums.StorageType;
 import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import io.vertx.core.Context;
 import org.springframework.stereotype.Component;
@@ -10,9 +11,9 @@ public class StorageDaoInternal extends StorageDao {
     private StorageDaoInternal storageDaoInternal;
 
     @Override
-    public void setContext(Context context, ConfigurationGetter.StorageType storageType) {
+    public void setContext(Context context, StorageType storageType) {
         super.setContext(context, storageType);
-        if(storageType == ConfigurationGetter.StorageType.GCP) {
+        if(storageType == StorageType.GCP) {
             storageDaoInternal = new StorageDaoGoogleCloudImpl();
         } else {
             storageDaoInternal = new StorageDaoLocalContainerImpl();

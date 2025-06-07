@@ -64,6 +64,9 @@ public class HttpVerticle extends AbstractVerticle {
     private StorageDao storageDao;
 
     @Autowired
+    private in.ramanujan.orchestrator.data.dao.StorageDao orchestratorStorageDao;
+
+    @Autowired
     private QueryExecutor queryExecutor;
 
     @Override
@@ -74,9 +77,6 @@ public class HttpVerticle extends AbstractVerticle {
                 ConfigurationGetter.getString(Config.DB_NAME));
         queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
         kafkaManagerApiCaller.vertx = vertx;
-        orchestrationApiCaller.vertx = vertx;
-        orchestrationApiCaller.context = context;
-        orchestrationApiCaller.initialize();
         storageDao.setContext(context, ConfigurationGetter.getStorageType());
 
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
@@ -114,7 +114,14 @@ public class HttpVerticle extends AbstractVerticle {
         router.route().handler(BodyHandler.create());
         runUserCodeHandle(router);
         clientCreatApis(router);
+        runHealthCheck(router);
         return router;
+    }
+
+    private void runHealthCheck(Router router) {
+        router.get("/health").handler(handler -> {
+            handler.response().setStatusCode(200).end("OK");
+        });
     }
 
     private void runUserCodeHandle(Router router) {

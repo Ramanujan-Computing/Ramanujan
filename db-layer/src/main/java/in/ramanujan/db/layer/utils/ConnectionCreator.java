@@ -31,9 +31,14 @@ public class ConnectionCreator {
     PoolOptions poolOptions = new PoolOptions()
             .setMaxSize(50);
 
+    private boolean isInitialized = false;
     public void init(Vertx vertx) {
     // Create the client pool
+        if (isInitialized) {
+            return;
+        }
         mySQLPool = MySQLPool.pool(vertx, connectOptions, poolOptions);
+        isInitialized = true;
     }
 
     public void init(Context context) {
