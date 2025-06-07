@@ -83,7 +83,9 @@ public class HttpVerticle extends AbstractVerticle {
         QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
                 ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
                 ConfigurationGetter.getString(Config.DB_NAME));
+        logger.info("DB Config: " +  dbConfig);
         queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
+        logger.info("QueryExecutor initialized with DB Config");
         kafkaManagerApiCaller.vertx = vertx;
         orchestrationApiCaller.vertx = vertx;
         orchestrationApiCaller.context = context;
@@ -108,7 +110,7 @@ public class HttpVerticle extends AbstractVerticle {
                     logger.error("Exception for request: error: {}", event);
                 }
         ).listen(
-                config().getInteger("event.http.port", 8888), next
+                config().getInteger("event.http.port", 8888), "0.0.0.0", next
         );
     }
 

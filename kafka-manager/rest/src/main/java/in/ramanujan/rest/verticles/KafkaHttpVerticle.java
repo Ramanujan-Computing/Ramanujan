@@ -43,7 +43,7 @@ public class KafkaHttpVerticle extends AbstractVerticle {
                     logger.error("Exception for request: error: {}", event);
                 }
         ).listen(
-                config().getInteger("event.http.port", 8889), next
+                config().getInteger("event.http.port", 8889), "0.0.0.0", next
         );
     }
 
