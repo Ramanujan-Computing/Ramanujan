@@ -61,11 +61,7 @@ public class OrchestratorHttpVerticle extends AbstractVerticle {
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-        QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
-                ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
-                ConfigurationGetter.getString(Config.DB_NAME));
-        queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
-        storageDao.init(context, ConfigurationGetter.getStorageType());
+
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
             @Override
             public void handle(AsyncResult<HttpServer> httpServerAsyncResult) {
@@ -75,16 +71,16 @@ public class OrchestratorHttpVerticle extends AbstractVerticle {
     }
 
     private void startWebApp(Handler<AsyncResult<HttpServer>> next) {
-        Router router = createRouter();
-        HttpServerOptions options = new HttpServerOptions();
-        options.setTcpKeepAlive(true);
-        vertx.createHttpServer(options).requestHandler(router::accept).exceptionHandler(
-                event -> {
-                    logger.error("Exception for request: error: {}", event);
-                }
-        ).listen(
-                config().getInteger("event.http.port", 8890), next
-        );
+//        Router router = createRouter();
+//        HttpServerOptions options = new HttpServerOptions();
+//        options.setTcpKeepAlive(true);
+//        vertx.createHttpServer(options).requestHandler(router::accept).exceptionHandler(
+//                event -> {
+//                    logger.error("Exception for request: error: {}", event);
+//                }
+//        ).listen(
+//                config().getInteger("event.http.port", 8890), next
+//        );
     }
 
     private void completeStartup(AsyncResult<HttpServer> http, Future<Void> fut) {
@@ -96,9 +92,12 @@ public class OrchestratorHttpVerticle extends AbstractVerticle {
         }
     }
 
-    private Router createRouter() {
-        Router router = Router.router(vertx);
-        router.route().handler(BodyHandler.create());
+    public void createRouter(Router router) {
+        QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
+                ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
+                ConfigurationGetter.getString(Config.DB_NAME));
+//        queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
+        //storageDao.init(context, ConfigurationGetter.getStorageType());
         healthCheck(router);
         orchestrate(router);
         openPings(router);
@@ -110,7 +109,6 @@ public class OrchestratorHttpVerticle extends AbstractVerticle {
         suspendWorkflow(router);
         debugPushAPI(router);
         clientCreatApis(router);
-        return router;
     }
 
     private void resumeCheckpoint(Router router) {
@@ -138,7 +136,7 @@ public class OrchestratorHttpVerticle extends AbstractVerticle {
     }
 
     private void statusCheck(Router router) {
-        router.get("/status").handler(orchestratorStatusHandler);
+        router.get("/statusorch").handler(orchestratorStatusHandler);
     }
 
     private void orchestrate(Router router) {

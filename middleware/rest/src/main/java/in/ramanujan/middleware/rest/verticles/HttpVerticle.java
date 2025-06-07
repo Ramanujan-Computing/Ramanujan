@@ -9,6 +9,8 @@ import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.middleware.rest.handler.*;
 import in.ramanujan.db.layer.utils.ConnectionCreator;
 import in.ramanujan.db.layer.utils.QueryExecutor;
+import in.ramanujan.orchestrator.data.impl.storageDaoImpl.OrchestratorStorageDaoInternal;
+import in.ramanujan.orchestrator.rest.verticles.OrchestratorHttpVerticle;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
@@ -29,6 +31,9 @@ public class HttpVerticle extends AbstractVerticle {
 
     @Autowired
     private StatusHandler statusHandler;
+
+    @Autowired
+    private OrchestratorHttpVerticle orchestratorHttpVerticle;
 
     @Autowired
     private PackageRunner packageRunner;
@@ -64,6 +69,9 @@ public class HttpVerticle extends AbstractVerticle {
     private StorageDao storageDao;
 
     @Autowired
+    private OrchestratorStorageDaoInternal orchestratorStorageDaoInternal;
+
+    @Autowired
     private in.ramanujan.orchestrator.data.dao.StorageDao orchestratorStorageDao;
 
     @Autowired
@@ -81,6 +89,7 @@ public class HttpVerticle extends AbstractVerticle {
         orchestrationApiCaller.context = context;
         orchestrationApiCaller.initialize();
         storageDao.setContext(context, ConfigurationGetter.getStorageType());
+        orchestratorStorageDao.init(context, ConfigurationGetter.getStorageType());
 
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
             @Override
@@ -118,6 +127,7 @@ public class HttpVerticle extends AbstractVerticle {
         runUserCodeHandle(router);
         clientCreatApis(router);
         runHealthCheck(router);
+        orchestratorHttpVerticle.createRouter(router);
         return router;
     }
 
@@ -137,6 +147,8 @@ public class HttpVerticle extends AbstractVerticle {
         router.post("/checkpoint/resume").handler(checkpointResumeHandler);
         router.post("/checkpoints").handler(addFirstDebugPointHandler);
         router.get("/dagElementId").handler(getDagElementCodeHandler);
+
+
 
     }
 

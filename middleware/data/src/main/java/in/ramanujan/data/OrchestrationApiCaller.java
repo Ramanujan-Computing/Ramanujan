@@ -43,7 +43,7 @@ public class OrchestrationApiCaller {
     private String orchestrationRunCodeUri = "/orchestrate";
 
 //    @Value("${orchestration.poll.status.uri}")
-    private String orchestrationPollStatusUri = "/status";
+    private String orchestrationPollStatusUri = "/statusorch";
 
 //    @Value("{orchestration.poll.interval}")
     private String pollTime = "50";
