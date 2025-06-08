@@ -7,7 +7,6 @@ import in.ramanujan.monitoringutils.StatsRecorderUtils;
 import in.ramanujan.orchestrator.base.configuration.ConfigConstants;
 import in.ramanujan.orchestrator.base.configuration.ConfigKey;
 import in.ramanujan.orchestrator.base.configuration.ConfigurationGetter;
-import in.ramanujan.orchestrator.data.dao.StorageDao;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
@@ -16,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 
-public class GoogleCloudStorageImpl extends StorageDaoInternal {
+public class GoogleCloudStorageImpl extends OrchestratorStorageDaoInternal {
     private GoogleCredentials storageWriteCredentials;
     private final String projectId = "ramanujan-340512";
     private final String credentialsPath;

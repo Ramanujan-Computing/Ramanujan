@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.Set;
 
 //@Component
-public class PubSubIMpl implements QueueingDao {
+public class PubSubIMpl extends QueueDaoImpl {
 
     private final String projectId = "ramanujan-340512";
     private final String subscriptionId = "next_element_topic-sub";

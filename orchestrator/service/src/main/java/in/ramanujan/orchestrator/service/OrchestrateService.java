@@ -33,7 +33,7 @@ public class OrchestrateService {
     @Autowired
     private StorageDao storageDao;
 
-    public Future<Void> orchestrateService(String firstCommandId, String orchestratorAsyncId, String dagElementId, Vertx vertx, Boolean debug, List<Integer> debugLines) {
+    public Future<Void> orchestrateService(String firstCommandId, String orchestratorAsyncId, Boolean debug, List<Integer> debugLines) {
         Future<Void> future = Future.future();
         AsyncTask asyncTask = new AsyncTask(orchestratorAsyncId, Status.PROCESSING.getKeyName(),
                null, null, null, firstCommandId, null, debug, debugLines);

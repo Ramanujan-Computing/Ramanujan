@@ -1,6 +1,7 @@
 package in.ramanujan.orchestrator.data.dao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.ramanujan.db.layer.enums.StorageType;
 import in.ramanujan.orchestrator.base.configuration.ConfigurationGetter;
 import in.ramanujan.orchestrator.base.pojo.CheckpointResumePayload;
 import in.ramanujan.orchestrator.data.impl.storageDaoImpl.GoogleCloudStorageImpl;
@@ -25,7 +26,7 @@ public abstract class StorageDao {
 
     private Context context;
 
-    public void init(Context context, ConfigurationGetter.StorageType storageType) {
+    public void init(Context context, StorageType storageType) {
         this.context = context;
     }
     protected Context getContext() {

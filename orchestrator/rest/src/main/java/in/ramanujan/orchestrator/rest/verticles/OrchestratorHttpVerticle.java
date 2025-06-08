@@ -6,7 +6,6 @@ import in.ramanujan.orchestrator.data.dao.StorageDao;
 import in.ramanujan.orchestrator.rest.handlers.*;
 import in.ramanujan.db.layer.utils.QueryExecutor;
 import in.ramanujan.orchestrator.data.external.OrchestratorApiCaller;
-import in.ramanujan.orchestrator.data.impl.storageDaoImpl.GoogleCloudStorageImpl;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
@@ -19,15 +18,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class HttpVerticle extends AbstractVerticle {
+public class OrchestratorHttpVerticle extends AbstractVerticle {
 
-    private Logger logger = LoggerFactory.getLogger(HttpVerticle.class);
+    private Logger logger = LoggerFactory.getLogger(OrchestratorHttpVerticle.class);
 
     @Autowired
     private OrchestrateHandler orchestrateHandler;
 
     @Autowired
-    private StatusHandler statusHandler;
+    private OrchestratorStatusHandler orchestratorStatusHandler;
 
     @Autowired
     private OpenPingHandler openPingHandler;
@@ -39,7 +38,7 @@ public class HttpVerticle extends AbstractVerticle {
     private TaskCompleteHandler taskCompleteHandler;
 
     @Autowired
-    private CheckpointHandler checkpointHandler;
+    private OrchestratorCheckpointHandler orchestratorCheckpointHandler;
 
     @Autowired
     private SuspendWorkflowHandler suspendWorkflowHandler;
@@ -51,7 +50,7 @@ public class HttpVerticle extends AbstractVerticle {
     private DebugInfoPushHandler debugInfoPushHandler;
 
     @Autowired
-    private CheckpointResumeHandler checkpointResumeHandler;
+    private OrchestratorCheckpointResumeHandler orchestratorCheckpointResumeHandler;
 
     @Autowired
     private QueryExecutor queryExecutor;
@@ -62,11 +61,7 @@ public class HttpVerticle extends AbstractVerticle {
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-        QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
-                ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
-                ConfigurationGetter.getString(Config.DB_NAME));
-        queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
-        storageDao.init(context, ConfigurationGetter.getStorageType());
+
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
             @Override
             public void handle(AsyncResult<HttpServer> httpServerAsyncResult) {
@@ -76,16 +71,16 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void startWebApp(Handler<AsyncResult<HttpServer>> next) {
-        Router router = createRouter();
-        HttpServerOptions options = new HttpServerOptions();
-        options.setTcpKeepAlive(true);
-        vertx.createHttpServer(options).requestHandler(router::accept).exceptionHandler(
-                event -> {
-                    logger.error("Exception for request: error: {}", event);
-                }
-        ).listen(
-                config().getInteger("event.http.port", 8890), next
-        );
+//        Router router = createRouter();
+//        HttpServerOptions options = new HttpServerOptions();
+//        options.setTcpKeepAlive(true);
+//        vertx.createHttpServer(options).requestHandler(router::accept).exceptionHandler(
+//                event -> {
+//                    logger.error("Exception for request: error: {}", event);
+//                }
+//        ).listen(
+//                config().getInteger("event.http.port", 8890), next
+//        );
     }
 
     private void completeStartup(AsyncResult<HttpServer> http, Future<Void> fut) {
@@ -97,9 +92,12 @@ public class HttpVerticle extends AbstractVerticle {
         }
     }
 
-    private Router createRouter() {
-        Router router = Router.router(vertx);
-        router.route().handler(BodyHandler.create());
+    public void createRouter(Router router) {
+        QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
+                ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
+                ConfigurationGetter.getString(Config.DB_NAME));
+//        queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
+        //storageDao.init(context, ConfigurationGetter.getStorageType());
         healthCheck(router);
         orchestrate(router);
         openPings(router);
@@ -111,11 +109,10 @@ public class HttpVerticle extends AbstractVerticle {
         suspendWorkflow(router);
         debugPushAPI(router);
         clientCreatApis(router);
-        return router;
     }
 
     private void resumeCheckpoint(Router router) {
-        router.post("/checkpoint/resume").handler(checkpointHandler);
+        router.post("/checkpoint/resume").handler(orchestratorCheckpointHandler);
     }
 
     private void debugPushAPI(Router router) {
@@ -139,7 +136,7 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void statusCheck(Router router) {
-        router.get("/status").handler(statusHandler);
+        router.get("/statusorch").handler(orchestratorStatusHandler);
     }
 
     private void orchestrate(Router router) {
@@ -151,7 +148,7 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void pingCheckpoint(Router router) {
-        router.post("/pings/checkpoint").handler(checkpointHandler);
+        router.post("/pings/checkpoint").handler(orchestratorCheckpointHandler);
     }
 
     private void suspendWorkflow(Router router) {

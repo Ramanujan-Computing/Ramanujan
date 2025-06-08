@@ -1,14 +1,11 @@
 package in.ramanujan.orchestrator.data.impl.storageDaoImpl;
 
-import in.ramanujan.orchestrator.data.dao.StorageDao;
-import org.springframework.stereotype.Component;
-
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 
-public class LocalStorageImpl extends StorageDaoInternal {
+public class LocalStorageImpl extends OrchestratorStorageDaoInternal {
 
     /**
      * Get from file /bucketName/objectId

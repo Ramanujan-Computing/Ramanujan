@@ -1,6 +1,7 @@
 package in.ramanujan.data.db.dao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import in.ramanujan.db.layer.enums.StorageType;
 import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.pojo.RuleEngineInput;
@@ -25,7 +26,7 @@ public abstract class  StorageDao {
         return context;
     }
 
-    public void setContext(Context context, ConfigurationGetter.StorageType storageType) {
+    public void setContext(Context context, StorageType storageType) {
         this.context = context;
     }
 

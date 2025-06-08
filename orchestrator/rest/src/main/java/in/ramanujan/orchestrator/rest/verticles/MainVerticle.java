@@ -18,8 +18,8 @@ public class MainVerticle extends AbstractVerticle {
         ApplicationContext applicationContext = new AnnotationConfigApplicationContext(SpringConfig.class);
         logger.info("deploying application verticles");
         ConfigurationGetter.init(config());
-        vertx.deployVerticle(applicationContext.getBean(HttpVerticle.class), customDeploymentOption.getDeployOptions(
-                HttpVerticle.class.getName(), 100
+        vertx.deployVerticle(applicationContext.getBean(OrchestratorHttpVerticle.class), customDeploymentOption.getDeployOptions(
+                OrchestratorHttpVerticle.class.getName(), 100
         ));
         final String projectId = "ramanujan-340512";
         final String metricPusherCredPath = ConfigurationGetter.getString(in.ramanujan.orchestrator.base.configuration.ConfigKey.METRIC_PUSHER_CRED_PATH);

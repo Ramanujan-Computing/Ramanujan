@@ -9,6 +9,8 @@ import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.middleware.rest.handler.*;
 import in.ramanujan.db.layer.utils.ConnectionCreator;
 import in.ramanujan.db.layer.utils.QueryExecutor;
+import in.ramanujan.orchestrator.data.impl.storageDaoImpl.OrchestratorStorageDaoInternal;
+import in.ramanujan.orchestrator.rest.verticles.OrchestratorHttpVerticle;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
@@ -29,6 +31,9 @@ public class HttpVerticle extends AbstractVerticle {
 
     @Autowired
     private StatusHandler statusHandler;
+
+    @Autowired
+    private OrchestratorHttpVerticle orchestratorHttpVerticle;
 
     @Autowired
     private PackageRunner packageRunner;
@@ -64,6 +69,12 @@ public class HttpVerticle extends AbstractVerticle {
     private StorageDao storageDao;
 
     @Autowired
+    private OrchestratorStorageDaoInternal orchestratorStorageDaoInternal;
+
+    @Autowired
+    private in.ramanujan.orchestrator.data.dao.StorageDao orchestratorStorageDao;
+
+    @Autowired
     private QueryExecutor queryExecutor;
 
     @Override
@@ -72,12 +83,15 @@ public class HttpVerticle extends AbstractVerticle {
         QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
                 ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
                 ConfigurationGetter.getString(Config.DB_NAME));
+        logger.info("DB Config: " +  dbConfig);
         queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
+        logger.info("QueryExecutor initialized with DB Config");
         kafkaManagerApiCaller.vertx = vertx;
         orchestrationApiCaller.vertx = vertx;
         orchestrationApiCaller.context = context;
         orchestrationApiCaller.initialize();
         storageDao.setContext(context, ConfigurationGetter.getStorageType());
+        orchestratorStorageDao.init(context, ConfigurationGetter.getStorageType());
 
         startWebApp(new Handler<AsyncResult<HttpServer>>() {
             @Override
@@ -96,7 +110,7 @@ public class HttpVerticle extends AbstractVerticle {
                     logger.error("Exception for request: error: {}", event);
                 }
         ).listen(
-                config().getInteger("event.http.port", 8888), next
+                config().getInteger("event.http.port", 8888), "0.0.0.0", next
         );
     }
 
@@ -114,7 +128,15 @@ public class HttpVerticle extends AbstractVerticle {
         router.route().handler(BodyHandler.create());
         runUserCodeHandle(router);
         clientCreatApis(router);
+        runHealthCheck(router);
+        orchestratorHttpVerticle.createRouter(router);
         return router;
+    }
+
+    private void runHealthCheck(Router router) {
+        router.get("/health").handler(handler -> {
+            handler.response().setStatusCode(200).end("OK");
+        });
     }
 
     private void runUserCodeHandle(Router router) {
@@ -127,6 +149,8 @@ public class HttpVerticle extends AbstractVerticle {
         router.post("/checkpoint/resume").handler(checkpointResumeHandler);
         router.post("/checkpoints").handler(addFirstDebugPointHandler);
         router.get("/dagElementId").handler(getDagElementCodeHandler);
+
+
 
     }
 

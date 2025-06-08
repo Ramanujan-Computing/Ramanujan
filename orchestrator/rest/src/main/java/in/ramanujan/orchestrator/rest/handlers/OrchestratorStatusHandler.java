@@ -2,7 +2,7 @@ package in.ramanujan.orchestrator.rest.handlers;
 
 import in.ramanujan.orchestrator.base.pojo.ApiResponse;
 import in.ramanujan.orchestrator.base.pojo.AsyncTask;
-import in.ramanujan.orchestrator.service.TaskStatusService;
+import in.ramanujan.orchestrator.service.OrchestratorTaskStatusService;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
@@ -11,10 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class StatusHandler implements Handler<RoutingContext> {
+public class OrchestratorStatusHandler implements Handler<RoutingContext> {
 
     @Autowired
-    private TaskStatusService taskStatusService;
+    private OrchestratorTaskStatusService taskStatusService;
 
     @Override
     public void handle(RoutingContext event) {
