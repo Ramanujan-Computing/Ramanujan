@@ -47,8 +47,8 @@ public class ProcessNextDagElementService {
 
     private Logger logger = LoggerFactory.getLogger(ProcessNextDagElementService.class);
 
-    public Future<DeviceExecStatus> processNextElement(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
-        Future<DeviceExecStatus> future = Future.future();
+    public Future<Void> processNextElement(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
+        Future<Void> future = Future.future();
         logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
         orchestratorAsyncTaskDao.getMapping(asyncId).setHandler(handler -> {
             if (handler.result() == null) {

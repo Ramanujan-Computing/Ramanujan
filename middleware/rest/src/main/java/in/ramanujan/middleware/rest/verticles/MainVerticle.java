@@ -1,7 +1,9 @@
 package in.ramanujan.middleware.rest.verticles;
 
 
+import in.ramanujan.data.MiddlewareClient;
 import in.ramanujan.data.queingDaoImpl.QueueDaoImpl;
+import in.ramanujan.middleware.service.ProcessNextDagElementService;
 import in.ramanujan.monitoringutils.verticles.MonitoringVerticle;
 import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import in.ramanujan.middleware.base.spring.SpringConfig;
@@ -11,6 +13,7 @@ import in.ramanujan.rest.verticles.KafkaHttpVerticle;
 import in.ramanujan.rest.verticles.kafka.ConsumerVerticle;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import org.springframework.context.ApplicationContext;
@@ -40,6 +43,10 @@ public class MainVerticle extends AbstractVerticle {
         queueDaoImpl.init(QueueDaoImpl.QueueType.fromString(ConfigurationGetter.getString(QUEUE_TYPE)));
 
         //vertx.deployVerticle(applicationContext.getBean(KafkaHttpVerticle.class), option.getDeployOptions("kafkHttpVerticle", 250));
+        MiddlewareClient middlewareClient = applicationContext.getBean(MiddlewareClient.class);
+        ProcessNextDagElementService processNextDagElementService = applicationContext.getBean(ProcessNextDagElementService.class);
+        middlewareClient.setConsumptionCallback((asyncId, dagElementId, toBeDebugged, vertx) ->
+                processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged));
         vertx.deployVerticle(applicationContext.getBean(ConsumerVerticle.class), option.getDeployOptions("ConsumerVerticle", 250));
 
 //        applicationContext.getBean(ConnectionCreator.class).init(vertx);

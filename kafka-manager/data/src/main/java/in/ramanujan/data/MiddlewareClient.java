@@ -3,7 +3,6 @@ package in.ramanujan.data;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.base.configuration.ConfigKey;
 import in.ramanujan.base.configuration.ConfigurationGetter;
-import in.ramanujan.middleware.service.ProcessNextDagElementService;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -23,8 +22,12 @@ public class MiddlewareClient {
 
     private Logger logger = LoggerFactory.getLogger(MiddlewareClient.class);
 
-    @Autowired
-    private ProcessNextDagElementService processNextDagElementService;
+
+    private ConsumptionCallback consumptionCallback; // to be inited by middleware.
+
+    public void setConsumptionCallback(ConsumptionCallback consumptionCallback) {
+        this.consumptionCallback = consumptionCallback;
+    }
 
 
     private WebClient getWebClient() {
@@ -54,7 +57,7 @@ public class MiddlewareClient {
                 blockingHandler -> {
                     try {
                         logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
-                        processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged).setHandler(handler -> {
+                        consumptionCallback.processNextElement(asyncId, dagElementId, toBeDebugged, vertx).setHandler(handler -> {
                             logger.info("Processed next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
                             blockingHandler.complete();
                         });
@@ -73,6 +76,10 @@ public class MiddlewareClient {
         );
 
         return future;
+    }
+
+    public static interface ConsumptionCallback {
+        Future<Void> processNextElement(String asyncId, String dagElementId, Boolean toBeDebugged, Vertx vertx) throws Exception;
     }
 
 }
