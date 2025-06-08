@@ -3,6 +3,7 @@ package in.ramanujan.data;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.base.configuration.ConfigKey;
 import in.ramanujan.base.configuration.ConfigurationGetter;
+import in.ramanujan.middleware.service.ProcessNextDagElementService;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -10,6 +11,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -20,6 +22,9 @@ public class MiddlewareClient {
     private ObjectMapper objectMapper = new ObjectMapper();
 
     private Logger logger = LoggerFactory.getLogger(MiddlewareClient.class);
+
+    @Autowired
+    private ProcessNextDagElementService processNextDagElementService;
 
 
     private WebClient getWebClient() {
@@ -43,34 +48,27 @@ public class MiddlewareClient {
         );
     }
 
-    public Future<Void> callMiddlewareProcessNextElementApi(String asyncId, String dagElementId, Boolean toBeDebugged) {
-        Future<Void> future = Future.future();
-        JsonObject jsonObject = new JsonObject()
-                .put("asyncId", asyncId)
-                .put("dagElementId", dagElementId)
-                .put("toBeDebugged", toBeDebugged)
-                .put("source", "kafka");
-        Long startDateTime = new Date().toInstant().toEpochMilli();
-        getWebClient().put("/process/next").sendJsonObject(jsonObject, httpResponseAsyncResult -> {
-            logger.info("latency: " + (new Date().toInstant().toEpochMilli() - startDateTime));
-            if(httpResponseAsyncResult.succeeded()) {
-                if(httpResponseAsyncResult.result().statusCode() == 200) {
-                    future.complete();
-                } else {
-                    logger.error("API failed with status " + httpResponseAsyncResult.result().statusCode());
-                    future.fail("API status not 200");
+    public Future<Void> callMiddlewareProcessNextElementApi(String asyncId, String dagElementId, Boolean toBeDebugged, Vertx vertx) {
+        Future future = Future.future();
+        vertx.executeBlocking(
+                blockingHandler -> {
+                    try {
+                        processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged);
+                        blockingHandler.complete();
+                    } catch (Exception e) {
+                        logger.error("Error processing next element", e);
+                        blockingHandler.fail(e);
+                    }
+                },
+                false, handler -> {
+                    if(handler.succeeded()) {
+                        future.complete();
+                    } else {
+                        future.fail(handler.cause());
+                    }
                 }
-            } else {
-                future.fail(httpResponseAsyncResult.cause());
-            }
-//            if(httpResponseAsyncResult.succeeded()) {
-//                future.complete();
-//            } else {
-//                callMiddlewareProcessNextElementApi(asyncId, dagElementId).setHandler(rehandler -> {
-//                    future.complete();
-//                });
-//            }
-        });
+        );
+
         return future;
     }
 

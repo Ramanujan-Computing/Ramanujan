@@ -65,7 +65,7 @@ public class ConsumerVerticle extends AbstractVerticle {
                         return;
                     }
                     for(CheckStatusQueueEventWithMetadata checkStatusQueueEventWithMetadata : checkStatusQueueEventWithMetadataList) {
-                        consumeFutureList.add(eventConsumer.consume(checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent()));
+                        consumeFutureList.add(eventConsumer.consume(checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent(), vertx));
                     }
 
                     CompositeFuture.all(consumeFutureList).setHandler(consumerListHandler -> {

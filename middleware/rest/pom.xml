@@ -19,7 +19,7 @@
         </dependency>
 
         <dependency>
-            <groupId>in.ramanujan</groupId>
+            <groupId>in.ramanujan.kafka</groupId>
             <artifactId>rest</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>compile</scope>

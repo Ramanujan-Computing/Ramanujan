@@ -39,7 +39,7 @@ public class MainVerticle extends AbstractVerticle {
         QueueDaoImpl queueDaoImpl = applicationContext.getBean(QueueDaoImpl.class);
         queueDaoImpl.init(QueueDaoImpl.QueueType.fromString(ConfigurationGetter.getString(QUEUE_TYPE)));
 
-        vertx.deployVerticle(applicationContext.getBean(KafkaHttpVerticle.class), option.getDeployOptions("kafkHttpVerticle", 250));
+        //vertx.deployVerticle(applicationContext.getBean(KafkaHttpVerticle.class), option.getDeployOptions("kafkHttpVerticle", 250));
         vertx.deployVerticle(applicationContext.getBean(ConsumerVerticle.class), option.getDeployOptions("ConsumerVerticle", 250));
 
 //        applicationContext.getBean(ConnectionCreator.class).init(vertx);

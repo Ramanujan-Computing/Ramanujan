@@ -12,6 +12,9 @@ import in.ramanujan.middleware.base.enums.Status;
 import in.ramanujan.middleware.base.pojo.CheckpointResumePayload;
 import in.ramanujan.middleware.base.pojo.DeviceExecStatus;
 import in.ramanujan.middleware.base.pojo.HostResult;
+import in.ramanujan.orchestrator.base.pojo.AsyncTask;
+import in.ramanujan.orchestrator.service.OrchestrateService;
+import in.ramanujan.orchestrator.service.OrchestratorTaskStatusService;
 import io.vertx.core.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
@@ -22,7 +25,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -59,6 +64,12 @@ public class OrchestrationApiCaller {
     public Vertx vertx;
     
     public Context context;
+
+    @Autowired
+    private OrchestrateService orchestratorService;
+
+    @Autowired
+    private OrchestratorTaskStatusService orchestratorTaskStatusService;
 
     /**
      * Call this after vertx/context are set to initialize urlStr from config.
@@ -114,20 +125,42 @@ public class OrchestrationApiCaller {
         JsonObject payload = new JsonObject().put("orchestratorAsyncId", orchestratorAsyncId)
         .put("firstCommandId", firstCommandId).put("dagElementId", dagElementId).put("debug", toBeDebugged)
                 .put("debugLines", commaSeparatedDebugLines);
+        List<Integer> debugLines = new ArrayList<>();
+        if (commaSeparatedDebugLines != null && !commaSeparatedDebugLines.isEmpty()) {
+            String[] debugLinesStr = commaSeparatedDebugLines.split(",");
+            for (String debugLineStr : debugLinesStr) {
+                debugLines.add(Integer.parseInt(debugLineStr.trim()));
+            }
+        }
 
-        retryGetAsyncTaskId(asyncId, payload, vertx)
-                .setHandler(new MonitoringHandler<>("orchestratorAsyncTaskCompleteAdd", getAsyncTaskIdHandler -> {
-            if(getAsyncTaskIdHandler.succeeded()) {
-                String orchestrationId = getAsyncTaskIdHandler.result();
-                orchestratorAsyncTaskDao.addMapping(asyncId, orchestrationId, dagElementId).setHandler(handler -> {
-                    future.complete();
-                    //retryPollOrchestration(asyncId, orchestrationId, vertx, dagElementId, future);
+
+        context.executeBlocking(blocking -> {
+            try {
+                Future orchCall = orchestratorService
+                        .orchestrateService(firstCommandId, orchestratorAsyncId, toBeDebugged, debugLines);
+                if(orchCall.succeeded()){
+                    blocking.complete(orchestratorAsyncId);
+                } else {
+                    blocking.fail(orchCall.cause());
+                }
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("orchestrateAPI", handler -> {
+            if(handler.succeeded()) {
+                String orchestrationId = (String) handler.result();
+                orchestratorAsyncTaskDao.addMapping(asyncId, orchestrationId, dagElementId).setHandler(addMappingHandler -> {
+                    if(addMappingHandler.succeeded()) {
+                        future.complete(new HashMap<>());
+                        //retryPollOrchestration(asyncId, orchestrationId, vertx, dagElementId, future);
+                    } else {
+                        future.fail(addMappingHandler.cause());
+                    }
                 });
             } else {
-                future.fail(getAsyncTaskIdHandler.cause());
+                future.fail(handler.cause());
             }
         }));
-
 
         return future;
     }
@@ -136,12 +169,12 @@ public class OrchestrationApiCaller {
         Future<DeviceExecStatus> future = Future.future();
         context.executeBlocking(blocking -> {
             try {
-                HttpClient client = new HttpClient("GET", urlStr + orchestrationPollStatusUri, null, new HashMap<String, String>(){{put("uuid", orchestrationTaskId);}});
-                if(client.statusCode != 200) {
-                    blocking.fail("Not 200");
-                } else {
-                    JsonObject jsonObject = new JsonObject(client.response);
-                    blocking.complete(jsonObject);
+                Future<AsyncTask> asyncTask = orchestratorTaskStatusService.getAsyncTaskStatus(orchestrationTaskId);
+                if(asyncTask.succeeded()) {
+                    blocking.complete(asyncTask.result());
+                }
+                else {
+                    blocking.fail(asyncTask.cause());
                 }
             } catch (Exception e) {
                 blocking.fail(e);
@@ -159,8 +192,8 @@ public class OrchestrationApiCaller {
     private void handlerCallStatus(String asyncId, String orchestrationTaskId, String dagElementId, Future<DeviceExecStatus> future, AsyncResult<Object> handler) {
         if(handler.succeeded()) {
             try {
-                JsonObject response = (JsonObject) handler.result();
-                String status = response.getString("status");
+                AsyncTask response = (AsyncTask) handler.result();
+                String status = response.getStatus();
                 if(Status.SUCCESS.getKeyName().equalsIgnoreCase(status)) {
                     logger.info("Task success " + orchestrationTaskId);
                     getData(orchestrationTaskId).setHandler(getDataHandler -> {
