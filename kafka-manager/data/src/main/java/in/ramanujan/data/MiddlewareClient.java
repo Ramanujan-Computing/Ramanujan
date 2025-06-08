@@ -53,7 +53,9 @@ public class MiddlewareClient {
         vertx.executeBlocking(
                 blockingHandler -> {
                     try {
+                        logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
                         processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged);
+                        logger.info("Processed next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
                         blockingHandler.complete();
                     } catch (Exception e) {
                         logger.error("Error processing next element", e);
