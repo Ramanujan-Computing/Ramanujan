@@ -136,13 +136,15 @@ public class OrchestrationApiCaller {
 
         context.executeBlocking(blocking -> {
             try {
-                Future orchCall = orchestratorService
-                        .orchestrateService(firstCommandId, orchestratorAsyncId, toBeDebugged, debugLines);
-                if(orchCall.succeeded()){
-                    blocking.complete(orchestratorAsyncId);
-                } else {
-                    blocking.fail(orchCall.cause());
-                }
+                orchestratorService
+                        .orchestrateService(firstCommandId, orchestratorAsyncId, toBeDebugged, debugLines).setHandler(handler -> {
+                            if(handler.succeeded()){
+                                blocking.complete(orchestratorAsyncId);
+                            } else {
+                                blocking.fail(handler.cause());
+                            }
+                        });
+
             } catch (Exception e) {
                 blocking.fail(e);
             }
@@ -169,13 +171,17 @@ public class OrchestrationApiCaller {
         Future<DeviceExecStatus> future = Future.future();
         context.executeBlocking(blocking -> {
             try {
-                Future<AsyncTask> asyncTask = orchestratorTaskStatusService.getAsyncTaskStatus(orchestrationTaskId);
-                if(asyncTask.succeeded()) {
-                    blocking.complete(asyncTask.result());
-                }
-                else {
-                    blocking.fail(asyncTask.cause());
-                }
+                logger.info("Calling orchestrator status API for orchestrationTaskId: " +  orchestrationTaskId + "; dagElemId: " + dagElementId);
+                orchestratorTaskStatusService.getAsyncTaskStatus(orchestrationTaskId).setHandler(handler -> {
+                   ;
+                    if(handler.succeeded()) {
+                        logger.info("Got response from orchestrator status API for orchestrationTaskId: " +  orchestrationTaskId + "; dagElemId: " + dagElementId);
+                        blocking.complete(handler.result());
+                    }
+                    else {
+                        blocking.fail(handler.cause());
+                    }
+                });
             } catch (Exception e) {
                 blocking.fail(e);
             }
