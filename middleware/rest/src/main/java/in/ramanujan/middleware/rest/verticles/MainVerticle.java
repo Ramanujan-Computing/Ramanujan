@@ -47,7 +47,7 @@ public class MainVerticle extends AbstractVerticle {
         ProcessNextDagElementService processNextDagElementService = applicationContext.getBean(ProcessNextDagElementService.class);
         middlewareClient.setConsumptionCallback((asyncId, dagElementId, toBeDebugged, vertx) ->
                 processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged));
-        vertx.deployVerticle(applicationContext.getBean(ConsumerVerticle.class), option.getDeployOptions("ConsumerVerticle", 250));
+        vertx.deployVerticle(applicationContext.getBean(ConsumerVerticle.class), option.getDeployOptions("ConsumerVerticle", 1));
 
 //        applicationContext.getBean(ConnectionCreator.class).init(vertx);
     }
