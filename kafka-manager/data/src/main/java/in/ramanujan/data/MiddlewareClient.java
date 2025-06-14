@@ -53,27 +53,16 @@ public class MiddlewareClient {
 
     public Future<Void> callMiddlewareProcessNextElementApi(String asyncId, String dagElementId, Boolean toBeDebugged, Vertx vertx) {
         Future future = Future.future();
-        vertx.executeBlocking(
-                blockingHandler -> {
-                    try {
-                        logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
-                        consumptionCallback.processNextElement(asyncId, dagElementId, toBeDebugged, vertx).setHandler(handler -> {
-                            logger.info("Processed next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
-                            blockingHandler.complete();
-                        });
-                    } catch (Exception e) {
-                        logger.error("Error processing next element", e);
-                        blockingHandler.fail(e);
-                    }
-                },
-                false, handler -> {
-                    if(handler.succeeded()) {
-                        future.complete();
-                    } else {
-                        future.fail(handler.cause());
-                    }
-                }
-        );
+        try {
+            logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
+            consumptionCallback.processNextElement(asyncId, dagElementId, toBeDebugged, vertx).setHandler(handler -> {
+                logger.info("Processed next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
+                future.complete();
+            });
+        } catch (Exception e) {
+            logger.error("Error processing next element", e);
+            future.fail(e);
+        }
 
         return future;
     }
