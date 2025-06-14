@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 
 public class ExecutorImpl implements Operation {
     // Static maps to store variables and arrays for querying after execution
@@ -25,79 +26,114 @@ public class ExecutorImpl implements Operation {
 
     @Override
     public void execute(List<String> args) {
-        try {
-            OkHttpClient httpClient = new OkHttpClient();
-            String json = new ObjectMapper().writeValueAsString(createJson(args));
-            RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
-            Request request = new Request.Builder().url("http://localhost:8888/run?debug=false").post(requestBody).build();
-            ObjectMapper objectMapper = new ObjectMapper();
-            try {
-                Response response = httpClient.newCall(request).execute();
-                if(response.code() == 200) {
-                    ApiResponse responseJson = objectMapper.readValue(response.body().string(), ApiResponse.class);
-                    CodeRunAsyncResponse codeRunAsyncResponse = objectMapper.convertValue(responseJson.getData(),
-                            CodeRunAsyncResponse.class);
-                    String taskId = codeRunAsyncResponse.getAsyncId();
-                    System.out.println(taskId);
-                    Diagram diagram = codeRunAsyncResponse.getDiagram();
-                    System.out.println(diagram);
-                    request = new Request.Builder().url("http://localhost:8888/status?uuid=" + taskId).build();
-                    while(true) {
-                        response = httpClient.newCall(request).execute();
-                        if(response.code() != 200) {
-                            continue;
-                        }
-                        ApiResponse apiResponse = objectMapper.readValue(response.body().string(), ApiResponse.class);
-                        if("200 OK".equalsIgnoreCase(apiResponse.getStatus())) {
-                            Map<String, Object> asyncTask = (Map<String, Object>) apiResponse.getData();
-                            if("SUCCESS".equalsIgnoreCase((String) asyncTask.get("taskStatus")) || "FAILED".equalsIgnoreCase((String) asyncTask.get("taskStatus"))) {
-                                System.out.println(asyncTask);
-                                // Extract and store variable/array values for later querying
-                                Object resultObj = asyncTask.get("result");
-                                if (resultObj instanceof Map) {
-                                    Map<String, Object> resultMap = (Map<String, Object>) resultObj;
-                                    Object variablesObj = resultMap.get("variables");
-                                    Object arraysObj = resultMap.get("arrays");
-                                    if (variablesObj instanceof List) {
-                                        List<?> variables = (List<?>) variablesObj;
-                                        for (Object varObj : variables) {
-                                            // Use VariableMappingLite for type safety
-                                            VariableMappingLite var = new ObjectMapper().convertValue(varObj, VariableMappingLite.class);
-                                            variableStore.put(var.getVariableName(), var.getObject());
-                                        }
-                                    }
-                                    if (arraysObj instanceof List) {
-                                        List<?> arrays = (List<?>) arraysObj;
-                                        for (Object arrObj : arrays) {
-                                            // Use ArrayMappingLite for type safety
-                                            ArrayMappingLite arr = new ObjectMapper().convertValue(arrObj, ArrayMappingLite.class);
-                                            String name = arr.getArrayId();
-                                            if(name.contains("func")) {
-                                                continue;
-                                            }
-                                            name = name.split("_name_")[1];
-                                            String indexStr = arr.getIndexStr();
-                                            Object value = arr.getObject();
-                                            Map<String, Object> arrMap = arrayStore.getOrDefault(name, new java.util.HashMap<>());
-                                            arrMap.put(indexStr, value);
-                                            arrayStore.put(name, arrMap);
-                                        }
-                                    }
-                                }
-                                // Start interactive console for querying variables/arrays
-                                startQueryConsole();
-                                break;
-                            }
+            int experimentSize = 10;
+            CountDownLatch countDownLatch = new CountDownLatch(experimentSize);
+            long startTime = System.currentTimeMillis();
+            for (int i=0 ; i< experimentSize;i++)
+            {
+                new Thread(() -> {
+                    try {
+                        runCode(args);
+                    } catch (Exception e) {
+                        System.out.println("Error during code execution: " + e.getMessage());
+                    } finally {
+                        countDownLatch.countDown();
+                        synchronized (this) {
+                            System.out.println("Thread completed execution, remaining count: " + countDownLatch.getCount());
                         }
                     }
-                } else {
-                    System.out.println(response.body().string());
-                }
-            } catch (IOException e) {
-                System.out.println("faced some network issue");
+                }).start();
             }
-        } catch (JsonProcessingException e) {
-            System.out.println("Console error");
+            try {
+                countDownLatch.await();
+                System.out.println("All threads completed execution in " + (System.currentTimeMillis() - startTime) + " ms");
+            } catch (Exception ec)
+            {
+                System.out.println("Error waiting for threads to complete: " + ec.getMessage());
+            }
+    }
+
+    private static void runCode(List<String> args) throws JsonProcessingException {
+        OkHttpClient httpClient = new OkHttpClient();
+        String json = new ObjectMapper().writeValueAsString(createJson(args));
+        RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
+        Request request = new Request.Builder().url("http://35.232.220.56:8888/run?debug=false").post(requestBody).build();
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            Response response = httpClient.newCall(request).execute();
+            if(response.code() == 200) {
+                ApiResponse responseJson = objectMapper.readValue(response.body().string(), ApiResponse.class);
+                CodeRunAsyncResponse codeRunAsyncResponse = objectMapper.convertValue(responseJson.getData(),
+                        CodeRunAsyncResponse.class);
+                String taskId = codeRunAsyncResponse.getAsyncId();
+                System.out.println(taskId);
+                Diagram diagram = codeRunAsyncResponse.getDiagram();
+                System.out.println(diagram);
+                request = new Request.Builder().url("http://35.232.220.56:8888/status?uuid=" + taskId).build();
+                while(true) {
+                    try {
+                        Thread.sleep(5000);
+                    } catch (InterruptedException e) {
+                        System.out.println("Thread interrupted while waiting for task completion.");
+                    }
+                    try {
+                        response = httpClient.newCall(request).execute();
+                    } catch (IOException ex) {
+                        continue;
+                    }
+                    if(response.code() != 200) {
+                        response.close();
+                        continue;
+                    }
+                    ApiResponse apiResponse = objectMapper.readValue(response.body().string(), ApiResponse.class);
+                    if("200 OK".equalsIgnoreCase(apiResponse.getStatus())) {
+                        Map<String, Object> asyncTask = (Map<String, Object>) apiResponse.getData();
+                        if("SUCCESS".equalsIgnoreCase((String) asyncTask.get("taskStatus")) || "FAILED".equalsIgnoreCase((String) asyncTask.get("taskStatus"))) {
+                            System.out.println(asyncTask);
+                            // Extract and store variable/array values for later querying
+                            Object resultObj = asyncTask.get("result");
+                            if (resultObj instanceof Map) {
+                                Map<String, Object> resultMap = (Map<String, Object>) resultObj;
+                                Object variablesObj = resultMap.get("variables");
+                                Object arraysObj = resultMap.get("arrays");
+                                if (variablesObj instanceof List) {
+                                    List<?> variables = (List<?>) variablesObj;
+                                    for (Object varObj : variables) {
+                                        // Use VariableMappingLite for type safety
+                                        VariableMappingLite var = new ObjectMapper().convertValue(varObj, VariableMappingLite.class);
+                                        variableStore.put(var.getVariableName(), var.getObject());
+                                    }
+                                }
+                                if (arraysObj instanceof List) {
+                                    List<?> arrays = (List<?>) arraysObj;
+                                    for (Object arrObj : arrays) {
+                                        // Use ArrayMappingLite for type safety
+                                        ArrayMappingLite arr = new ObjectMapper().convertValue(arrObj, ArrayMappingLite.class);
+                                        String name = arr.getArrayId();
+                                        if(name.contains("func")) {
+                                            continue;
+                                        }
+                                        name = name.split("_name_")[1];
+                                        String indexStr = arr.getIndexStr();
+                                        Object value = arr.getObject();
+                                        Map<String, Object> arrMap = arrayStore.getOrDefault(name, new java.util.HashMap<>());
+                                        arrMap.put(indexStr, value);
+                                        arrayStore.put(name, arrMap);
+                                    }
+                                }
+                            }
+                            // Start interactive console for querying variables/arrays
+                            //startQueryConsole();
+                            break;
+                        }
+                    }
+                }
+            } else {
+                runCode(args); // Retry if the response is not OK
+            }
+        } catch (IOException e) {
+            runCode(args);
+            //System.out.println("faced some network issue");
         }
     }
 
