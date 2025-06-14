@@ -71,7 +71,12 @@ public class RunService {
                 if(dbOperationHandler.succeeded()) {
                     runDagElementId(asyncId, translateResponse.getFirstDagElement().getId(), vertx, toBeDebugged)
                             .setHandler(new MonitoringHandler<>("runDagElementId", runDagHandler -> {
+                    if (runDagHandler.succeeded()) {
                         kafkaManagerApiCaller.callEventApi(asyncId, translateResponse.getFirstDagElement().getId(), toBeDebugged);
+                    } else {
+                        logger.error("Failed to run dag element id: " + translateResponse.getFirstDagElement().getId(), runDagHandler.cause());
+                        future.fail(runDagHandler.cause());
+                    }
                     }));
                 }
             }));
@@ -221,6 +226,10 @@ public class RunService {
                         Long storagePutStart = new Date().toInstant().toEpochMilli();
                         storageDao.storeDagElement(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
                             logger.info("storagePut: " + (new Date().toInstant().toEpochMilli() - storagePutStart));
+                            if(storageDaoHandler.failed()) {
+                                future.fail(storageDaoHandler.cause());
+                                return;
+                            }
                             future.complete(orchestratorAsyncId);
                         });
                     } catch (Exception e) {

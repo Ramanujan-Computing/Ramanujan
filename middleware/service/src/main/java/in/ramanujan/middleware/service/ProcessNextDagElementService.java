@@ -257,6 +257,11 @@ public class ProcessNextDagElementService {
                         runService.runDagElementId(asyncId, nextDagElementId, vertx, toBeDebugged)
                                 .setHandler(new MonitoringHandler<>("runDagElementId", runHandler -> {
                             logger.info("orchestratorAPI: " + getTimeElapsed(orchestratorCallStart));
+                            if(!runHandler.succeeded()) {
+                                logger.error("Failed to run dag element id: " + nextDagElementId, runHandler.cause());
+                                future.fail(runHandler.cause());
+                                return;
+                            }
                             kafkaManagerApiCaller.callEventApi(asyncId, nextDagElementId, toBeDebugged).setHandler(kafkaMgrCall -> {
                                 future.complete();
                             });
