@@ -101,6 +101,7 @@ public class HostDaoStackImpl implements HostsDao {
                            if (compositeHandler.succeeded()) {
                                future.complete(asyncTask);
                            } else {
+                               logger.error("machine " + hostId + " not able to get asyncTask data due to ", compositeHandler.cause());
                                future.fail(compositeHandler.cause());
                            }
                        });
