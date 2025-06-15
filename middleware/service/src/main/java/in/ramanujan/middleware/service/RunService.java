@@ -64,6 +64,7 @@ public class RunService {
                 future.complete(asyncId);
             }
             initDbEntries(asyncId, translateResponse).setHandler(new MonitoringHandler<>("initDbEntries", dbOperationHandler -> {
+                logger.info("InitDB done for " + asyncId);
                 if (toBeDebugged) {
                     future.complete(asyncId);
                     return;
@@ -198,21 +199,30 @@ public class RunService {
             refreshVariablesAndProvideOrchestratorAsyncId(asyncId, basicDagElement).setHandler(refreshVariablesHandler -> {
                 if (refreshVariablesHandler.succeeded()) {
                     final String orchestratorAsyncId = refreshVariablesHandler.result();
-                    orchestrationApiCaller.runCode(asyncId,
-                                    basicDagElement.getFirstCommandId(), basicDagElement.getId(), vertx, orchestratorAsyncId, toBeDebugged, basicDagElement.getCommaSeparatedDebugPoints())
-                            .setHandler(orchestratorCallHandler -> {
-                                if(dagElementIdRan.contains(dagElementId)) {
-                                    logger.info("ALREADY THERE: " + dagElementId);
-                                }
-                                dagElementIdRan.add(dagElementId);
-                                future.complete();
-                            });
+                    logger.info("Going to run for " + asyncId + "; dagElementId " + dagElementId);
+                    forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future);
                 } else {
                     future.fail(refreshVariablesHandler.cause());
                 }
             });
         });
         return future;
+    }
+
+    private void forceRunOnOrchestrator(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged, BasicDagElement basicDagElement, String orchestratorAsyncId, Future<Void> future) {
+        orchestrationApiCaller.runCode(asyncId,
+                        basicDagElement.getFirstCommandId(), basicDagElement.getId(), vertx, orchestratorAsyncId, toBeDebugged, basicDagElement.getCommaSeparatedDebugPoints())
+                .setHandler(orchestratorCallHandler -> {
+                    if(orchestratorCallHandler.failed()) {
+                        logger.error("Failed to run dag element id: " + dagElementId, orchestratorCallHandler.cause());
+                        forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future);
+                    }
+                    if(dagElementIdRan.contains(dagElementId)) {
+                        logger.info("ALREADY THERE: " + dagElementId);
+                    }
+                    dagElementIdRan.add(dagElementId);
+                    future.complete();
+                });
     }
 
     private Future<String> refreshVariablesAndProvideOrchestratorAsyncId(String asyncId, BasicDagElement basicDagElement) {
