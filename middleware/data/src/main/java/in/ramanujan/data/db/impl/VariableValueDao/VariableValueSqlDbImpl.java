@@ -108,7 +108,7 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
                 Object value = indexValueMap.get(index);
                 ArrayMapping arrayMapping = new ArrayMapping();
                 arrayMapping.setAsyncId(asyncId);
-                arrayMapping.setArrayName(arrayName);
+                arrayMapping.setArrayName("");
                 arrayMapping.setArrayId(arrayId);
                 arrayMapping.setIndexStr(index);
                 if(value != null) {

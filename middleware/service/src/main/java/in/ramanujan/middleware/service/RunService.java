@@ -94,27 +94,37 @@ public class RunService {
         /*
         * Storage push takes memory additionally. Making it sequential to stop possible OOM.
         */
+
+        Set<String> variableAndArrayAlreadyPopulated = new HashSet<>();
+
         currFutureObj = new CommonCodeStoreFutureCaller(null, asyncId, translateResponse.getCommonFunctionCode(), storageDao);
 //        dbOperations.add(storageDao.storeCommonCode(asyncId, translateResponse.getCommonFunctionCode()));
         for(DagElement dagElement : dagElementList) {
             dagElementIds.add(dagElement.getId());
-            dbOperations.add(dagElementDao.addElement(dagElement));
+            dbOperations.add(storageDao.storeDagElement(dagElement));
             prevFutureObj = currFutureObj;
             currFutureObj = new StoreDagElementCode(prevFutureObj, dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId()), storageDao);
-//            dbOperations.add(storageDao.storeDagElementCode(dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId())));
+            // dbOperations.add(storageDao.storeDagElementCode(dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId())));
             for(Variable variable : dagElement.getVariableMap().values()) {
-                dbOperations.add(variableValueDao.createVariable(asyncId, variable.getId(), variable.getName(), variable.getValue()));
+                if(!variableAndArrayAlreadyPopulated.contains(variable.getId())) {
+                    dbOperations.add(variableValueDao.createVariable(asyncId, variable.getId(), variable.getName(), variable.getValue()));
+                    variableAndArrayAlreadyPopulated.add(variable.getId());
+                }
             }
             for(Array array : dagElement.getArrayMap().values()) {
-                if(array.getName() == null) {
-                    int a = 1;
-                    a = a + 1;
+                if(!variableAndArrayAlreadyPopulated.contains(array.getId())) {
+                    if(array.getName() == null) {
+                        int a = 1;
+                        a = a + 1;
+                    }
+                    dbOperations.add(variableValueDao.createVariableNameIdMap(asyncId, array.getId(), array.getName()));
+                    for(String index : array.getValues().keySet()) {
+                        dbOperations.add(variableValueDao.storeArrayValue(asyncId, array.getId(), array.getName(), index,
+                                array.getValues().get(index)));
+                    }
+                    variableAndArrayAlreadyPopulated.add(array.getId());
                 }
-                dbOperations.add(variableValueDao.createVariableNameIdMap(asyncId, array.getId(), array.getName()));
-                for(String index : array.getValues().keySet()) {
-                    dbOperations.add(variableValueDao.storeArrayValue(asyncId, array.getId(), array.getName(), index,
-                            array.getValues().get(index)));
-                }
+
             }
             for(DagElement nextDagElement : dagElement.getNextElements()) {
                 dbOperations.add(dagElementDao.addDagElementDependency(dagElement.getId(), nextDagElement.getId()));
@@ -182,7 +192,7 @@ public class RunService {
 
     public Future<Void> runDagElementId(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged) {
         Future<Void> future = Future.future();
-        dagElementDao.getDagElement(dagElementId).setHandler(handler -> {
+        storageDao.getDagElement(dagElementId).setHandler(handler -> {
             BasicDagElement basicDagElement = handler.result();
             //TODO: write the logic
             refreshVariablesAndProvideOrchestratorAsyncId(asyncId, basicDagElement).setHandler(refreshVariablesHandler -> {
@@ -224,7 +234,7 @@ public class RunService {
                 if(handler.succeeded()) {
                     try {
                         Long storagePutStart = new Date().toInstant().toEpochMilli();
-                        storageDao.storeDagElement(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
+                        storageDao.storeDagElementInput(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
                             logger.info("storagePut: " + (new Date().toInstant().toEpochMilli() - storagePutStart));
                             if(storageDaoHandler.failed()) {
                                 future.fail(storageDaoHandler.cause());

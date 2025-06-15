@@ -44,7 +44,18 @@ public class VariableValueHashMapImpl implements VariableValueDao {
 
     @Override
     public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, String arrayName, Map<String, Object> indexValueMap) {
-        // No-op for arrayName in in-memory impl
+        // Store all index-value pairs for the array in memory
+        Map<String, Map<String, Object>> map = arrayValueMap.get(asyncId);
+        if(map == null) {
+            map = new HashMap<>();
+            arrayValueMap.put(asyncId, map);
+        }
+        Map<String, Object> currentArrayIdMap = map.get(arrayId);
+        if(currentArrayIdMap == null) {
+            currentArrayIdMap = new HashMap<>();
+            map.put(arrayId, currentArrayIdMap);
+        }
+        currentArrayIdMap.putAll(indexValueMap);
         return Future.succeededFuture();
     }
 

@@ -165,22 +165,8 @@ public class ProcessNextDagElementService {
                 Map<String, Map<String, Object>> arrayMap = (Map) result.get(key);
                 for(String arrayId : arrayMap.keySet()) {
                     Map<String, Object> arrayIndexMap = arrayMap.get(arrayId);
-//                    updateVariableFutures.add(variableValueDao.storeArrayValueBatch(asyncId, arrayId, arrayIndexMap));
-//                    Future<Void> arrayIndexFuture = Future.future();
-//                    updateVariableFutures.add(arrayIndexFuture);
-//                    updateArrayOnIndex(arrayIndexMap.keySet().toArray(), arrayIndexFuture, arrayId, 0, arrayIndexMap, asyncId);
-                    for(String index : arrayIndexMap.keySet()) {
-                        Future<Void> updateVariableFuture = Future.future();
-                        updateVariableFutures.add(updateVariableFuture);
-                        variableValueDao.storeArrayValue(asyncId, arrayId, null, index, arrayIndexMap.get(index))
-                                .setHandler(arrayIndexUpdateHandler -> {
-                                    if(arrayIndexUpdateHandler.succeeded()) {
-                                        updateVariableFuture.complete();
-                                    } else {
-                                        updateVariableFuture.fail(updateVariableFuture.cause());
-                                    }
-                        });
-                    }
+                    // Use batch update for all indexes of this arrayId. Pass empty string for arrayName (or replace if you have the name)
+                    updateVariableFutures.add(variableValueDao.storeArrayValueBatch(asyncId, arrayId, "", arrayIndexMap));
                 }
             } else {
                 Future<Void> updateVariableFuture = Future.future();
@@ -277,14 +263,15 @@ public class ProcessNextDagElementService {
     }
 
     private Future<Boolean> attainLock(final String dagElementId) {
-        final String uuid = UUID.randomUUID().toString();
-        Future<Boolean> future = Future.future();
-        orchestratorCallLockerDao.insertLocker(uuid, dagElementId, new Date().toInstant().toEpochMilli()).setHandler(insertHandler -> {
-            orchestratorCallLockerDao.attainedLock(uuid, dagElementId).setHandler(attainer -> {
-               future.complete(attainer.result());
-            });
-        });
-        return future;
+        return Future.succeededFuture(true);
+//        final String uuid = UUID.randomUUID().toString();
+//        Future<Boolean> future = Future.future();
+//        orchestratorCallLockerDao.insertLocker(uuid, dagElementId, new Date().toInstant().toEpochMilli()).setHandler(insertHandler -> {
+//            orchestratorCallLockerDao.attainedLock(uuid, dagElementId).setHandler(attainer -> {
+//               future.complete(attainer.result());
+//            });
+//        });
+//        return future;
     }
 
 }

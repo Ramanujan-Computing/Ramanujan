@@ -30,6 +30,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class QueryExecutor {
@@ -86,9 +87,25 @@ public class QueryExecutor {
             config.setUsername(dbConfig.getUsername());
             config.setPassword(dbConfig.getPassword());
 
-            config.setMaximumPoolSize(50);
+            int maxPool = 50;
+            config.setMaximumPoolSize(maxPool);
             config.setConnectionTimeout(5000);
             dataSource = new HikariDataSource(config);
+
+            int connectionsMade = maxPool;
+            while(connectionsMade > 0) {
+                try {
+                    Connection connection = dataSource.getConnection();
+                    connection.close();
+                    connectionsMade--;
+                } catch (SQLException e) {
+                    logger.error("Failed to connect to the database: " + dbConfig.getDbName() + ". Retrying...", e);
+
+                }
+            }
+
+            logger.info("Database connection pool initialized with " + maxPool + " connections for database: " + dbConfig.getDbName());
+
         }
     }
 
@@ -132,9 +149,10 @@ public class QueryExecutor {
         int maxTries = 10;
         while(maxTries -- > 0)
         {
+            Connection connection = null;
             try {
                 Long connStart = new Date().toInstant().toEpochMilli();
-                Connection connection = dataSource.getConnection();
+                connection = dataSource.getConnection();
                 publishMetric("dbCon", connStart);
                 Long stmtStart = new Date().toInstant().toEpochMilli();
                 PreparedStatement statement = connection.prepareStatement(customQuery.getSql());
@@ -174,6 +192,13 @@ public class QueryExecutor {
                 blocking.complete(objects);
                 return;
             } catch (Exception e) {
+                if(connection != null) {
+                    try {
+                        connection.close();
+                    } catch (SQLException ex) {
+                        logger.error("Failed to close connection", ex);
+                    }
+                }
                 try {
                     logger.error(e);
                     Thread.sleep(10000);
