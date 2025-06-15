@@ -56,6 +56,11 @@ public class MiddlewareClient {
         try {
             logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
             consumptionCallback.processNextElement(asyncId, dagElementId, toBeDebugged, vertx).setHandler(handler -> {
+                if(handler.failed()) {
+                    logger.error("Failed to process next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged, handler.cause());
+                    future.fail(handler.cause());
+                    return;
+                }
                 logger.info("Processed next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
                 future.complete();
             });

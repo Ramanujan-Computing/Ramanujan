@@ -9,6 +9,9 @@ import in.ramanujan.db.layer.enums.QueryType;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.SqlConnection;
@@ -49,6 +52,8 @@ public class QueryExecutor {
 
     HikariConfig config = new HikariConfig();
 
+    Logger logger = LoggerFactory.getLogger(QueryExecutor.class);
+
     Context context;
     DataSource dataSource;
 
@@ -82,6 +87,7 @@ public class QueryExecutor {
             config.setPassword(dbConfig.getPassword());
 
             config.setMaximumPoolSize(50);
+            config.setConnectionTimeout(5000);
             dataSource = new HikariDataSource(config);
         }
     }
@@ -104,6 +110,28 @@ public class QueryExecutor {
         }
         final CustomQuery customQuery = getCustomQuery(object, index, queryType, list);
         context.executeBlocking(blocking -> {
+            queryInternal(object, queryType, blocking, customQuery);
+        }, false, handler -> {
+            if(handler.succeeded()) {
+                future.complete((List<Object>) handler.result());
+            } else {
+               future.fail(handler.cause());
+            }
+        });
+//        connectionCreator.getConnection().setHandler(handler -> {
+//            if(handler.succeeded()) {
+//                handleConnectionCreate(handler.result(), customQuery, future, object, queryType);
+//            } else {
+//                future.fail(handler.cause());
+//            }
+//        });
+        return future;
+    }
+
+    private void queryInternal(Object object, QueryType queryType, Promise<Object> blocking, CustomQuery customQuery) {
+        int maxTries = 10;
+        while(maxTries -- > 0)
+        {
             try {
                 Long connStart = new Date().toInstant().toEpochMilli();
                 Connection connection = dataSource.getConnection();
@@ -144,24 +172,18 @@ public class QueryExecutor {
                 statement.close();
                 connection.close();
                 blocking.complete(objects);
+                return;
             } catch (Exception e) {
-                blocking.fail(e);
+                try {
+                    logger.error(e);
+                    Thread.sleep(10000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
             }
-        }, false, handler -> {
-            if(handler.succeeded()) {
-                future.complete((List<Object>) handler.result());
-            } else {
-               future.fail(handler.cause());
-            }
-        });
-//        connectionCreator.getConnection().setHandler(handler -> {
-//            if(handler.succeeded()) {
-//                handleConnectionCreate(handler.result(), customQuery, future, object, queryType);
-//            } else {
-//                future.fail(handler.cause());
-//            }
-//        });
-        return future;
+        }
+        logger.error("SQL query failure led to JVM restart!");
+        System.exit(1);
     }
 
     private void executeStmt(PreparedStatement statement) throws SQLException {
