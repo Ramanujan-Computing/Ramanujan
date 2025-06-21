@@ -266,6 +266,8 @@ public class QueryExecutor {
             customQuery = insertQueryCreator.query(object, batchOpObjects);
         } else if (queryType == QueryType.UPSERT) {
             customQuery = insertDuplicateQueryCreator.query(object, batchOpObjects);
+        } else if (queryType == QueryType.UPDATE && batchOpObjects != null) {
+            customQuery = whereClauseQueryCreator.batchUpdateQuery(object, index, batchOpObjects);
         } else {
             customQuery = whereClauseQueryCreator.query(object, index,
                     WhereClauseQueryCreator.WhereTypeQuery.valueOf(queryType.name()));

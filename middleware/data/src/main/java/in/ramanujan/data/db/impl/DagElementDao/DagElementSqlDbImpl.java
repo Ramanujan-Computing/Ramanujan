@@ -368,4 +368,62 @@ public class DagElementSqlDbImpl implements DagElementDao {
         }
         return future;
     }
+
+    @Override
+    public Future<Void> addDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> batch = new ArrayList<>();
+            for (String nextDagElementId : nextDagElementIds) {
+                DagElementRelationShip dagElementRelationShip = new DagElementRelationShip();
+                dagElementRelationShip.setDagElementId(dagElementId);
+                dagElementRelationShip.setNextDagElementId(nextDagElementId);
+                dagElementRelationShip.setRelation("true");
+                batch.add(dagElementRelationShip);
+            }
+            if (!batch.isEmpty()) {
+                queryExecutor.execute(batch.get(0), null, QueryType.INSERT, batch).setHandler(handler -> {
+                    if (handler.succeeded()) {
+                        future.complete();
+                    } else {
+                        future.fail(handler.cause());
+                    }
+                });
+            } else {
+                future.complete();
+            }
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    @Override
+    public Future<Void> removeDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> batch = new ArrayList<>();
+            for (String nextDagElementId : nextDagElementIds) {
+                DagElementRelationShip dagElementRelationShip = new DagElementRelationShip();
+                dagElementRelationShip.setDagElementId(dagElementId);
+                dagElementRelationShip.setNextDagElementId(nextDagElementId);
+                dagElementRelationShip.setRelation("false");
+                batch.add(dagElementRelationShip);
+            }
+            if (!batch.isEmpty()) {
+                queryExecutor.execute(batch.get(0), Keys.DE_ID_NEXT_DE_ID, QueryType.UPDATE, batch).setHandler(handler -> {
+                    if (handler.succeeded()) {
+                        future.complete();
+                    } else {
+                        future.fail(handler.cause());
+                    }
+                });
+            } else {
+                future.complete();
+            }
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
 }

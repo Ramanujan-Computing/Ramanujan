@@ -138,8 +138,13 @@ public class RunService {
                 }
 
             }
+            // Batch addDagElementDependency
+            List<String> nextDagElementIds = new ArrayList<>();
             for(DagElement nextDagElement : dagElement.getNextElements()) {
-                dbOperations.add(dagElementDao.addDagElementDependency(dagElement.getId(), nextDagElement.getId()));
+                nextDagElementIds.add(nextDagElement.getId());
+            }
+            if (!nextDagElementIds.isEmpty()) {
+                dbOperations.add(dagElementDao.addDagElementDependencies(dagElement.getId(), nextDagElementIds));
             }
         }
         dbOperations.add(dagElementDao.mapDagElementToAsyncId(asyncId, dagElementIds));

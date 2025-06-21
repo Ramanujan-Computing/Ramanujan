@@ -66,6 +66,24 @@ public class WhereClauseQueryCreator {
         return customQuery;
     }
 
+    public CustomQuery batchUpdateQuery(Object obj, String indexName, List<Object> batchOpObjects) throws Exception {
+        if(batchOpObjects == null || batchOpObjects.isEmpty()) {
+            return query(obj, indexName, WhereTypeQuery.UPDATE);
+        }
+        // Use the first object to generate the SQL
+        CustomQuery templateQuery = query(batchOpObjects.get(0), indexName, WhereTypeQuery.UPDATE);
+        String sql = templateQuery.getSql();
+        List<List<Object>> tupleList = new ArrayList<>();
+        for(Object batchObj : batchOpObjects) {
+            CustomQuery cq = query(batchObj, indexName, WhereTypeQuery.UPDATE);
+            tupleList.add(cq.getObjects());
+        }
+        CustomQuery batchQuery = new CustomQuery();
+        batchQuery.setSql(sql);
+        batchQuery.setTupleList(tupleList);
+        return batchQuery;
+    }
+
     private Boolean addPrimaryKeyInformation(String indexName, List<PrimaryKeyInformation> primaryKeyInformations,
                                                  Field field, Object columnVal, String columnName) throws Exception {
         if(field.isAnnotationPresent(PrimaryKey.class)) {

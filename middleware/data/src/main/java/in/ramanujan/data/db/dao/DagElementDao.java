@@ -26,4 +26,12 @@ public interface DagElementDao {
     public Future<Void> setDagElementAndOrchestratorAsyncIdMapping(String dagElementId, String orchestratorAsyncId);
     public Future<String> getDagElementAndOrchestratorAsyncIdMapping(String dagElementId);
     public Future<Void> addDebugPointsToDagElement(String dagElementId, String commaSeparatedDebugLines);
+    /**
+     * Batch add dependencies for a dagElementId to a list of nextDagElementIds
+     */
+    io.vertx.core.Future<Void> addDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds);
+    /**
+     * Batch remove dependencies for a dagElementId to a list of nextDagElementIds
+     */
+    io.vertx.core.Future<Void> removeDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds);
 }
