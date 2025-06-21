@@ -106,14 +106,19 @@ public class RunService {
             prevFutureObj = currFutureObj;
             currFutureObj = new StoreDagElementCode(prevFutureObj, dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId()), storageDao);
             // dbOperations.add(storageDao.storeDagElementCode(dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId())));
+            // Batch variable creation
+            List<Variable> variablesToCreate = new ArrayList<>();
             for(Variable variable : dagElement.getVariableMap().values()) {
                 if(variable.getId() != null && variable.getId().contains("func")) {
                     continue;
                 }
                 if(!variableAndArrayAlreadyPopulated.contains(variable.getId())) {
-                    dbOperations.add(variableValueDao.createVariable(asyncId, variable.getId(), variable.getName(), variable.getValue()));
+                    variablesToCreate.add(variable);
                     variableAndArrayAlreadyPopulated.add(variable.getId());
                 }
+            }
+            if (!variablesToCreate.isEmpty()) {
+                dbOperations.add(variableValueDao.createVariablesBatch(asyncId, variablesToCreate));
             }
             for(Array array : dagElement.getArrayMap().values()) {
                 if(array.getId() != null && array.getId().contains("func")) {

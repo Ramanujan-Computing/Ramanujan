@@ -131,4 +131,17 @@ public class VariableValueHashMapImpl implements VariableValueDao {
         variableValueMap.remove(asyncId);
         return Future.succeededFuture();
     }
+
+    @Override
+    public Future<Void> createVariablesBatch(String asyncId, java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables) {
+        Map<String, Object> map = variableValueMap.get(asyncId);
+        if (map == null) {
+            map = new HashMap<>();
+            variableValueMap.put(asyncId, map);
+        }
+        for (in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable : variables) {
+            map.put(variable.getId(), variable.getValue());
+        }
+        return Future.succeededFuture();
+    }
 }

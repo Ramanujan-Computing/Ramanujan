@@ -372,4 +372,37 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
         }
         return future;
     }
+
+    @Override
+    public Future<Void> createVariablesBatch(String asyncId, java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> variableMappings = new ArrayList<>();
+            for (in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable : variables) {
+                in.ramanujan.db.layer.schema.VariableMapping variableMapping = new in.ramanujan.db.layer.schema.VariableMapping();
+                variableMapping.setAsyncId(asyncId);
+                variableMapping.setVariableId(variable.getId());
+                variableMapping.setVariableName(variable.getName());
+                if (variable.getValue() != null) {
+                    variableMapping.setObject(variable.getValue().toString());
+                }
+                variableMappings.add(variableMapping);
+            }
+            if (!variableMappings.isEmpty()) {
+                queryExecutor.execute(variableMappings.get(0), Keys.ASYNC_ID_VARIABLE_ID, QueryType.INSERT, variableMappings)
+                        .setHandler(new MonitoringHandler<>("createVariablesBatch", handler -> {
+                            if (handler.succeeded()) {
+                                future.complete();
+                            } else {
+                                future.fail(handler.cause());
+                            }
+                        }));
+            } else {
+                future.complete();
+            }
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
 }

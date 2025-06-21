@@ -14,6 +14,10 @@ import java.util.Map;
 
 @Component
 public interface VariableValueDao {
+    /**
+     * Batch create variables for a given asyncId
+     */
+    io.vertx.core.Future<Void> createVariablesBatch(final String asyncId, final java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables);
     public Future<Void> createVariableNameIdMap(final String asyncId, final String arrayId, final String arrayName);
     public Future<Void> storeVariableValue(final String asyncId, final String variableId, final Object value);
     public Future<Void> storeArrayValueBatch(final String asyncId, final String arrayId, final String arrayName, Map<String, Object> indexValueMap);

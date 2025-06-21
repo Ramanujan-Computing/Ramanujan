@@ -176,6 +176,8 @@ public class ProcessNextDagElementService {
     private Future<Void> refreshVariables(String asyncId, String dagElementId, Map<String, Object> result) {
         Future<Void> future = Future.future();
         List<Future> updateVariableFutures = new ArrayList<>();
+        // Collect variables for batch update
+        List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variablesToUpdate = new ArrayList<>();
         for(String key : result.keySet()) {
             if(Constants.arrayIndex.equalsIgnoreCase(key)) {
                 Map<String, Map<String, Object>> arrayMap = (Map) result.get(key);
@@ -188,21 +190,19 @@ public class ProcessNextDagElementService {
                     updateVariableFutures.add(variableValueDao.storeArrayValueBatch(asyncId, arrayId, "", arrayIndexMap));
                 }
             } else {
-                Future<Void> updateVariableFuture = Future.future();
                 if(key.contains("func")) {
                     continue;
                 }
-                updateVariableFutures.add(updateVariableFuture);
-                variableValueDao.storeVariableValue(asyncId, key, result.get(key)).setHandler(handler -> {
-                    if(handler.succeeded()) {
-                        updateVariableFuture.complete();
-                    } else {
-                        updateVariableFuture.fail(handler.cause());
-                    }
-                });
+                // Create a Variable object for batch update
+                in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable = new in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable();
+                variable.setId(key);
+                variable.setValue(result.get(key));
+                variablesToUpdate.add(variable);
             }
         }
-
+        if (!variablesToUpdate.isEmpty()) {
+            updateVariableFutures.add(variableValueDao.createVariablesBatch(asyncId, variablesToUpdate));
+        }
         CompositeFuture.all(updateVariableFutures).setHandler(updateVariableFuturesHandler -> {
             if(updateVariableFuturesHandler.succeeded()) {
                 future.complete();
