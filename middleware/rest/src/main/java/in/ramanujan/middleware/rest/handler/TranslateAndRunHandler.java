@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class TranslateAndRunHandler implements Handler<RoutingContext> {
@@ -34,20 +35,31 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
 
     private static ObjectMapper objectMapper = new ObjectMapper();
 
+    private AtomicInteger currentRequestCount = new AtomicInteger(0);
+
     @Override
     public void handle(RoutingContext routingContext) {
         try {
+            if(currentRequestCount.incrementAndGet() > 100)
+            {
+                routingContext.response().setStatusCode(HttpResponseStatus.SERVICE_UNAVAILABLE.code())
+                        .end(new JsonObject().put("message", "Too many requests, please try again later.").toString());
+                currentRequestCount.decrementAndGet();
+                return;
+            }
             JsonObject jsonObject = routingContext.getBodyAsJson();
             final CodeRunRequest codeRunRequest = jsonObject.mapTo(CodeRunRequest.class);
             final String toBeDebuggedStr = routingContext.queryParams().get("debug");
             final Boolean toBeDebugged = (toBeDebuggedStr != null && "true".equals(toBeDebuggedStr)) ? true : false;
             String code = codeRunRequest.getCode();
             compileErrorChecker.checkCompilationEntryPoint(code);
-            runCode(routingContext, codeRunRequest, toBeDebugged);
+            runCode(routingContext, codeRunRequest, toBeDebugged, currentRequestCount);
         } catch (CompilationException compilationException) {
             apiReactionOnCompialtionException(routingContext, compilationException);
+            currentRequestCount.decrementAndGet();
         } catch (Exception e) {
             apiReactionOnGeneralException(routingContext, e);
+            currentRequestCount.decrementAndGet();
         }
     }
 
@@ -63,7 +75,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
         routingContext.response().setStatusCode(HttpResponseStatus.BAD_REQUEST.code()).end(JsonObject.mapFrom(apiResponse).toString());
     }
 
-    protected void runCode(RoutingContext routingContext, CodeRunRequest codeRunRequest, Boolean toBeDebugged) {
+    protected void runCode(RoutingContext routingContext, CodeRunRequest codeRunRequest, Boolean toBeDebugged, AtomicInteger currentRequestCount) {
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
         final String code = codeRunRequest.getCode().replaceAll("\\n","").replaceAll("\\t","");
@@ -80,11 +92,13 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
                        ApiResponse apiResponse = new ApiResponse(HttpResponseStatus.OK.toString(), codeRunAsyncResponse);
                        routingContext.response().setStatusCode(HttpResponseStatus.OK.code())
                                .end(JsonObject.mapFrom(apiResponse).toString());
+                          currentRequestCount.decrementAndGet();
                    } else {
                        ApiResponse apiResponse = new ApiResponse(HttpResponseStatus.INTERNAL_SERVER_ERROR.toString(),
                                runCodeHandler.cause());
                        routingContext.response().setStatusCode(HttpResponseStatus.INTERNAL_SERVER_ERROR.code())
                                .end(JsonObject.mapFrom(apiResponse).toString());
+                       currentRequestCount.decrementAndGet();
                    }
                });
            } else {
@@ -92,6 +106,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
                        translateHandler.cause());
                routingContext.response().setStatusCode(HttpResponseStatus.INTERNAL_SERVER_ERROR.code())
                        .end(JsonObject.mapFrom(apiResponse).toString());
+               currentRequestCount.decrementAndGet();
            }
         });
     }

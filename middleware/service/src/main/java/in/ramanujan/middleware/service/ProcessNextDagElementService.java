@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class ProcessNextDagElementService {
@@ -47,18 +48,27 @@ public class ProcessNextDagElementService {
 
     private Logger logger = LoggerFactory.getLogger(ProcessNextDagElementService.class);
 
+    AtomicInteger countConcurrentRequest = new AtomicInteger(0);
+
     public Future<Void> processNextElement(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
         Future<Void> future = Future.future();
+        if (countConcurrentRequest.incrementAndGet() > 1000) {
+            logger.warn("Too many concurrent requests, returning without processing: " + asyncId);
+            future.fail("Too many requests");
+            return future;
+        }
         logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
         orchestratorAsyncTaskDao.getMapping(asyncId).setHandler(handler -> {
             if (handler.result() == null) {
                 logger.warn("No mapping found for asyncId: " + asyncId);
+                countConcurrentRequest.decrementAndGet();
                 future.complete();
                 return;
             }
             final Map<String, String> map = handler.result();
             final String orchId = map.get(dagElementId);
             if (orchId == null) {
+                countConcurrentRequest.decrementAndGet();
                 future.complete();
                 return;
             }
@@ -68,6 +78,7 @@ public class ProcessNextDagElementService {
                 if (statusApiHandler.succeeded()) {
                     if(statusApiHandler.result() == null) {
                         kafkaManagerApiCaller.callEventApi(asyncId, dagElementId, toBeDebugged).setHandler(retryHandler -> {
+                            countConcurrentRequest.decrementAndGet();
                             future.complete();
                         });
                     } else {
@@ -99,20 +110,24 @@ public class ProcessNextDagElementService {
                                         if(getNextDagElements.succeeded()) {
                                             if(getNextDagElements.result().size() == 0) {
                                                 handleNoNextDagElement(asyncId).setHandler(noNextDagElementHandler -> {
+                                                    countConcurrentRequest.decrementAndGet();
                                                     future.complete();
                                                 });
                                             } else {
                                                 callNextElements(getNextDagElements.result(), asyncId, dagElementId, vertx, toBeDebugged)
                                                         .setHandler(nextElementCallHandler -> {
+                                                    countConcurrentRequest.decrementAndGet();
                                                     future.complete();
                                                 });
                                             }
                                         } else {
+                                            countConcurrentRequest.decrementAndGet();
                                             future.fail(getNextDagElements.cause());
                                         }
                                     }));
                                 }));
                             } else {
+                                countConcurrentRequest.decrementAndGet();
                                 future.fail(refreshVariablesHandler.cause());
                             }
                         }));
@@ -125,6 +140,7 @@ public class ProcessNextDagElementService {
                             put("result", handler.cause());
                         }
                     });
+                    countConcurrentRequest.decrementAndGet();
                     future.complete();
                 }
             });
@@ -164,12 +180,18 @@ public class ProcessNextDagElementService {
             if(Constants.arrayIndex.equalsIgnoreCase(key)) {
                 Map<String, Map<String, Object>> arrayMap = (Map) result.get(key);
                 for(String arrayId : arrayMap.keySet()) {
+                    if(arrayId.contains("func")) {
+                        continue;
+                    }
                     Map<String, Object> arrayIndexMap = arrayMap.get(arrayId);
                     // Use batch update for all indexes of this arrayId. Pass empty string for arrayName (or replace if you have the name)
                     updateVariableFutures.add(variableValueDao.storeArrayValueBatch(asyncId, arrayId, "", arrayIndexMap));
                 }
             } else {
                 Future<Void> updateVariableFuture = Future.future();
+                if(key.contains("func")) {
+                    continue;
+                }
                 updateVariableFutures.add(updateVariableFuture);
                 variableValueDao.storeVariableValue(asyncId, key, result.get(key)).setHandler(handler -> {
                     if(handler.succeeded()) {
