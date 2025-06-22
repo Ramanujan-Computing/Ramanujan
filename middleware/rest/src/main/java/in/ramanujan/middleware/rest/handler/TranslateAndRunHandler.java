@@ -40,7 +40,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext routingContext) {
         try {
-            if(currentRequestCount.incrementAndGet() > 100)
+            if(currentRequestCount.incrementAndGet() > 5)
             {
                 routingContext.response().setStatusCode(HttpResponseStatus.SERVICE_UNAVAILABLE.code())
                         .end(new JsonObject().put("message", "Too many requests, please try again later.").toString());

@@ -35,6 +35,7 @@ public class Orchestrator {
             String uuid = UUID.randomUUID().toString();
             while (true) {
                 try {
+                    Thread.sleep(10_000L);
                     final OpenPingApiResponse openPingApiResponse = callBackendOpenAPI(uuid, credentials);
                     if (openPingApiResponse == null || openPingApiResponse.getRuleEngineInput() == null) {
                         continue;
@@ -46,7 +47,7 @@ public class Orchestrator {
                     Long prevTime = new Date().toInstant().toEpochMilli();
                     while(!processorFutureMap.getDone()) {
                         if((new Date().toInstant().toEpochMilli() - prevTime) > 5000) {
-                            HeartbeatPinger.pingHeartbeat(uuid, credentials);
+                            HeartbeatPinger.pingHeartbeat(uuid, openPingApiResponse.getUuid(), credentials);
                             prevTime = new Date().toInstant().toEpochMilli();
                         }
                     }
@@ -60,7 +61,7 @@ public class Orchestrator {
                     logger.info("submitted results of  processing " + uuid);
                     uuid = UUID.randomUUID().toString();
                 } catch (Exception e) {
-                    logger.error("topLevel exception", e);
+                    //logger.error("topLevel exception", e);
                     continue;
                 }
             }
@@ -84,6 +85,9 @@ public class Orchestrator {
         } catch (Exception e) {
             System.out.println("send of debug value failed for " + e);
             e.printStackTrace();
+            try {
+                Thread.sleep(10_000L);
+            } catch (Exception ex) {}
             submitDebugValues(asyncId, data);
         }
     }
@@ -110,6 +114,7 @@ public class Orchestrator {
 
             if (response.code() != 200) {
                 response.body().close();
+                Thread.sleep(10_000L);
                 submitResults(processorFutureMap, credentials, uuid);
             } else {
                 response.body().close();
@@ -117,6 +122,9 @@ public class Orchestrator {
         } catch (Exception e) {
             System.out.println("send of result failed " + e);
             e.printStackTrace();
+            try {
+                Thread.sleep(10_000L);
+            } catch (Exception ex) {}
             submitResults(processorFutureMap, credentials, uuid);
         }
     }

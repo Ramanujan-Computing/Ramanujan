@@ -40,7 +40,7 @@ public class PingerVerticle extends AbstractVerticle {
         logger.info("PingerVerticle started");
         vertx.eventBus().consumer(EventBus.PINGER, message -> {
             AsyncTask asyncTask = ((JsonObject) message.body()).mapTo(AsyncTask.class);
-            heartBeatDao.getLastHeartBeat(asyncTask.getHostAssigned()).setHandler(heartBeatHandler -> {
+            heartBeatDao.getLastHeartBeat(asyncTask.getUuid(), asyncTask.getHostAssigned()).setHandler(heartBeatHandler -> {
                 if(heartBeatHandler.succeeded()) {
                     HeartBeat heartBeat = heartBeatHandler.result();
                     if(heartBeat != null && heartBeat.getData() != null) {

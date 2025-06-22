@@ -9,3 +9,4 @@ DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_0900_ai_ci;
 CREATE INDEX variableMapping_asyncId_IDX USING BTREE ON ramanujan.variableMapping (asyncId);
 CREATE INDEX variableMapping_asyncId_variableId_IDX USING BTREE ON ramanujan.variableMapping (asyncId,variableId);
+CREATE INDEX variableMapping_variableId_IDX USING BTREE ON ramanujan.variableMapping (variableId);

@@ -16,6 +16,7 @@ public class VariableMapping {
 
     @ColumnName("variableId")
     @PrimaryKey(keyValue = Keys.ASYNC_ID_VARIABLE_ID, order = "2")
+    @PrimaryKey(keyValue = Keys.VARIABLE_ID, order = "1")
     public String variableId;
 
     @ColumnName(value = "variableName",duplicateSeparator = true)

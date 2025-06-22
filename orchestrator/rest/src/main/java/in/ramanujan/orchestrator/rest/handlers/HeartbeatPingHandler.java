@@ -24,8 +24,9 @@ public class HeartbeatPingHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext event) {
         String hostId = event.queryParams().get("uuid");
-        logger.info("Received hearbeat for " + hostId);
-        heartbeatPingService.pingHeartbeat(hostId).setHandler(new MonitoringHandler<>("heartbeat", handler -> {
+        String asyncTaskId = event.queryParams().get("asyncId");
+        logger.info("Received hearbeat for " + hostId + " for async task " + asyncTaskId);
+        heartbeatPingService.pingHeartbeat(asyncTaskId, hostId).setHandler(new MonitoringHandler<>("heartbeat", handler -> {
             if(handler.succeeded()) {
                 ApiResponse apiResponse = new ApiResponse(Status.SUCCESS.getKeyName(), handler.result());
                 event.response().setStatusCode(HttpResponseStatus.OK.code()).end(JsonObject.mapFrom(apiResponse).toString());

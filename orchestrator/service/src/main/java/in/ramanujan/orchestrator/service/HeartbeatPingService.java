@@ -20,23 +20,12 @@ public class HeartbeatPingService {
     @Autowired
     private AsyncTaskHostMappingDao asyncTaskHostMappingDao;
 
-    public Future<Boolean> pingHeartbeat(String hostId) {
+    public Future<Boolean> pingHeartbeat(String asyncId, String hostId) {
         Future<Boolean> future = Future.future();
-        HeartBeat  heartBeat = new HeartBeat(hostId, null, new Date().toInstant().toEpochMilli());
+        HeartBeat  heartBeat = new HeartBeat(asyncId, hostId, null, new Date().toInstant().toEpochMilli());
         heartBeatDao.updateHeartBeat(heartBeat).setHandler(handler -> {
            if(handler.succeeded()) {
-               asyncTaskHostMappingDao.getMapping(hostId).setHandler(getMappingHandler -> {
-                  if(getMappingHandler.succeeded()) {
-                      AsyncTask asyncTask = getMappingHandler.result();
-                      if(Status.FAILURE.getKeyName().equalsIgnoreCase(asyncTask.getStatus())) {
-                          future.complete(false);
-                      } else {
-                          future.complete(true);
-                      }
-                  } else {
-                      future.fail(getMappingHandler.cause());
-                  }
-               });
+               future.complete(true);
            } else {
                future.fail(handler.cause());
            }

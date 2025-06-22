@@ -51,7 +51,7 @@ public class OrchestratorTaskStatusService {
                     return;
                 }
                 asyncTask.setHostAssigned(getHostInfo.result());
-                heartBeatDao.getLastHeartBeat(asyncTask.getHostAssigned()).setHandler(heartBeatHandler -> {
+                heartBeatDao.getLastHeartBeat(asyncTask.getUuid(), asyncTask.getHostAssigned()).setHandler(heartBeatHandler -> {
                    if(heartBeatHandler.succeeded()) {
                        HeartBeat heartBeat = heartBeatHandler.result();
                        if (heartBeat == null || (new Date().toInstant().toEpochMilli() - heartBeat.getHeartBeatTimeEpoch()) > DateTimeUtils.maxHeartBeatDiff) {

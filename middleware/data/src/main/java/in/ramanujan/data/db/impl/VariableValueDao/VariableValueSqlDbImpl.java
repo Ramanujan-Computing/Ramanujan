@@ -189,10 +189,9 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
         } else {
             try {
                 VariableMapping variableMapping = new VariableMapping();
-                variableMapping.setAsyncId(asyncId);
                 variableMapping.setVariableId(variableId);
 
-                queryExecutor.execute(variableMapping, Keys.ASYNC_ID_VARIABLE_ID, QueryType.SELECT)
+                queryExecutor.execute(variableMapping, Keys.VARIABLE_ID, QueryType.SELECT)
                         .setHandler(new MonitoringHandler<>("variableValueGet", handler -> {
                     if(handler.succeeded()) {
                         List<Object> results = handler.result();
