@@ -249,9 +249,14 @@ public class RunService {
             Long dbGetStart = new Date().toInstant().toEpochMilli();
             List<Future> futureList = new ArrayList<>();
             for(Variable variable : ruleEngineInput.getVariables()) {
-                futureList.add(refreshVariableValue(asyncId, variable.getId(), variable));
+                if(variable.getId() != null && !variable.getId().contains("func")) {
+                    futureList.add(refreshVariableValue(asyncId, variable.getId(), variable));
+                }
             }
             for(Array array : ruleEngineInput.getArrays()) {
+                if(array.getId() == null || array.getId().contains("func")) {
+                    continue;
+                }
                 futureList.add(refreshArrayIndexValue(asyncId, array, array.getId()));
             }
             futureList.add(dagElementDao.setDagElementAndOrchestratorAsyncIdMapping(basicDagElement.getId(), orchestratorAsyncId));

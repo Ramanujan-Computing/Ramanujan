@@ -32,7 +32,7 @@ public class ConsumerVerticle extends AbstractVerticle {
     Logger logger= LoggerFactory.getLogger(ConsumerVerticle.class);
 
     final String topicName = Topics.next_element_topic.name();
-    final Long pollingIntervalInMillis = 2_000L;
+    final Long pollingIntervalInMillis = 20_000L;
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {

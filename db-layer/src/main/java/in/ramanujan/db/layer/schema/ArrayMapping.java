@@ -12,6 +12,7 @@ public class ArrayMapping {
     @ColumnName("arrayId")
     @PrimaryKey(keyValue = Keys.ASYNC_ID_ARRAY_ID, order = "2")
     @PrimaryKey(keyValue = Keys.ASYNC_ID_ARRAY_ID_INDEX, order = "2")
+    @PrimaryKey(keyValue = Keys.ARRAY_ID, order = "1")
     public String arrayId;
 
     @ColumnName("arrayName")

@@ -201,7 +201,7 @@ public class ProcessNextDagElementService {
             }
         }
         if (!variablesToUpdate.isEmpty()) {
-            updateVariableFutures.add(variableValueDao.createVariablesBatch(asyncId, variablesToUpdate));
+            updateVariableFutures.add(variableValueDao.updateVariablesBatch(asyncId, variablesToUpdate));
         }
         CompositeFuture.all(updateVariableFutures).setHandler(updateVariableFuturesHandler -> {
             if(updateVariableFuturesHandler.succeeded()) {

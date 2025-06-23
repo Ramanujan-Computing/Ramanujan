@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.base.enums.Topics;
 import in.ramanujan.base.pojo.CheckStatusQueueEvent;
 import in.ramanujan.base.pojo.CheckStatusQueueEventWithMetadata;
-import in.ramanujan.data.QueueingDao;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
@@ -17,7 +16,6 @@ import io.vertx.kafka.client.consumer.KafkaConsumerRecords;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
 import io.vertx.kafka.client.producer.KafkaProducer;
 import io.vertx.kafka.client.producer.KafkaProducerRecord;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,7 +73,7 @@ public class KafkaImpl extends QueueDaoImpl {
             if(produceHandler.succeeded()) {
                 future.complete();
             } else {
-                produce(kafkaEvent);
+                this.produce(kafkaEvent);
                 future.complete();
             }
         });

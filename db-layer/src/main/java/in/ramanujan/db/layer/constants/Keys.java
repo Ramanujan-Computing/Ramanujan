@@ -12,6 +12,7 @@ public class Keys {
     public final static String ASYNC_ID = "asyncId";
     public final static String ASYNC_ID_VARIABLE_ID = "asyncId_variableId";
     public final static String VARIABLE_ID = "variableId";
+    public final static String ARRAY_ID = "arrayId";
     public final static String ASYNC_ID_ARRAY_ID = "asyncId_arrayId";
     public final static String DAG_ELEMENT_ID = "dagElementId";
     public final static String NEXT_DAG_ELEMENT_ID = "nextDagElementId";
