@@ -216,7 +216,7 @@ public class RunService {
                 if (refreshVariablesHandler.succeeded()) {
                     final String orchestratorAsyncId = refreshVariablesHandler.result();
                     logger.info("Going to run for " + asyncId + "; dagElementId " + dagElementId);
-                    forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future);
+                    forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future, 5);
                 } else {
                     future.fail(refreshVariablesHandler.cause());
                 }
@@ -225,13 +225,21 @@ public class RunService {
         return future;
     }
 
-    private void forceRunOnOrchestrator(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged, BasicDagElement basicDagElement, String orchestratorAsyncId, Future<Void> future) {
+    private void forceRunOnOrchestrator(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged,
+                                        BasicDagElement basicDagElement, String orchestratorAsyncId, Future<Void> future,
+                                        int retryCount) {
+        if(retryCount == 0) {
+            logger.error("Can run orchestrator submit api; no more reties");
+            future.fail("Can run orchestrator submit api; no more reties");
+            return;
+        }
         orchestrationApiCaller.runCode(asyncId,
                         basicDagElement.getFirstCommandId(), basicDagElement.getId(), vertx, orchestratorAsyncId, toBeDebugged, basicDagElement.getCommaSeparatedDebugPoints())
                 .setHandler(orchestratorCallHandler -> {
                     if(orchestratorCallHandler.failed()) {
                         logger.error("Failed to run dag element id: " + dagElementId, orchestratorCallHandler.cause());
-                        forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future);
+                        forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future, retryCount - 1);
+                        return;
                     }
                     if(dagElementIdRan.contains(dagElementId)) {
                         logger.info("ALREADY THERE: " + dagElementId);

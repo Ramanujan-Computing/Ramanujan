@@ -2,7 +2,6 @@ package in.ramanujan.data.db.impl.storageDao;
 
 import in.ramanujan.data.db.dao.StorageDao;
 import in.ramanujan.db.layer.enums.StorageType;
-import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
 import io.vertx.core.Context;
 import org.springframework.stereotype.Component;
 
@@ -21,12 +20,12 @@ public class StorageDaoInternal extends StorageDao {
     }
 
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
-        storageDaoInternal.setObject(objectId, buckName, object);
+    protected void setObject(String objectId, String buckName, String object, int currentRetryCount) throws Exception {
+        storageDaoInternal.setObject(objectId, buckName, object, currentRetryCount);
     }
 
     @Override
-    protected String getObject(String objectId, String bucketName) throws Exception {
-        return storageDaoInternal.getObject(objectId, bucketName);
+    protected String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception {
+        return storageDaoInternal.getObject(objectId, bucketName, currentRetryCount);
     }
 }

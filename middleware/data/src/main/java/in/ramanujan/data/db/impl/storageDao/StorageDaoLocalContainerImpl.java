@@ -11,7 +11,7 @@ public class StorageDaoLocalContainerImpl extends StorageDaoInternal {
     * save a file in /buckName/objectId
     */
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
+    protected void setObject(String objectId, String buckName, String object, int currentRetryCount) throws Exception {
         try {
             File file = new File("/" + buckName + "/" + objectId);
             // write object to file
@@ -23,7 +23,7 @@ public class StorageDaoLocalContainerImpl extends StorageDaoInternal {
     }
 
     @Override
-    protected String getObject(String objectId, String bucketName) throws Exception {
+    protected String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception {
         try {
             File file = new File("/" + bucketName + "/" + objectId);
             return new String(Files.readAllBytes(file.toPath()));

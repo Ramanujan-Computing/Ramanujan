@@ -36,7 +36,7 @@ public abstract class  StorageDao {
         Future<Object> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                Object data = getObject(objectId, dagElementResultBucketName);
+                Object data = getObject(objectId, dagElementResultBucketName, 5);
                 blocking.complete(data);
             } catch (Exception e) {
                 blocking.fail(e);
@@ -55,7 +55,7 @@ public abstract class  StorageDao {
         Future<String> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(asyncId, commonFunctionCodeBucket);
+                String object = getObject(asyncId, commonFunctionCodeBucket, 5);
                 blocking.complete(object);
             } catch (Exception e) {
                 blocking.fail(e);
@@ -74,7 +74,7 @@ public abstract class  StorageDao {
         Future<UserReadableDebugPoints> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(orchestratorAsyncId, dagElementDebugValue);
+                String object = getObject(orchestratorAsyncId, dagElementDebugValue, 5);
                 blocking.complete(objectMapper.readValue(object, UserReadableDebugPoints.class));
             } catch (Exception e) {
                 blocking.fail(e);
@@ -93,7 +93,7 @@ public abstract class  StorageDao {
         Future<String> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(dagElementId, dageElementCodeBucketName);
+                String object = getObject(dagElementId, dageElementCodeBucketName, 5);
                 blocking.complete(object);
             } catch (Exception e) {
                 blocking.fail(e);
@@ -113,7 +113,7 @@ public abstract class  StorageDao {
         try {
             getVertxContext().executeBlocking(blocking -> {
                 try {
-                    setObject(asyncId, commonFunctionCodeBucket, code);
+                    setObject(asyncId, commonFunctionCodeBucket, code, 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -136,7 +136,7 @@ public abstract class  StorageDao {
         try {
             getVertxContext().executeBlocking(blocking -> {
                 try {
-                    setObject(dagElementId, dageElementCodeBucketName, code);
+                    setObject(dagElementId, dageElementCodeBucketName, code, 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -164,7 +164,7 @@ public abstract class  StorageDao {
                     basicDagElement.setFirstCommandId(dagElement.getFirstCommandId());
                     basicDagElement.setRuleEngineInput(dagElement.getRuleEngineInput());
 
-                    setObject(dagElement.getId(), dagElementBucketName, objectMapper.writeValueAsString(basicDagElement));
+                    setObject(dagElement.getId(), dagElementBucketName, objectMapper.writeValueAsString(basicDagElement), 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -186,7 +186,7 @@ public abstract class  StorageDao {
         Future<BasicDagElement> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(dagElementId, dagElementBucketName);
+                String object = getObject(dagElementId, dagElementBucketName, 5);
                 BasicDagElement basicDagElement = objectMapper.readValue(object, BasicDagElement.class);
                 blocking.complete(basicDagElement);
             } catch (Exception e) {
@@ -207,7 +207,7 @@ public abstract class  StorageDao {
         try {
             getVertxContext().executeBlocking(blocking -> {
                 try {
-                    setObject(orchestratorAsyncId, dagElementInputBucketName, objectMapper.writeValueAsString(ruleEngineInput));
+                    setObject(orchestratorAsyncId, dagElementInputBucketName, objectMapper.writeValueAsString(ruleEngineInput), 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -225,7 +225,7 @@ public abstract class  StorageDao {
         return future;
     }
 
-    protected abstract void setObject(String objectId, String buckName, String object) throws Exception;
-    protected abstract String getObject(String objectId, String bucketName) throws Exception;
+    protected abstract void setObject(String objectId, String buckName, String object, int currentRetryCount) throws Exception;
+    protected abstract String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception;
 }
 

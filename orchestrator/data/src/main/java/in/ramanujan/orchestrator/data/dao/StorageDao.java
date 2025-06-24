@@ -75,6 +75,7 @@ public abstract class StorageDao {
         Future<RuleEngineInput> future = Future.future();
         getContext().executeBlocking(blocking -> {
             try {
+                logger.info("asyncTaskId: " + asyncTaskId + "; bucket: " + dagElementInputBucketName);
                 String data = getObject(asyncTaskId, dagElementInputBucketName);
                 blocking.complete(data);
             } catch (Exception e) {

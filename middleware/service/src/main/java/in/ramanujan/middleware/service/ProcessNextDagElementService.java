@@ -1,5 +1,6 @@
 package in.ramanujan.middleware.service;
 
+import com.sun.management.OperatingSystemMXBean;
 import in.ramanujan.data.db.dao.*;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.data.KafkaManagerApiCaller;
@@ -16,6 +17,7 @@ import io.vertx.core.logging.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -50,9 +52,26 @@ public class ProcessNextDagElementService {
 
     AtomicInteger countConcurrentRequest = new AtomicInteger(0);
 
+    int maxProcessing = 100 * Runtime.getRuntime().availableProcessors();
+
+    private double lastCpuCalcTime = 0d;
+    private double lastCpuVal = 0d;
+
+    private final OperatingSystemMXBean osBean =
+            (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+
     public Future<Void> processNextElement(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
         Future<Void> future = Future.future();
-        if (countConcurrentRequest.incrementAndGet() > 1000) {
+        if(System.currentTimeMillis() - lastCpuCalcTime > 5000) {
+            lastCpuVal = osBean.getProcessCpuLoad();
+            lastCpuCalcTime = System.currentTimeMillis();
+        }
+        if(lastCpuVal > 0.5) {
+            logger.error("High CPU usage detected: " + lastCpuVal);
+            return Future.failedFuture("High CPU usage: " + lastCpuVal);
+        }
+        logger.info("Current CPU usage: " + lastCpuVal);
+        if (countConcurrentRequest.incrementAndGet() > maxProcessing) {
             logger.warn("Too many concurrent requests, returning without processing: " + asyncId);
             future.fail("Too many requests");
             return future;
@@ -100,11 +119,11 @@ public class ProcessNextDagElementService {
                             logger.info("refreshVar : " + getTimeElapsed(refreshVarStart));
                             if(refreshVariablesHandler.succeeded()) {
                                 Long removeStart = new Date().toInstant().toEpochMilli();
-                                dagElementDao.removeDagElementAsyncIdMap(asyncId, dagElementId)
+                                dagElementDao.removeDagElementAsyncIdMap(asyncId, dagElementId) //redundant in case of sql.
                                         .setHandler(new MonitoringHandler<>("removeDagElementIdFromAsyncTask", removeDagElementHandler -> {
                                     logger.info("remove time: " + getTimeElapsed(removeStart));
                                     Long nextIdFetchStart = new Date().toInstant().toEpochMilli();
-                                    dagElementDao.getNextId(dagElementId, true).
+                                    dagElementDao.getNextId(dagElementId, false/*so that if nextElem was not able to get started, we dont stop here in the next run.*/).
                                             setHandler(new MonitoringHandler<>("getNextDagElementId", getNextDagElements -> {
                                         logger.info("nextId fetch: " + getTimeElapsed(nextIdFetchStart));
                                         if(getNextDagElements.succeeded()) {
@@ -117,7 +136,12 @@ public class ProcessNextDagElementService {
                                                 callNextElements(getNextDagElements.result(), asyncId, dagElementId, vertx, toBeDebugged)
                                                         .setHandler(nextElementCallHandler -> {
                                                     countConcurrentRequest.decrementAndGet();
-                                                    future.complete();
+                                                    if(nextElementCallHandler.succeeded()) {
+                                                        future.complete();
+                                                    } else {
+                                                        logger.error("Failed to call next elements", nextElementCallHandler.cause());
+                                                        future.fail(nextElementCallHandler.cause());
+                                                    }
                                                 });
                                             }
                                         } else {
