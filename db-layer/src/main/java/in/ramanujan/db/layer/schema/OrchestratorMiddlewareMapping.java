@@ -16,6 +16,7 @@ public class OrchestratorMiddlewareMapping {
 
     @ColumnName("dagElementId")
     @PrimaryKey(keyValue = Keys.MIDDLEWARE_ASYNC_ID_DAG_ELEMENT_ID, order = "2")
+    @PrimaryKey(keyValue = Keys.DAG_ELEMENT_ID, order = "1")
     public String dagElementId;
 
     @ColumnName("orchestratorAsyncId")

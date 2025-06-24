@@ -21,10 +21,9 @@ public class HeartbeatDaoSqlDbImpl implements HeartBeatDao {
         Future<HeartBeat> future = Future.future();
         try {
             HostMapping hostMapping = new HostMapping();
-            hostMapping.setUuid(asyncId);
             hostMapping.setHostId(hostId);
 
-            queryExecutor.execute(hostMapping, Keys.UUID_HOST_ID, QueryType.SELECT).setHandler(handler -> {
+            queryExecutor.execute(hostMapping, Keys.HOST_ID, QueryType.SELECT).setHandler(handler -> {
                if(handler.succeeded()) {
                    if(handler.result() == null || handler.result().size() == 0) {
                        future.complete();

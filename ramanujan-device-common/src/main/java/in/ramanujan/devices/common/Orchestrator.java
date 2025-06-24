@@ -35,7 +35,7 @@ public class Orchestrator {
             String uuid = UUID.randomUUID().toString();
             while (true) {
                 try {
-                    Thread.sleep(10_000L);
+                    Thread.sleep(1_000L);
                     final OpenPingApiResponse openPingApiResponse = callBackendOpenAPI(uuid, credentials);
                     if (openPingApiResponse == null || openPingApiResponse.getRuleEngineInput() == null) {
                         continue;
@@ -59,7 +59,7 @@ public class Orchestrator {
                     }
                     submitResults(processorFutureMap, credentials, uuid);
                     logger.info("submitted results of  processing " + uuid);
-                    uuid = UUID.randomUUID().toString();
+//                    uuid = UUID.randomUUID().toString();
                 } catch (Exception e) {
                     //logger.error("topLevel exception", e);
                     continue;
