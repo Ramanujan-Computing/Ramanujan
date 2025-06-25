@@ -5,5 +5,6 @@ public enum QueryType {
     UPDATE,
     DELETE,
     UPSERT,
-    SELECT;
+    SELECT,
+    SELECT_IN;  // Added for IN clause batch operations
 }

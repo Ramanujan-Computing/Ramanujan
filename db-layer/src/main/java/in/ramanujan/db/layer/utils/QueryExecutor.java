@@ -2,6 +2,9 @@ package in.ramanujan.db.layer.utils;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import in.ramanujan.db.layer.annotations.ColumnName;
+import in.ramanujan.db.layer.annotations.Table;
+import in.ramanujan.db.layer.constants.Keys;
 import in.ramanujan.db.layer.queryCreator.*;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.monitoringutils.StatsRecorderUtils;
@@ -31,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.lang.reflect.Field;
 
 @Component
 public class QueryExecutor {
@@ -176,7 +180,7 @@ public class QueryExecutor {
                 }
                 final ResultSet resultSet;
                 List<Object> objects = new ArrayList<>();
-                if(queryType == QueryType.SELECT) {
+                if(queryType == QueryType.SELECT || queryType == QueryType.SELECT_IN) {
                     resultSet = statement.executeQuery();
                     while(resultSet.next()) {
                         objects.add(RowToObjectConvertor.convert(resultSet, object));
@@ -268,6 +272,17 @@ public class QueryExecutor {
             customQuery = insertDuplicateQueryCreator.query(object, batchOpObjects);
         } else if (queryType == QueryType.UPDATE && batchOpObjects != null) {
             customQuery = whereClauseQueryCreator.batchUpdateQuery(object, index, batchOpObjects);
+        } else if (queryType == QueryType.SELECT_IN && batchOpObjects != null && !batchOpObjects.isEmpty()) {
+            // For SELECT_IN, use queryWithInClause
+            // - first element: a List of values for the IN clause
+            @SuppressWarnings("unchecked")
+            List<Object> inValues = (List<Object>) batchOpObjects.get(0);
+            customQuery = whereClauseQueryCreator.queryWithInClause(
+                object, 
+                inValues, 
+                index, // Use index as the key for the IN clause
+                WhereClauseQueryCreator.WhereTypeQuery.SELECT
+            );
         } else {
             customQuery = whereClauseQueryCreator.query(object, index,
                     WhereClauseQueryCreator.WhereTypeQuery.valueOf(queryType.name()));

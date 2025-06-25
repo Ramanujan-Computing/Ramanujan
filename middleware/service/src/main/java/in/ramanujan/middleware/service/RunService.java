@@ -256,10 +256,16 @@ public class RunService {
         try {
             Long dbGetStart = new Date().toInstant().toEpochMilli();
             List<Future> futureList = new ArrayList<>();
+            // Collect variables for batch refresh
+            List<Variable> variablesToRefresh = new ArrayList<>();
             for(Variable variable : ruleEngineInput.getVariables()) {
                 if(variable.getId() != null && !variable.getId().contains("func")) {
-                    futureList.add(refreshVariableValue(asyncId, variable.getId(), variable));
+                    variablesToRefresh.add(variable);
                 }
+            }
+            // Add batch refresh future if there are variables to refresh
+            if (!variablesToRefresh.isEmpty()) {
+                futureList.add(refreshVariableValuesBatch(asyncId, variablesToRefresh));
             }
             for(Array array : ruleEngineInput.getArrays()) {
                 if(array.getId() == null || array.getId().contains("func")) {
@@ -348,6 +354,41 @@ public class RunService {
            }
         });
         return future;
+    }
+
+    private Future<Void> refreshVariableValuesBatch(String asyncId, List<Variable> variables) throws Exception {
+        Promise<Void> promise = Promise.promise();
+        if (variables == null || variables.isEmpty()) {
+            promise.complete();
+            return promise.future();
+        }
+        
+        List<String> variableIds = new ArrayList<>();
+        Map<String, Variable> variableMap = new HashMap<>();
+        
+        for (Variable variable : variables) {
+            variableIds.add(variable.getId());
+            variableMap.put(variable.getId(), variable);
+        }
+        
+        variableValueDao.getVariableValuesBatch(asyncId, variableIds).setHandler(getVariablesHandler -> {
+            if (getVariablesHandler.succeeded()) {
+                Map<String, Object> valuesMap = getVariablesHandler.result();
+                if (valuesMap != null) {
+                    for (String variableId : valuesMap.keySet()) {
+                        Variable variable = variableMap.get(variableId);
+                        if (variable != null) {
+                            variable.setValue(valuesMap.get(variableId));
+                        }
+                    }
+                }
+                promise.complete();
+            } else {
+                promise.fail(getVariablesHandler.cause());
+            }
+        });
+        
+        return promise.future();
     }
 
     public Future<Void> addDebugPoints(String asyncId, String firstDagElementId, FirstDebugPointPayload payload, Vertx vertx) {

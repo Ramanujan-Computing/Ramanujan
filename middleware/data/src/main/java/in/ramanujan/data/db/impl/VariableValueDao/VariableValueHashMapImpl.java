@@ -157,4 +157,23 @@ public class VariableValueHashMapImpl implements VariableValueDao {
         }
         return Future.succeededFuture();
     }
+
+    @Override
+    public Future<Map<String, Object>> getVariableValuesBatch(String asyncId, java.util.List<String> variableIds) {
+        Map<String, Object> resultMap = new HashMap<>();
+        
+        if (variableIds == null || variableIds.isEmpty() || !variableValueMap.containsKey(asyncId)) {
+            return Future.succeededFuture(resultMap);
+        }
+        
+        Map<String, Object> asyncVariables = variableValueMap.get(asyncId);
+        
+        for (String variableId : variableIds) {
+            if (asyncVariables.containsKey(variableId)) {
+                resultMap.put(variableId, asyncVariables.get(variableId));
+            }
+        }
+        
+        return Future.succeededFuture(resultMap);
+    }
 }

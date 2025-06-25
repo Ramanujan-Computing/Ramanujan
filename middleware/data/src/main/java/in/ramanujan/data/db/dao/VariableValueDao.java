@@ -31,4 +31,9 @@ public interface VariableValueDao {
     public Future<Map<String, Object>> getArrayValues(final String asyncId, final String arrayId);
     public Future<VariableAndArrayResult> getAllValuesForAsyncId(final String asyncId);
     public Future<Void> deletedAllVariablesForAsyncId(final String asyncId);
+
+    /**
+     * Batch get variable values for multiple variable IDs
+     */
+    public Future<Map<String, Object>> getVariableValuesBatch(final String asyncId, final java.util.List<String> variableIds);
 }

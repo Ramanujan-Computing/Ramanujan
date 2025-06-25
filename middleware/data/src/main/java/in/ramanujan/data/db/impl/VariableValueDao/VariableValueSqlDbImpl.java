@@ -13,6 +13,7 @@ import in.ramanujan.db.layer.schema.ArrayMapping;
 import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static in.ramanujan.db.layer.constants.Keys.VARIABLE_IDS_IN;
 
 
 @Component
@@ -406,5 +409,47 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
             future.fail(e);
         }
         return future;
+    }
+
+    @Override
+    public Future<Map<String, Object>> getVariableValuesBatch(String asyncId, List<String> variableIds) {
+        Promise<Map<String, Object>> promise = Promise.promise();
+        Map<String, Object> resultMap = new HashMap<>();
+        
+        if (variableIds == null || variableIds.isEmpty()) {
+            promise.complete(resultMap);
+            return promise.future();
+        }
+        
+        try {
+            // Use a single query with IN clause for all variable IDs
+            VariableMapping variableMapping = new VariableMapping();
+            variableMapping.setAsyncId(asyncId);
+            
+            // Create batch params for the IN query
+            List<Object> batchParams = new ArrayList<>();
+            // Convert List<String> to List<Object> for the IN clause
+            List<Object> variableIdsAsObjects = new ArrayList<>(variableIds);
+            batchParams.add(variableIdsAsObjects);  // first param: list of variable IDs as Objects
+            
+            // Execute with SELECT_IN query type, using VARIABLE_IDS_IN as the key
+            queryExecutor.execute(variableMapping, VARIABLE_IDS_IN, QueryType.SELECT_IN, batchParams)
+                    .setHandler(new MonitoringHandler<>("variableValueBatchGet", handler -> {
+                if (handler.succeeded()) {
+                    List<Object> results = handler.result();
+                    for (Object obj : results) {
+                        VariableMapping variableMappingObj = (VariableMapping) obj;
+                        resultMap.put(variableMappingObj.getVariableId(), getObject(variableMappingObj.getObject()));
+                    }
+                    promise.complete(resultMap);
+                } else {
+                    promise.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            promise.fail(e);
+        }
+        
+        return promise.future();
     }
 }
