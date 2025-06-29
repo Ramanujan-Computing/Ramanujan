@@ -22,7 +22,7 @@ public class LocalStorageImpl extends OrchestratorStorageDaoInternal {
     }
 
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
+    protected void setObject(String objectId, String buckName, String object, int retries) throws Exception {
         File file = new File("/" + buckName + "/" + objectId);
         //Write to the file
         Files.createDirectories(file.toPath().getParent());

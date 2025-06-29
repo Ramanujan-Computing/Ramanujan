@@ -204,7 +204,7 @@ public class OrchestrationApiCaller {
                     logger.info("Task success " + orchestrationTaskId);
                     getData(orchestrationTaskId).setHandler(getDataHandler -> {
                         Map<String, Object>  data = getDataHandler.result();
-                        orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId);
+                        //orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId);
                         future.complete(new DeviceExecStatus(Status.SUCCESS, data));
                     });
 

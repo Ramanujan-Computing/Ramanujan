@@ -2,7 +2,6 @@ package in.ramanujan.orchestrator.data.dao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.db.layer.enums.StorageType;
-import in.ramanujan.orchestrator.base.configuration.ConfigurationGetter;
 import in.ramanujan.orchestrator.base.pojo.CheckpointResumePayload;
 import in.ramanujan.orchestrator.data.impl.storageDaoImpl.GoogleCloudStorageImpl;
 import in.ramanujan.pojo.RuleEngineInput;
@@ -37,7 +36,7 @@ public abstract class StorageDao {
         Future<Void> future = Future.future();
         getContext().executeBlocking(blocking -> {
             try {
-                setObject(asyncTaskId, dagElementResultBucketName, object.toString());
+                setObject(asyncTaskId, dagElementResultBucketName, object.toString(), 5);
                 blocking.complete();
             } catch (Exception e) {
                 blocking.fail(e);
@@ -56,7 +55,7 @@ public abstract class StorageDao {
         Future<Void> future = Future.future();
         getContext().executeBlocking(blocking -> {
             try {
-                setObject(asyncTaskId, dagElementDebugValue, objectMapper.writeValueAsString(debugObj));
+                setObject(asyncTaskId, dagElementDebugValue, objectMapper.writeValueAsString(debugObj), 5);
                 blocking.complete();
             } catch (Exception e) {
                 blocking.fail(e);
@@ -104,7 +103,7 @@ public abstract class StorageDao {
         try {
             getContext().executeBlocking(blocking -> {
                 try {
-                    setObject(asyncId, dagElementCheckpointBucket, objectMapper.writeValueAsString(checkpoint));
+                    setObject(asyncId, dagElementCheckpointBucket, objectMapper.writeValueAsString(checkpoint), 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -154,7 +153,7 @@ public abstract class StorageDao {
         try {
             getContext().executeBlocking(blocking -> {
                 try {
-                    setObject(asyncId, dagElementDebugPointsBucket, objectMapper.writeValueAsString(checkpointResumePayload));
+                    setObject(asyncId, dagElementDebugPointsBucket, objectMapper.writeValueAsString(checkpointResumePayload), 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -200,5 +199,5 @@ public abstract class StorageDao {
     }
 
     protected abstract String getObject(String objectId, String bucketName) throws Exception ;
-    protected abstract void setObject(String objectId, String buckName, String object) throws Exception;
+    protected abstract void setObject(String objectId, String buckName, String object, int retries) throws Exception;
 }

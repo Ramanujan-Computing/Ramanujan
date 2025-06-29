@@ -10,6 +10,7 @@ import java.util.Map;
 @Data
 @AllArgsConstructor
 public class ResultSubmitPayload {
+    private String uuid;
     private String hostId;
     private Map<String, Object> data;
 

@@ -62,20 +62,7 @@ public class ProcessNextDagElementService {
 
     public Future<Void> processNextElement(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
         Future<Void> future = Future.future();
-        if(System.currentTimeMillis() - lastCpuCalcTime > 5000) {
-            lastCpuVal = osBean.getProcessCpuLoad();
-            lastCpuCalcTime = System.currentTimeMillis();
-        }
-        if(lastCpuVal > 0.5) {
-            logger.error("High CPU usage detected: " + lastCpuVal);
-            return Future.failedFuture("High CPU usage: " + lastCpuVal);
-        }
-        logger.info("Current CPU usage: " + lastCpuVal);
-        if (countConcurrentRequest.incrementAndGet() > maxProcessing) {
-            logger.warn("Too many concurrent requests, returning without processing: " + asyncId);
-            future.fail("Too many requests");
-            return future;
-        }
+
         logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
         orchestratorAsyncTaskDao.getMapping(asyncId).setHandler(handler -> {
             if (handler.result() == null) {
@@ -96,10 +83,7 @@ public class ProcessNextDagElementService {
                 logger.info("status API: " + getTimeElapsed(statusApiStart));
                 if (statusApiHandler.succeeded()) {
                     if(statusApiHandler.result() == null) {
-                        kafkaManagerApiCaller.callEventApi(asyncId, dagElementId, toBeDebugged).setHandler(retryHandler -> {
-                            countConcurrentRequest.decrementAndGet();
-                            future.complete();
-                        });
+                        future.fail("Status API returned null for asyncId: " + asyncId);
                     } else {
                         DeviceExecStatus deviceExecStatus = statusApiHandler.result();
                         if(deviceExecStatus.getStatus() == Status.CHECKPOINT) {
@@ -129,15 +113,25 @@ public class ProcessNextDagElementService {
                                         if(getNextDagElements.succeeded()) {
                                             if(getNextDagElements.result().size() == 0) {
                                                 handleNoNextDagElement(asyncId).setHandler(noNextDagElementHandler -> {
-                                                    countConcurrentRequest.decrementAndGet();
-                                                    future.complete();
+                                                    if(noNextDagElementHandler.succeeded()) {
+                                                        countConcurrentRequest.decrementAndGet();
+                                                        orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId).setHandler(removeHandler -> {
+                                                            future.complete();
+                                                        });
+                                                    } else {
+                                                        countConcurrentRequest.decrementAndGet();
+                                                        future.fail("No next dag element found for asyncId: " + asyncId + ", dagElementId: " + dagElementId);
+                                                    }
+
                                                 });
                                             } else {
                                                 callNextElements(getNextDagElements.result(), asyncId, dagElementId, vertx, toBeDebugged)
                                                         .setHandler(nextElementCallHandler -> {
                                                     countConcurrentRequest.decrementAndGet();
                                                     if(nextElementCallHandler.succeeded()) {
-                                                        future.complete();
+                                                        orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId).setHandler(removeHandler -> {
+                                                            future.complete();
+                                                        });
                                                     } else {
                                                         logger.error("Failed to call next elements", nextElementCallHandler.cause());
                                                         future.fail(nextElementCallHandler.cause());
@@ -179,7 +173,7 @@ public class ProcessNextDagElementService {
     private Future<Void> handleNoNextDagElement(String asyncId) {
         Future<Void> future = Future.future();
         dagElementDao.isAsyncTaskDone(asyncId).setHandler(isAsyncTaskDoneHandler -> {
-            if(isAsyncTaskDoneHandler.result()) {
+            if(isAsyncTaskDoneHandler.result() <= 1) {
                 //terminate the asyncTask
                 asyncTaskDao.update(asyncId, new HashMap<String, Object>() {
                     {
@@ -187,6 +181,11 @@ public class ProcessNextDagElementService {
                         put("result", null);
                     }
                 }).setHandler(updateHandler -> {
+                    if(updateHandler.failed()) {
+                        logger.error("Failed to update async task status to SUCCESS for asyncId: " + asyncId, updateHandler.cause());
+                        future.fail(updateHandler.cause());
+                        return;
+                    }
                     future.complete();
                 });
             } else {
@@ -263,11 +262,21 @@ public class ProcessNextDagElementService {
             Long dependencyRemoveStart = new Date().toInstant().toEpochMilli();
             dagElementDao.removeDagElementDependency(dagElementId, nextDagElementId)
                     .setHandler(new MonitoringHandler<>("removeDagElementDependency", removedHandler -> {
-                logger.info("dependencyRemove: " + getTimeElapsed(dependencyRemoveStart));
-                callNextElementIfIsNotDependent(asyncId, dagElementId, vertx, nextDagElementId, future, toBeDebugged);
-            }));
+                        if (removedHandler.failed()) {
+                            logger.error("Failed to remove dependency for " + dagElementId + " -> " + nextDagElementId, removedHandler.cause());
+                            future.fail(removedHandler.cause());
+                            return;
+                        }
+                        logger.info("dependencyRemove: " + getTimeElapsed(dependencyRemoveStart));
+                        callNextElementIfIsNotDependent(asyncId, dagElementId, vertx, nextDagElementId, future, toBeDebugged);
+                    }));
         }
         CompositeFuture.all(futures).setHandler(handler -> {
+            if(handler.failed()) {
+                logger.error("Failed to call next elements", handler.cause());
+                callNextElementFuture.fail(handler.cause());
+                return;
+            }
             callNextElementFuture.complete();
         });
         return callNextElementFuture;
@@ -279,6 +288,11 @@ public class ProcessNextDagElementService {
         dagElementDao.isDagElementStillDependent(nextDagElementId)
                 .setHandler(new MonitoringHandler<>("isDagElementStillDependent", dependenceHandler -> {
             logger.info("noDependencyCheck: " + getTimeElapsed(noDependencyCheckStart));
+            if(dependenceHandler.failed()) {
+                logger.error("Failed to check dependency for " + nextDagElementId, dependenceHandler.cause());
+                future.fail(dependenceHandler.cause());
+                return;
+            }
             if (!dependenceHandler.result()) {
                 Long lockCheckStart = new Date().toInstant().toEpochMilli();
                 attainLock(nextDagElementId).setHandler(new MonitoringHandler<>("attainLockOnDagElementId", attainer -> {

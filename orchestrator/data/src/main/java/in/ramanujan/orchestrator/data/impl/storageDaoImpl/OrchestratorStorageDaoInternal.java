@@ -26,7 +26,7 @@ public class OrchestratorStorageDaoInternal extends StorageDao {
     }
 
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
-        storageDaoInternal.setObject(objectId, buckName, object);
+    protected void setObject(String objectId, String buckName, String object, int retries) throws Exception {
+        storageDaoInternal.setObject(objectId, buckName, object, retries);
     }
 }

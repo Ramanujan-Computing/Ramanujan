@@ -350,15 +350,15 @@ public class DagElementSqlDbImpl implements DagElementDao {
     }
 
     @Override
-    public Future<Boolean> isAsyncTaskDone(String asyncId) {
-        Future<Boolean> future = Future.future();
+    public Future<Integer> isAsyncTaskDone(String asyncId) {
+        Future<Integer> future = Future.future();
         try {
             OrchestratorMiddlewareMapping orchestratorMiddlewareMapping = new OrchestratorMiddlewareMapping();
             orchestratorMiddlewareMapping.setMiddlewareAsyncId(asyncId);
 
             queryExecutor.execute(orchestratorMiddlewareMapping, Keys.MIDDLEWARE_ASYNC_ID, QueryType.SELECT).setHandler(handler -> {
                if(handler.succeeded()) {
-                   future.complete(handler.result().size() == 0);
+                   future.complete(handler.result().size());
                } else {
                    future.fail(handler.cause());
                }

@@ -60,20 +60,27 @@ public class RunService {
         Future<String> future = Future.future();
         addAsyncTask().setHandler(new MonitoringHandler<>("asyncTaskAdd", asyncTaskInsert -> {
             String asyncId = asyncTaskInsert.result();
-            if(!toBeDebugged) {
-                future.complete(asyncId);
-            }
+
             initDbEntries(asyncId, translateResponse).setHandler(new MonitoringHandler<>("initDbEntries", dbOperationHandler -> {
                 logger.info("InitDB done for " + asyncId);
-                if (toBeDebugged) {
-                    future.complete(asyncId);
+                if(dbOperationHandler.failed()) {
+                    logger.error("Failed to init db entries for asyncId: " + asyncId, dbOperationHandler.cause());
+                    future.fail(dbOperationHandler.cause());
                     return;
                 }
                 if(dbOperationHandler.succeeded()) {
                     runDagElementId(asyncId, translateResponse.getFirstDagElement().getId(), vertx, toBeDebugged)
                             .setHandler(new MonitoringHandler<>("runDagElementId", runDagHandler -> {
                     if (runDagHandler.succeeded()) {
-                        kafkaManagerApiCaller.callEventApi(asyncId, translateResponse.getFirstDagElement().getId(), toBeDebugged);
+                        kafkaManagerApiCaller.callEventApi(asyncId, translateResponse.getFirstDagElement().getId(), toBeDebugged).setHandler(kafkCall -> {
+                            if (kafkCall.succeeded()) {
+                                logger.info("Kafka event api call succeeded for asyncId: " + asyncId);
+                                future.complete(asyncId);
+                            } else {
+                                logger.error("Failed to call Kafka event api for asyncId: " + asyncId, kafkCall.cause());
+                                future.fail(kafkCall.cause());
+                            }
+                        });
                     } else {
                         logger.error("Failed to run dag element id: " + translateResponse.getFirstDagElement().getId(), runDagHandler.cause());
                         future.fail(runDagHandler.cause());
@@ -210,17 +217,22 @@ public class RunService {
     public Future<Void> runDagElementId(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged) {
         Future<Void> future = Future.future();
         storageDao.getDagElement(dagElementId).setHandler(handler -> {
-            BasicDagElement basicDagElement = handler.result();
-            //TODO: write the logic
-            refreshVariablesAndProvideOrchestratorAsyncId(asyncId, basicDagElement).setHandler(refreshVariablesHandler -> {
-                if (refreshVariablesHandler.succeeded()) {
-                    final String orchestratorAsyncId = refreshVariablesHandler.result();
-                    logger.info("Going to run for " + asyncId + "; dagElementId " + dagElementId);
-                    forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future, 5);
-                } else {
-                    future.fail(refreshVariablesHandler.cause());
-                }
-            });
+            if(handler.succeeded()) {
+                BasicDagElement basicDagElement = handler.result();
+                //TODO: write the logic
+                refreshVariablesAndProvideOrchestratorAsyncId(asyncId, basicDagElement).setHandler(refreshVariablesHandler -> {
+                    if (refreshVariablesHandler.succeeded()) {
+                        final String orchestratorAsyncId = refreshVariablesHandler.result();
+                        logger.info("Going to run for " + asyncId + "; dagElementId " + dagElementId);
+                        forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future, 5);
+                    } else {
+                        future.fail(refreshVariablesHandler.cause());
+                    }
+                });
+            } else {
+                logger.error("Failed to get dag element id: " + dagElementId, handler.cause());
+                future.fail(handler.cause());
+            }
         });
         return future;
     }

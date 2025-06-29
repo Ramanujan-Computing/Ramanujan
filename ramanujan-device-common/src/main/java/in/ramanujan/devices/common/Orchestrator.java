@@ -32,34 +32,34 @@ public class Orchestrator {
     final Runnable runnable = new Runnable() {
         @Override
         public void run() {
-            String uuid = UUID.randomUUID().toString();
+            String hostId = UUID.randomUUID().toString();
             while (true) {
                 try {
                     Thread.sleep(1_000L);
-                    final OpenPingApiResponse openPingApiResponse = callBackendOpenAPI(uuid, credentials);
+                    final OpenPingApiResponse openPingApiResponse = callBackendOpenAPI(hostId, credentials);
                     if (openPingApiResponse == null || openPingApiResponse.getRuleEngineInput() == null) {
                         continue;
                     }
-                    logger.info("starting processing " + uuid);
+                    logger.info("starting processing " + hostId);
                     DebugClient debugClient = new DebugClient(openPingApiResponse.getUuid());
-                    CodeExecutor.ProcessorFutureMap processorFutureMap = CodeExecutor.execute(openPingApiResponse, uuid, debugClient);
+                    CodeExecutor.ProcessorFutureMap processorFutureMap = CodeExecutor.execute(openPingApiResponse, hostId, debugClient);
 
                     Long prevTime = new Date().toInstant().toEpochMilli();
                     while(!processorFutureMap.getDone()) {
                         if((new Date().toInstant().toEpochMilli() - prevTime) > 5000) {
-                            HeartbeatPinger.pingHeartbeat(uuid, openPingApiResponse.getUuid(), credentials);
+                            HeartbeatPinger.pingHeartbeat(hostId, openPingApiResponse.getUuid(), credentials);
                             prevTime = new Date().toInstant().toEpochMilli();
                         }
                     }
-                    logger.info("done processing " + uuid);
+                    logger.info("done processing " + hostId);
                     if(openPingApiResponse.getDebug()) {
                         Long startForDebugSend = new Date().toInstant().toEpochMilli();
                         debugClient.call(processorFutureMap.getDebugData());
                         logger.info("debug api done in " + (new Date().toInstant().toEpochMilli() - startForDebugSend));
                     }
-                    submitResults(processorFutureMap, credentials, uuid);
-                    logger.info("submitted results of  processing " + uuid);
-//                    uuid = UUID.randomUUID().toString();
+                    submitResults(processorFutureMap, credentials, openPingApiResponse.getUuid(), hostId);
+                    logger.info("submitted results of  processing " + hostId);
+                    //hostId = UUID.randomUUID().toString();
                 } catch (Exception e) {
                     //logger.error("topLevel exception", e);
                     continue;
@@ -103,9 +103,10 @@ public class Orchestrator {
         }
     }
 
-    private void submitResults(final CodeExecutor.ProcessorFutureMap processorFutureMap, final Credentials credentials, final String uuid) {
+    private void submitResults(final CodeExecutor.ProcessorFutureMap processorFutureMap, final Credentials credentials,
+                               final String uuid, final String hostId) {
         try {
-            ResultSubmitPayload resultSubmitPayload = new ResultSubmitPayload(uuid, processorFutureMap.getResult());
+            ResultSubmitPayload resultSubmitPayload = new ResultSubmitPayload(uuid, hostId, processorFutureMap.getResult());
             Request request = new Request.Builder()
                     .post(RequestBody.create(JSON, objectMapper.writeValueAsString(resultSubmitPayload)))
                     .url(host + completionUri)
@@ -115,7 +116,7 @@ public class Orchestrator {
             if (response.code() != 200) {
                 response.body().close();
                 Thread.sleep(10_000L);
-                submitResults(processorFutureMap, credentials, uuid);
+                submitResults(processorFutureMap, credentials, uuid, hostId);
             } else {
                 response.body().close();
             }
@@ -125,7 +126,7 @@ public class Orchestrator {
             try {
                 Thread.sleep(10_000L);
             } catch (Exception ex) {}
-            submitResults(processorFutureMap, credentials, uuid);
+            submitResults(processorFutureMap, credentials, uuid, hostId);
         }
     }
 

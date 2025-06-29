@@ -22,7 +22,7 @@ public interface DagElementDao {
     public Future<BasicDagElement> getDagElement(String dagElementId);
     public Future<Void> mapDagElementToAsyncId(String asyncId, List<String> dagElementIds);
     public Future<Void> removeDagElementAsyncIdMap(String asyncId, String dagElementId);
-    public Future<Boolean> isAsyncTaskDone(String asyncId);
+    public Future<Integer> isAsyncTaskDone(String asyncId);
     public Future<Void> setDagElementAndOrchestratorAsyncIdMapping(String dagElementId, String orchestratorAsyncId);
     public Future<String> getDagElementAndOrchestratorAsyncIdMapping(String dagElementId);
     public Future<Void> addDebugPointsToDagElement(String dagElementId, String commaSeparatedDebugLines);

@@ -102,8 +102,8 @@ public class DagElementHashMapImpl implements DagElementDao {
     }
 
     @Override
-    public Future<Boolean> isAsyncTaskDone(String asyncId) {
-        return Future.succeededFuture(asyncTaskDagElementMap.get(asyncId).size() == 0);
+    public Future<Integer> isAsyncTaskDone(String asyncId) {
+        return Future.succeededFuture(asyncTaskDagElementMap.get(asyncId).size());
     }
 
     @Override

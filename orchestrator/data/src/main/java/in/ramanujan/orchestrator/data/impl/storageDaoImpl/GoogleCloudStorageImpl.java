@@ -60,18 +60,30 @@ public class GoogleCloudStorageImpl extends OrchestratorStorageDaoInternal {
     }
 
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
-        Storage storage;
-        if(ConfigConstants.DEV.equalsIgnoreCase(ConfigurationGetter.getString(ConfigKey.ENV))) {
-            storage = StorageOptions.newBuilder().setProjectId(projectId).build().getService();
-        } else {
-            storage = StorageOptions.newBuilder().setProjectId(projectId).setCredentials(getStorageWriteCred()).build().getService();
+    protected void setObject(String objectId, String buckName, String object, int retries) throws Exception {
+        try {
+            Storage storage;
+            if (ConfigConstants.DEV.equalsIgnoreCase(ConfigurationGetter.getString(ConfigKey.ENV))) {
+                storage = StorageOptions.newBuilder().setProjectId(projectId).build().getService();
+            } else {
+                storage = StorageOptions.newBuilder().setProjectId(projectId).setCredentials(getStorageWriteCred()).build().getService();
+            }
+            BlobId blobId = BlobId.of(buckName, objectId);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
+            byte[] content = object.getBytes(StandardCharsets.UTF_8);
+            Long start = new Date().toInstant().toEpochMilli();
+            storage.createFrom(blobInfo, new ByteArrayInputStream(content));
+            StatsRecorderUtils.record("or_storage_store", new Date().toInstant().toEpochMilli() - start);
+        } catch (IOException ex) {
+            if (retries == 0) {
+                throw ex;
+            }
+            // Retry logic
+            Thread.sleep(5000);
+            setObject(objectId, buckName, object, retries - 1);
+        } catch (Exception e) {
+            // Handle other exceptions
+            throw new RuntimeException("Error writing object to Google Cloud Storage: " + e.getMessage(), e);
         }
-        BlobId blobId = BlobId.of(buckName, objectId);
-        BlobInfo blobInfo = BlobInfo.newBuilder(blobId).build();
-        byte[] content = object.getBytes(StandardCharsets.UTF_8);
-        Long start = new Date().toInstant().toEpochMilli();
-        storage.createFrom(blobInfo, new ByteArrayInputStream(content));
-        StatsRecorderUtils.record("or_storage_store", new Date().toInstant().toEpochMilli() - start);
     }
 }

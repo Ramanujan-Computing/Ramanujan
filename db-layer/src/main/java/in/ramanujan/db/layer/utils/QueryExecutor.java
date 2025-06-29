@@ -26,10 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -91,7 +88,7 @@ public class QueryExecutor {
             config.setUsername(dbConfig.getUsername());
             config.setPassword(dbConfig.getPassword());
 
-            int maxPool = 500;
+            int maxPool = 100 * Runtime.getRuntime().availableProcessors();
             config.setMaximumPoolSize(maxPool);
             config.setConnectionTimeout(5000);
             dataSource = new HikariDataSource(config);
@@ -150,13 +147,23 @@ public class QueryExecutor {
     }
 
     private void queryInternal(Object object, QueryType queryType, Promise<Object> blocking, CustomQuery customQuery) {
-        int maxTries = 10;
-        while(maxTries -- > 0)
-        {
+
             Connection connection = null;
             try {
                 Long connStart = new Date().toInstant().toEpochMilli();
-                connection = dataSource.getConnection();
+                int maxTry = 10;
+                while (maxTry -- > 0) {
+                    try {
+                        connection = dataSource.getConnection();
+                        break;
+                    } catch (SQLTimeoutException ex) {
+                        Thread.sleep(10_000);
+                    }
+                }
+                if(maxTry < 0) {
+                    logger.error("Couldn't get connection in 10 tries, giving up. Switching JVM off");
+                    System.exit(1);
+                }
                 publishMetric("dbCon", connStart);
                 Long stmtStart = new Date().toInstant().toEpochMilli();
                 PreparedStatement statement = connection.prepareStatement(customQuery.getSql());
@@ -203,16 +210,9 @@ public class QueryExecutor {
                         logger.error("Failed to close connection", ex);
                     }
                 }
-                try {
                     logger.error(e);
-                    Thread.sleep(10000);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+                    blocking.fail(e);
             }
-        }
-        logger.error("SQL query failure led to JVM restart!");
-        System.exit(1);
     }
 
     private void executeStmt(PreparedStatement statement) throws SQLException {

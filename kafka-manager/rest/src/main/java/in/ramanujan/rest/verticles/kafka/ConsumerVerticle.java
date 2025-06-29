@@ -64,9 +64,20 @@ public class ConsumerVerticle extends AbstractVerticle {
                         blockingWrapper.unblock();
                         return;
                     }
+                    List<CheckStatusQueueEventWithMetadata> successAckId = new ArrayList<>();
                     for(CheckStatusQueueEventWithMetadata checkStatusQueueEventWithMetadata : checkStatusQueueEventWithMetadataList) {
-                        consumeFutureList.add(eventConsumer.consume(checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent(), vertx));
-                    }
+                        Future future  = Future.future();
+                        consumeFutureList.add(future);
+                        eventConsumer.consume(checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent(), vertx).setHandler(actualConsumer ->{
+                            if(actualConsumer.succeeded()) {
+                                successAckId.add(checkStatusQueueEventWithMetadata);
+                                future.complete();
+                            } else {
+                                logger.error("Failed to consume event: {}", checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent(), consumeHandler.cause());
+                                future.fail(consumeHandler.cause());
+                            }
+                        });
+                        }
 
                     CompositeFuture.all(consumeFutureList).setHandler(consumerListHandler -> {
                         if(checkStatusQueueEventWithMetadataList.size() == 0) {
@@ -74,8 +85,8 @@ public class ConsumerVerticle extends AbstractVerticle {
                             return;
                         }
                         Object metadata = (queueingDao.getClass() == KafkaImpl.class) ?
-                                checkStatusQueueEventWithMetadataList.get(checkStatusQueueEventWithMetadataList.size() -1).getMetadata() :
-                                getPubSubMetadata(checkStatusQueueEventWithMetadataList);
+                                successAckId.get(successAckId.size() -1).getMetadata() :
+                                getPubSubMetadata(successAckId);
                         queueingDao.commit(metadata).setHandler(commitHandler -> {
                             blockingWrapper.unblock();
                         });

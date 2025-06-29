@@ -1,6 +1,7 @@
 package in.ramanujan.middleware.service;
 
 import in.ramanujan.data.db.dao.AsyncTaskDao;
+import in.ramanujan.data.db.dao.DagElementDao;
 import in.ramanujan.data.db.dao.VariableValueDao;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
@@ -18,24 +19,41 @@ public class TaskStatusService {
     @Autowired
     private VariableValueDao variableValueDao;
 
+    @Autowired
+    private DagElementDao dagElementDao;
+
     public Future<AsyncTask> getAsyncTaskStatus(String asyncTaskId) {
-        Promise<AsyncTask> promise = Promise.promise();
-        asyncTaskDao.getAsyncTask(asyncTaskId).setHandler(handler -> {
-            if(handler.succeeded()) {
-                AsyncTask asyncTask = handler.result();
-                if(asyncTask.getTaskStatus() == AsyncTask.TaskStatus.SUCCESS) {
-                    variableValueDao.getAllValuesForAsyncId(asyncTaskId).setHandler(getValueHandler -> {
-                        VariableAndArrayResult result = getValueHandler.result();
-                        asyncTask.setResult(result);
-                        promise.complete(asyncTask);
-                    });
-                } else {
-                    promise.complete(handler.result());
-                }
-            } else {
-                promise.fail(handler.cause());
-            }
+        Future<AsyncTask> future = Future.future();
+        dagElementDao.isAsyncTaskDone(asyncTaskId).setHandler(asyncDoneHandler -> {
+           if(asyncDoneHandler.succeeded()) {
+               if(asyncDoneHandler.result() == 0 ) {
+                   AsyncTask asyncTask = new AsyncTask();
+                     asyncTask.setTaskId(asyncTaskId);
+                        asyncTask.setTaskStatus(AsyncTask.TaskStatus.SUCCESS);
+                   variableValueDao.getAllValuesForAsyncId(asyncTaskId).setHandler(getValueHandler -> {
+                          if(getValueHandler.failed()) {
+                            future.fail(getValueHandler.cause());
+                            return;
+                          }
+                       VariableAndArrayResult result = getValueHandler.result();
+                       asyncTask.setResult(result);
+                       future.complete(asyncTask);
+                     });
+               } else {
+                   asyncTaskDao.getAsyncTask(asyncTaskId).setHandler(handler -> {
+                          if(handler.succeeded()) {
+                            AsyncTask asyncTask = handler.result();
+                                 future.complete(asyncTask);
+                          } else {
+                            future.fail(handler.cause());
+                          }
+                   });
+               }
+           } else {
+               future.fail(asyncDoneHandler.cause());
+               return;
+           }
         });
-        return promise.future();
+        return  future;
     }
 }

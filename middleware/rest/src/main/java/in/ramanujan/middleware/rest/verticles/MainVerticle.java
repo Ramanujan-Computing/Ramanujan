@@ -20,6 +20,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import in.ramanujan.middleware.rest.verticles.HttpVerticle;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static in.ramanujan.data.queingDaoImpl.QueueDaoImpl.QUEUE_TYPE;
 
 public class MainVerticle extends AbstractVerticle {
@@ -45,8 +47,37 @@ public class MainVerticle extends AbstractVerticle {
         //vertx.deployVerticle(applicationContext.getBean(KafkaHttpVerticle.class), option.getDeployOptions("kafkHttpVerticle", 250));
         MiddlewareClient middlewareClient = applicationContext.getBean(MiddlewareClient.class);
         ProcessNextDagElementService processNextDagElementService = applicationContext.getBean(ProcessNextDagElementService.class);
-        middlewareClient.setConsumptionCallback((asyncId, dagElementId, toBeDebugged, vertx) ->
-                processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged));
+        middlewareClient.setConsumptionCallback(new MiddlewareClient.ConsumptionCallback() {
+
+            int currentCount = 0;
+            @Override
+            public Future<Void> processNextElement(String asyncId, String dagElementId, Boolean toBeDebugged, Vertx vertx) throws Exception {
+                Future<Void> future = Future.future();
+                synchronized (this) {
+                    int count = currentCount++;
+                    if(count >= 10 * Runtime.getRuntime().availableProcessors()) {
+                        currentCount--;
+                        return Future.failedFuture("CPU capping in place.");
+                    }
+                }
+                processNextDagElementService.processNextElement(asyncId, dagElementId, vertx, toBeDebugged).setHandler(handler -> {
+                    synchronized (this) {
+                        int count = --currentCount;
+                        if(count < 0) {
+                            currentCount = 0;
+                        }
+                    }
+                    if(handler.succeeded()) {
+                        future.complete();
+                    } else {
+                        logger.error("Failed to process next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged, handler.cause());
+                        future.fail(handler.cause());
+                    }
+                });
+                return future;
+            }
+
+        });
         vertx.deployVerticle(applicationContext.getBean(ConsumerVerticle.class), option.getDeployOptions("ConsumerVerticle", 1));
 
 //        applicationContext.getBean(ConnectionCreator.class).init(vertx);

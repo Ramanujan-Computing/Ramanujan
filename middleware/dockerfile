@@ -31,4 +31,4 @@ EXPOSE 8888:8888/tcp
 EXPOSE 8890:8890/tcp
 EXPOSE 5005:5005/tcp
 EXPOSE 9010:9010/tcp
-CMD ["java","-jar", "-Xmx3G","rest-1.0-SNAPSHOT-fat.jar","-conf", "config.json"]
+CMD ["java","-jar", "-Xmx2G", "rest-1.0-SNAPSHOT-fat.jar","-conf", "config.json"]
