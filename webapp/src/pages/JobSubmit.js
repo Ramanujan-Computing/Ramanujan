@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -23,6 +23,23 @@ const JobSubmit = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [taskId, setTaskId] = useState(null);
+  const [backendConnected, setBackendConnected] = useState(null);
+
+  // Test backend connection on component mount
+  useEffect(() => {
+    const testBackendConnection = async () => {
+      try {
+        await apiService.checkBackendHealth();
+        setBackendConnected(true);
+        console.log('Backend connection successful');
+      } catch (error) {
+        setBackendConnected(false);
+        console.warn('Backend connection failed - user activity tracking may not work:', error.message);
+      }
+    };
+    
+    testBackendConnection();
+  }, []);
 
   const handleSubmit = async () => {
     if (!code.trim()) {
@@ -42,17 +59,21 @@ const JobSubmit = () => {
         }))
       };
 
+      console.log('Submitting job with request:', codeRunRequest);
       const response = await apiService.submitJob(codeRunRequest);
+      console.log('Job submission response:', response);
       
       if (response.status === '200 OK' && response.data) {
         setSuccess(true);
         setTaskId(response.data.asyncId);
+        console.log('Job submitted successfully, asyncId:', response.data.asyncId);
         
         // Automatically navigate to status page after 2 seconds
         setTimeout(() => {
           navigate('/status', { state: { highlightTaskId: response.data.asyncId } });
         }, 2000);
       } else {
+        console.error('Job submission failed with response:', response);
         setError('Job submission failed: ' + (response.message || 'Unknown error'));
       }
     } catch (err) {
@@ -72,6 +93,13 @@ const JobSubmit = () => {
       <Typography variant="h4" gutterBottom>
         Submit Job
       </Typography>
+      
+      {backendConnected === false && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <AlertTitle>Backend Connection Issue</AlertTitle>
+          User activity tracking may not work properly. Job submission will still work, but your job history may not be recorded.
+        </Alert>
+      )}
       
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>

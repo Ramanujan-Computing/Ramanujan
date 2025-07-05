@@ -2,10 +2,29 @@ const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const jwt_decode = require('jwt-decode');
-require('dotenv').config();
+const axios = require('axios');
+const path = require('path');
+
+// Load environment variables from the parent directory
+const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env.development';
+const envPath = path.join(__dirname, '..', envFile);
+require('dotenv').config({ path: envPath });
 
 const app = express();
-const PORT = process.env.BACKEND_PORT || 3001;
+const PORT = process.env.PORT || process.env.BACKEND_PORT || 8080;
+
+// Ramanujan API configuration
+const RAMANUJAN_API_URL = process.env.RAMANUJAN_API_URL || 'https://server.ramanujan.dev';
+
+// Create axios instance for Ramanujan API
+const ramanujanClient = axios.create({
+  baseURL: RAMANUJAN_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  },
+  timeout: 60000, // 60 seconds timeout
+});
 
 // Middleware
 app.use(cors());
@@ -45,6 +64,11 @@ const authenticateUser = (req, res, next) => {
 
 // API Routes
 
+// Simple health check for container monitoring
+app.get('/health', (req, res) => {
+  res.json({ status: 'S_OK' });
+});
+
 // Record user activity when a job is submitted
 app.post('/api/user-activity', authenticateUser, async (req, res) => {
   try {
@@ -55,7 +79,7 @@ app.post('/api/user-activity', authenticateUser, async (req, res) => {
     if (!asyncId) {
       return res.status(400).json({ error: 'asyncId is required' });
     }
-
+    console.log('Recording user activity - User ID:', userId, 'Async ID:', asyncId, 'Timestamp:', timeStamp);
     const query = 'INSERT INTO userIdActivity (userId, asyncId, timeStamp) VALUES (?, ?, ?)';
     await pool.execute(query, [userId, asyncId, timeStamp]);
 
@@ -159,6 +183,71 @@ app.get('/api/health', async (req, res) => {
     });
   }
 });
+
+// Proxy endpoints for Ramanujan API
+// Submit job to Ramanujan
+app.post('/api/ramanujan/run', authenticateUser, async (req, res) => {
+  try {
+    console.log('Proxying job submission to Ramanujan API for user:', req.userId);
+    
+    const response = await ramanujanClient.post('/run?debug=false', req.body);
+    
+    console.log('Ramanujan API response:', response.status, response.data);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error proxying to Ramanujan API:', error.response?.data || error.message);
+    
+    if (error.response) {
+      // Forward the error response from Ramanujan API
+      res.status(error.response.status).json(error.response.data);
+    } else {
+      // Network or other error
+      res.status(500).json({ 
+        error: 'Failed to connect to Ramanujan API',
+        message: error.message 
+      });
+    }
+  }
+});
+
+// Check task status from Ramanujan
+app.get('/api/ramanujan/status', authenticateUser, async (req, res) => {
+  try {
+    const { uuid } = req.query;
+    
+    if (!uuid) {
+      return res.status(400).json({ error: 'uuid parameter is required' });
+    }
+    
+    console.log('Checking task status for uuid:', uuid, 'user:', req.userId);
+    
+    const response = await ramanujanClient.get(`/status?uuid=${uuid}`);
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error checking task status:', error.response?.data || error.message);
+    
+    if (error.response) {
+      res.status(error.response.status).json(error.response.data);
+    } else {
+      res.status(500).json({ 
+        error: 'Failed to connect to Ramanujan API',
+        message: error.message 
+      });
+    }
+  }
+});
+
+// Serve static files from React build (only in production)
+if (process.env.NODE_ENV === 'production') {
+  // Serve static files from the React app build directory
+  app.use(express.static(path.join(__dirname, '../build')));
+  
+  // Handle React routing, return all requests to React app
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../build', 'index.html'));
+  });
+}
 
 // Start server
 app.listen(PORT, () => {

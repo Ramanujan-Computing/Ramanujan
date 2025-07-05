@@ -46,24 +46,16 @@ const JobStatus = () => {
   const fetchActiveTasks = useCallback(async () => {
     try {
       setLoadingActiveTasks(true);
-      // This would be replaced with a real API call
-      // For now we'll mock the data
-      const mockActiveTasks = [
-        {
-          asyncId: 'task-1234',
-          taskStatus: 'IN_PROGRESS',
-          createdAt: new Date().toISOString()
-        },
-        {
-          asyncId: 'task-5678',
-          taskStatus: 'PENDING',
-          createdAt: new Date(Date.now() - 300000).toISOString()
-        }
-      ];
+      // Get user's active/pending jobs from database
+      const response = await apiService.getJobHistory(50, 0); // Get recent jobs
+      const activeTasks = response.data?.filter(job => 
+        job.taskStatus === 'PENDING' || job.taskStatus === 'IN_PROGRESS'
+      ) || [];
       
-      setActiveTasks(mockActiveTasks);
+      setActiveTasks(activeTasks);
     } catch (err) {
       console.error('Error fetching active tasks:', err);
+      setActiveTasks([]); // Set empty array on error instead of mock data
     } finally {
       setLoadingActiveTasks(false);
     }
@@ -84,25 +76,29 @@ const JobStatus = () => {
       setError(null);
       setTaskStatus(null);
 
+      // First check if this task belongs to the user by querying database
+      const historyResponse = await apiService.getJobHistory(1000, 0); // Get all user jobs
+      const userJob = historyResponse.data?.find(job => job.asyncId === id.trim());
+      
+      if (!userJob) {
+        setError('Task ID not found in your job history. You can only check status of your own tasks.');
+        return;
+      }
+
+      // If task belongs to user, get current status from server
       const response = await apiService.checkTaskStatus(id);
       
       if (response.status === '200 OK' && response.data) {
-        setTaskStatus(response.data);
+        setTaskStatus({
+          ...userJob, // Include database info (created time, etc.)
+          ...response.data, // Overlay with current status
+        });
       } else {
         setError('Failed to retrieve task status: ' + (response.message || 'Unknown error'));
       }
     } catch (err) {
       console.error('Error checking task status:', err);
       setError('Failed to check task status: ' + (err.message || 'Unknown error'));
-      
-      // Mock data for demonstration
-      if (id === 'task-1234' || id === 'task-5678') {
-        setTaskStatus({
-          asyncId: id,
-          taskStatus: id === 'task-1234' ? 'IN_PROGRESS' : 'PENDING',
-          createdAt: new Date().toISOString()
-        });
-      }
     } finally {
       setLoading(false);
     }

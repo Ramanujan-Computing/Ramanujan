@@ -1,17 +1,5 @@
 # Multi-stage build for frontend and backend
 
-# Backend build stage
-FROM node:16-alpine as backend-build
-
-WORKDIR /app/backend
-
-# Copy backend package.json and install dependencies
-COPY backend/package*.json ./
-RUN npm ci --only=production
-
-# Copy backend source files
-COPY backend/ ./
-
 # Frontend build stage
 FROM node:16-alpine as frontend-build
 
@@ -25,34 +13,51 @@ RUN npm ci
 COPY src/ ./src/
 COPY public/ ./public/
 
-# Build the React app
+# Copy environment file for frontend build
+COPY .env.production ./
+
+# Build the React app with environment variables
 RUN npm run build
 
-# Production stage
+# Backend build stage
+FROM node:16-alpine as backend-build
+
+WORKDIR /app/backend
+
+# Copy backend package.json and install dependencies
+COPY backend/package*.json ./
+RUN npm ci --only=production
+
+# Copy backend source files
+COPY backend/ ./
+
+# Production stage - Single Node.js server for Cloud Run
 FROM node:16-alpine
 
 WORKDIR /app
 
-# Install nginx for serving frontend
-RUN apk add --no-cache nginx
-
 # Copy backend files
 COPY --from=backend-build /app/backend ./backend
 
-# Copy frontend build files
-COPY --from=frontend-build /app/build ./frontend/build
+# Copy frontend build files to the location expected by server.js
+COPY --from=frontend-build /app/build ./build
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy environment files
+COPY .env.production ./.env.production
+COPY .env.template ./.env.template
 
-# Create startup script
-RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'cd /app/backend && npm start &' >> /app/start.sh && \
-    echo 'nginx -g "daemon off;"' >> /app/start.sh && \
-    chmod +x /app/start.sh
+# Set production environment
+ENV NODE_ENV=production
 
-# Expose ports
-EXPOSE 80 3001
+# Cloud Run provides PORT environment variable, default to 8080
+EXPOSE 8080
 
-# Start both services
-CMD ["/app/start.sh"]
+# Change to backend directory
+WORKDIR /app/backend
+
+# Health check using the Node.js server
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD node -e "const http = require('http'); const options = { host: 'localhost', port: process.env.PORT || 8080, path: '/health', timeout: 2000 }; const req = http.request(options, (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.end();"
+
+# Start the Node.js server (it serves both API and static files in production)
+CMD ["npm", "start"]

@@ -1,19 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://server.ramanujan.dev';
-const BACKEND_API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+// For production (when REACT_APP_BACKEND_URL is empty), use same origin (no baseURL)
+// For development, use localhost:3001
+const BACKEND_API_URL = process.env.REACT_APP_BACKEND_URL || 
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001');
 
-// Create axios instance for main Ramanujan API
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  },
-  timeout: 60000, // 60 seconds timeout
-});
-
-// Create axios instance for backend user activity API
+// Create axios instance for backend API (all requests go through backend now)
 const backendClient = axios.create({
   baseURL: BACKEND_API_URL,
   headers: {
@@ -21,7 +13,7 @@ const backendClient = axios.create({
   },
 });
 
-// Interceptor to add auth token to requests for both clients
+// Interceptor to add auth token to requests
 const addAuthToken = (config) => {
   const token = localStorage.getItem('auth_token');
   if (token) {
@@ -30,36 +22,39 @@ const addAuthToken = (config) => {
   return config;
 };
 
-apiClient.interceptors.request.use(addAuthToken, (error) => Promise.reject(error));
 backendClient.interceptors.request.use(addAuthToken, (error) => Promise.reject(error));
 
 // API service functions
 const apiService = {
-  // Submit code for execution
+  // Submit code for execution (now goes through backend)
   submitJob: async (codeRunRequest) => {
     try {
-      const response = await apiClient.post('/run?debug=false', codeRunRequest);
+      const response = await backendClient.post('/api/ramanujan/run', codeRunRequest);
       
-      // If job submission is successful, record user activity
-      if (response.data && response.data.status === '200 OK' && response.data.data?.asyncId) {
+      // If job submission is successful, record user activity BEFORE returning
+      if (response.data && response.data.data && response.data.status === '200 OK' && response.data.data.asyncId) {
         try {
           await apiService.recordUserActivity(response.data.data.asyncId);
         } catch (activityError) {
           console.error('Failed to record user activity:', activityError);
-          // Don't fail the main request if activity recording fails
+          // Don't fail the main request if activity recording fails, but log it prominently
+          console.warn('WARNING: Job was submitted but user activity was not recorded. Status checking may not work.');
         }
+      } else {
+        console.warn('Job submission response format unexpected:', response.data);
       }
       
       return response.data;
     } catch (error) {
+      console.error('Job submission failed:', error);
       throw error;
     }
   },
 
-  // Check task status
+  // Check task status (now goes through backend)
   checkTaskStatus: async (taskId) => {
     try {
-      const response = await apiClient.get(`/status?uuid=${taskId}`);
+      const response = await backendClient.get(`/api/ramanujan/status?uuid=${taskId}`);
       return response.data;
     } catch (error) {
       throw error;
@@ -72,6 +67,7 @@ const apiService = {
       const response = await backendClient.post('/api/user-activity', { asyncId });
       return response.data;
     } catch (error) {
+      console.error('Failed to record user activity:', error.response?.data || error.message);
       throw error;
     }
   },

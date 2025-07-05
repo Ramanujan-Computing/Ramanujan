@@ -11,8 +11,6 @@ import theme from './theme';
 // Use environment variable for Google Client ID
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
-//Log the Google Client ID to ensure it's set correctly
-console.log('Google Client ID:', GOOGLE_CLIENT_ID);
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
