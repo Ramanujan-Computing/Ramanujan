@@ -65,7 +65,7 @@ const Dashboard = () => {
       </Box>
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12}>
           <Paper sx={{ p: 3, height: '100%' }}>
             <Typography variant="h6" gutterBottom>
               Quick Actions
@@ -88,39 +88,6 @@ const Dashboard = () => {
               >
                 View All Jobs
               </Button>
-            </Box>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              System Status
-            </Typography>
-            <Box sx={{ mt: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Box
-                  sx={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    bgcolor: 'success.main',
-                    mr: 1,
-                  }}
-                />
-                <Typography variant="body2">API Server: Online</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Box
-                  sx={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    bgcolor: 'success.main',
-                    mr: 1,
-                  }}
-                />
-                <Typography variant="body2">Execution Engine: Online</Typography>
-              </Box>
             </Box>
           </Paper>
         </Grid>

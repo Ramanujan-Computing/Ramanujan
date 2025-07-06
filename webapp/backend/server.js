@@ -30,6 +30,23 @@ const ramanujanClient = axios.create({
 app.use(cors());
 app.use(express.json());
 
+// Add request logging for debugging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
 // Database connection configuration
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -66,7 +83,7 @@ const authenticateUser = (req, res, next) => {
 
 // Simple health check for container monitoring
 app.get('/health', (req, res) => {
-  res.json({ status: 'S_OK' });
+  res.status(200).json({ status: 'S_OK', timestamp: new Date().toISOString() });
 });
 
 // Record user activity when a job is submitted
@@ -250,7 +267,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend API server running on port ${PORT}`);
   console.log(`Database: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
 });
