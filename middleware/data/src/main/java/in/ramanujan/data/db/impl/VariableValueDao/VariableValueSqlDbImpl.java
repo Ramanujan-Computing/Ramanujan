@@ -13,6 +13,7 @@ import in.ramanujan.db.layer.schema.ArrayMapping;
 import in.ramanujan.translation.codeConverter.pojo.VariableAndArrayResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static in.ramanujan.db.layer.constants.Keys.VARIABLE_IDS_IN;
 
 
 @Component
@@ -108,7 +111,7 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
                 Object value = indexValueMap.get(index);
                 ArrayMapping arrayMapping = new ArrayMapping();
                 arrayMapping.setAsyncId(asyncId);
-                arrayMapping.setArrayName(arrayName);
+                arrayMapping.setArrayName("");
                 arrayMapping.setArrayId(arrayId);
                 arrayMapping.setIndexStr(index);
                 if(value != null) {
@@ -160,39 +163,12 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     @Override
     public Future<Object> getVariableValue(String asyncId, String variableId) {
         Future<Object> future = Future.future();
-        if(variableId.contains(":")) {
-            try {
-                ArrayMapping arrayMapping = new ArrayMapping();
-                int indexOfFirstOpeningBracket = variableId.indexOf(":");
-                String arrayId = variableId.substring(0, indexOfFirstOpeningBracket);
-                String index = variableId.substring(indexOfFirstOpeningBracket);
-                arrayMapping.setAsyncId(asyncId);
-                arrayMapping.setArrayId(arrayId);
-                arrayMapping.setIndexStr(index);
-                queryExecutor.execute(arrayMapping, Keys.ASYNC_ID_ARRAY_ID_INDEX, QueryType.SELECT)
-                        .setHandler(new MonitoringHandler<>("arrayValueGet", handler -> {
-                    if(handler.succeeded()) {
-                        List<Object> results = handler.result();
-                        for(Object obj : results) {
-                            ArrayMapping variableMappingObj = (ArrayMapping) obj;
-                            future.complete(getObject(variableMappingObj.getObject()));
-                            return;
-                        }
-                        future.complete();
-                    } else {
-                        future.fail(handler.cause());
-                    }
-                }));
-            } catch (Exception e) {
-                future.fail(e);
-            }
-        } else {
+
             try {
                 VariableMapping variableMapping = new VariableMapping();
-                variableMapping.setAsyncId(asyncId);
                 variableMapping.setVariableId(variableId);
 
-                queryExecutor.execute(variableMapping, Keys.ASYNC_ID_VARIABLE_ID, QueryType.SELECT)
+                queryExecutor.execute(variableMapping, Keys.VARIABLE_ID, QueryType.SELECT)
                         .setHandler(new MonitoringHandler<>("variableValueGet", handler -> {
                     if(handler.succeeded()) {
                         List<Object> results = handler.result();
@@ -209,7 +185,6 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
             } catch (Exception e) {
                 future.fail(e);
             }
-        }
         return future;
     }
 
@@ -217,11 +192,10 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     public Future<Map<String, Object>> getArrayValues(String asyncId, String arrayId) {
         Future<Map<String, Object>> future = Future.future();
         ArrayMapping arrayMapping = new ArrayMapping();
-        arrayMapping.setAsyncId(asyncId);
         arrayMapping.setArrayId(arrayId);
 
         try {
-            queryExecutor.execute(arrayMapping, Keys.ASYNC_ID_ARRAY_ID, QueryType.SELECT)
+            queryExecutor.execute(arrayMapping, Keys.ARRAY_ID, QueryType.SELECT)
                     .setHandler(new MonitoringHandler<>("arrayValueGet", handler -> {
                 if (handler.succeeded()) {
                     List<Object> objects = handler.result();
@@ -371,5 +345,111 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
             future.fail(e);
         }
         return future;
+    }
+
+    @Override
+    public Future<Void> createVariablesBatch(String asyncId, java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> variableMappings = new ArrayList<>();
+            for (in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable : variables) {
+                in.ramanujan.db.layer.schema.VariableMapping variableMapping = new in.ramanujan.db.layer.schema.VariableMapping();
+                variableMapping.setAsyncId(asyncId);
+                variableMapping.setVariableId(variable.getId());
+                variableMapping.setVariableName(variable.getName());
+                if (variable.getValue() != null) {
+                    variableMapping.setObject(variable.getValue().toString());
+                }
+                variableMappings.add(variableMapping);
+            }
+            if (!variableMappings.isEmpty()) {
+                queryExecutor.execute(variableMappings.get(0), Keys.ASYNC_ID_VARIABLE_ID, QueryType.INSERT, variableMappings)
+                        .setHandler(new MonitoringHandler<>("createVariablesBatch", handler -> {
+                            if (handler.succeeded()) {
+                                future.complete();
+                            } else {
+                                future.fail(handler.cause());
+                            }
+                        }));
+            } else {
+                future.complete();
+            }
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    @Override
+    public Future<Void> updateVariablesBatch(String asyncId, java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> variableMappings = new ArrayList<>();
+            for (in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable : variables) {
+                in.ramanujan.db.layer.schema.VariableMapping variableMapping = new in.ramanujan.db.layer.schema.VariableMapping();
+                variableMapping.setVariableId(variable.getId());
+                if (variable.getValue() != null) {
+                    variableMapping.setObject(variable.getValue().toString());
+                }
+                variableMappings.add(variableMapping);
+            }
+            if (!variableMappings.isEmpty()) {
+                queryExecutor.execute(variableMappings.get(0), Keys.VARIABLE_ID, QueryType.UPDATE, variableMappings)
+                        .setHandler(new MonitoringHandler<>("updateVariablesBatch", handler -> {
+                            if (handler.succeeded()) {
+                                future.complete();
+                            } else {
+                                future.fail(handler.cause());
+                            }
+                        }));
+            } else {
+                future.complete();
+            }
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    @Override
+    public Future<Map<String, Object>> getVariableValuesBatch(String asyncId, List<String> variableIds) {
+        Promise<Map<String, Object>> promise = Promise.promise();
+        Map<String, Object> resultMap = new HashMap<>();
+        
+        if (variableIds == null || variableIds.isEmpty()) {
+            promise.complete(resultMap);
+            return promise.future();
+        }
+        
+        try {
+            // Use a single query with IN clause for all variable IDs
+            VariableMapping variableMapping = new VariableMapping();
+            variableMapping.setAsyncId(asyncId);
+            
+            // Create batch params for the IN query
+            List<Object> batchParams = new ArrayList<>();
+            // Convert List<String> to List<Object> for the IN clause
+            List<Object> variableIdsAsObjects = new ArrayList<>(variableIds);
+            batchParams.add(variableIdsAsObjects);  // first param: list of variable IDs as Objects
+            
+            // Execute with SELECT_IN query type, using VARIABLE_IDS_IN as the key
+            queryExecutor.execute(variableMapping, VARIABLE_IDS_IN, QueryType.SELECT_IN, batchParams)
+                    .setHandler(new MonitoringHandler<>("variableValueBatchGet", handler -> {
+                if (handler.succeeded()) {
+                    List<Object> results = handler.result();
+                    for (Object obj : results) {
+                        VariableMapping variableMappingObj = (VariableMapping) obj;
+                        resultMap.put(variableMappingObj.getVariableId(), getObject(variableMappingObj.getObject()));
+                    }
+                    promise.complete(resultMap);
+                } else {
+                    promise.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            promise.fail(e);
+        }
+        
+        return promise.future();
     }
 }

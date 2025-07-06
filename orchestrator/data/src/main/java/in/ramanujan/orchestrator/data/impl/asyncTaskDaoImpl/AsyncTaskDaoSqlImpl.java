@@ -62,6 +62,11 @@ public class AsyncTaskDaoSqlImpl implements AsyncTaskDao {
         return future;
     }
 
+    public static class DummyAsyncTask extends AsyncTask {
+        public DummyAsyncTask() {
+            super();
+        }
+    }
     @Override
     public Future<AsyncTask> getAsyncTask(String uuid) {
         Future<AsyncTask> future = Future.future();
@@ -78,6 +83,8 @@ public class AsyncTaskDaoSqlImpl implements AsyncTaskDao {
                        asyncTask.setFirstCommandId(resultObj.getFirstCommandId());
                        asyncTask.setDebug(Boolean.valueOf(resultObj.getDebug()));
                        asyncTask.setUuid(uuid);
+                   } else {
+                       asyncTask = new DummyAsyncTask();
                    }
                    future.complete(asyncTask);
                } else {

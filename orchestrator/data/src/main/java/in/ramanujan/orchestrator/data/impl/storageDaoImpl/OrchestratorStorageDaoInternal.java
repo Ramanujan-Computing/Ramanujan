@@ -1,21 +1,21 @@
 package in.ramanujan.orchestrator.data.impl.storageDaoImpl;
 
-import in.ramanujan.orchestrator.base.configuration.ConfigurationGetter;
+import in.ramanujan.db.layer.enums.StorageType;
 import in.ramanujan.orchestrator.data.dao.StorageDao;
 import io.vertx.core.Context;
 import org.springframework.stereotype.Component;
 
 @Component
-public class StorageDaoInternal extends StorageDao {
+public class OrchestratorStorageDaoInternal extends StorageDao {
 
-    private StorageDaoInternal storageDaoInternal;
+    private OrchestratorStorageDaoInternal storageDaoInternal;
 
     @Override
-    public void init(Context context, ConfigurationGetter.StorageType storageType) {
+    public void init(Context context, StorageType storageType) {
         super.init(context, storageType);
-        if (storageType == ConfigurationGetter.StorageType.LOCAL) {
+        if (storageType == StorageType.LOCAL) {
             storageDaoInternal = new LocalStorageImpl();
-        } else if (storageType == ConfigurationGetter.StorageType.GCP) {
+        } else if (storageType == StorageType.GCP) {
             storageDaoInternal = new GoogleCloudStorageImpl();
         }
     }
@@ -26,7 +26,7 @@ public class StorageDaoInternal extends StorageDao {
     }
 
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
-        storageDaoInternal.setObject(objectId, buckName, object);
+    protected void setObject(String objectId, String buckName, String object, int retries) throws Exception {
+        storageDaoInternal.setObject(objectId, buckName, object, retries);
     }
 }

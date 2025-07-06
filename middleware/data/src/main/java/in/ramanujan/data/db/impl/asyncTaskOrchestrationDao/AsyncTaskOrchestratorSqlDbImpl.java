@@ -73,10 +73,9 @@ public class AsyncTaskOrchestratorSqlDbImpl implements OrchestratorAsyncTaskDao 
     public Future<Void> removeOrchestratorAsyncId(String asyncId, String dagElementId) {
         Future<Void> future = Future.future();
         OrchestratorMiddlewareMapping orchestratorMiddlewareMapping = new OrchestratorMiddlewareMapping();
-        orchestratorMiddlewareMapping.setMiddlewareAsyncId(asyncId);
         orchestratorMiddlewareMapping.setDagElementId(dagElementId);
         try {
-            queryExecutor.execute(orchestratorMiddlewareMapping, Keys.MIDDLEWARE_ASYNC_ID_DAG_ELEMENT_ID, QueryType.DELETE)
+            queryExecutor.execute(orchestratorMiddlewareMapping, Keys.DAG_ELEMENT_ID, QueryType.DELETE)
                     .setHandler(new MonitoringHandler<>("removeOrchestratorMiddlewareMapping", handler -> {
                 if(handler.succeeded()) {
                     future.complete();
@@ -114,10 +113,9 @@ public class AsyncTaskOrchestratorSqlDbImpl implements OrchestratorAsyncTaskDao 
     public Future<Boolean> isPresent(String asyncId, String dagElementId) {
         Future<Boolean> future = Future.future();
         OrchestratorMiddlewareMapping orchestratorMiddlewareMapping = new OrchestratorMiddlewareMapping();
-        orchestratorMiddlewareMapping.setMiddlewareAsyncId(asyncId);
         orchestratorMiddlewareMapping.setDagElementId(dagElementId);
         try {
-            queryExecutor.execute(orchestratorMiddlewareMapping, Keys.MIDDLEWARE_ASYNC_ID_DAG_ELEMENT_ID, QueryType.SELECT)
+            queryExecutor.execute(orchestratorMiddlewareMapping, Keys.DAG_ELEMENT_ID, QueryType.SELECT)
                     .setHandler(new MonitoringHandler<>("checkIfMappingIsPresent", handler -> {
                 if(handler.succeeded()) {
                     List<Object> list = handler.result();

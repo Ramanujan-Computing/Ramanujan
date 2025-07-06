@@ -17,7 +17,7 @@ public class HeartbeatDaoSqlDbImpl implements HeartBeatDao {
     private QueryExecutor queryExecutor;
 
     @Override
-    public Future<HeartBeat> getLastHeartBeat(String hostId) {
+    public Future<HeartBeat> getLastHeartBeat(String asyncId, String hostId) {
         Future<HeartBeat> future = Future.future();
         try {
             HostMapping hostMapping = new HostMapping();
@@ -30,7 +30,7 @@ public class HeartbeatDaoSqlDbImpl implements HeartBeatDao {
                        return;
                    }
                    HostMapping result = (HostMapping) handler.result().get(0);
-                   HeartBeat heartBeat = new HeartBeat(hostId, null, result.getLastPing());
+                   HeartBeat heartBeat = new HeartBeat(asyncId, hostId, null, result.getLastPing());
                    future.complete(heartBeat);
                } else {
                    future.fail(handler.cause());

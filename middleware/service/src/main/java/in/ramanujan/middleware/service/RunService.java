@@ -60,18 +60,31 @@ public class RunService {
         Future<String> future = Future.future();
         addAsyncTask().setHandler(new MonitoringHandler<>("asyncTaskAdd", asyncTaskInsert -> {
             String asyncId = asyncTaskInsert.result();
-            if(!toBeDebugged) {
-                future.complete(asyncId);
-            }
+
             initDbEntries(asyncId, translateResponse).setHandler(new MonitoringHandler<>("initDbEntries", dbOperationHandler -> {
-                if (toBeDebugged) {
-                    future.complete(asyncId);
+                logger.info("InitDB done for " + asyncId);
+                if(dbOperationHandler.failed()) {
+                    logger.error("Failed to init db entries for asyncId: " + asyncId, dbOperationHandler.cause());
+                    future.fail(dbOperationHandler.cause());
                     return;
                 }
                 if(dbOperationHandler.succeeded()) {
                     runDagElementId(asyncId, translateResponse.getFirstDagElement().getId(), vertx, toBeDebugged)
                             .setHandler(new MonitoringHandler<>("runDagElementId", runDagHandler -> {
-                        kafkaManagerApiCaller.callEventApi(asyncId, translateResponse.getFirstDagElement().getId(), toBeDebugged);
+                    if (runDagHandler.succeeded()) {
+                        kafkaManagerApiCaller.callEventApi(asyncId, translateResponse.getFirstDagElement().getId(), toBeDebugged).setHandler(kafkCall -> {
+                            if (kafkCall.succeeded()) {
+                                logger.info("Kafka event api call succeeded for asyncId: " + asyncId);
+                                future.complete(asyncId);
+                            } else {
+                                logger.error("Failed to call Kafka event api for asyncId: " + asyncId, kafkCall.cause());
+                                future.fail(kafkCall.cause());
+                            }
+                        });
+                    } else {
+                        logger.error("Failed to run dag element id: " + translateResponse.getFirstDagElement().getId(), runDagHandler.cause());
+                        future.fail(runDagHandler.cause());
+                    }
                     }));
                 }
             }));
@@ -89,30 +102,56 @@ public class RunService {
         /*
         * Storage push takes memory additionally. Making it sequential to stop possible OOM.
         */
+
+        Set<String> variableAndArrayAlreadyPopulated = new HashSet<>();
+
         currFutureObj = new CommonCodeStoreFutureCaller(null, asyncId, translateResponse.getCommonFunctionCode(), storageDao);
 //        dbOperations.add(storageDao.storeCommonCode(asyncId, translateResponse.getCommonFunctionCode()));
         for(DagElement dagElement : dagElementList) {
             dagElementIds.add(dagElement.getId());
-            dbOperations.add(dagElementDao.addElement(dagElement));
+            dbOperations.add(storageDao.storeDagElement(dagElement));
             prevFutureObj = currFutureObj;
             currFutureObj = new StoreDagElementCode(prevFutureObj, dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId()), storageDao);
-//            dbOperations.add(storageDao.storeDagElementCode(dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId())));
+            // dbOperations.add(storageDao.storeDagElementCode(dagElement.getId(), dagElementAndCodeMap.get(dagElement.getId())));
+            // Batch variable creation
+            List<Variable> variablesToCreate = new ArrayList<>();
             for(Variable variable : dagElement.getVariableMap().values()) {
-                dbOperations.add(variableValueDao.createVariable(asyncId, variable.getId(), variable.getName(), variable.getValue()));
+                if(variable.getId() != null && variable.getId().contains("func")) {
+                    continue;
+                }
+                if(!variableAndArrayAlreadyPopulated.contains(variable.getId())) {
+                    variablesToCreate.add(variable);
+                    variableAndArrayAlreadyPopulated.add(variable.getId());
+                }
+            }
+            if (!variablesToCreate.isEmpty()) {
+                dbOperations.add(variableValueDao.createVariablesBatch(asyncId, variablesToCreate));
             }
             for(Array array : dagElement.getArrayMap().values()) {
-                if(array.getName() == null) {
-                    int a = 1;
-                    a = a + 1;
+                if(array.getId() != null && array.getId().contains("func")) {
+                    continue;
                 }
-                dbOperations.add(variableValueDao.createVariableNameIdMap(asyncId, array.getId(), array.getName()));
-                for(String index : array.getValues().keySet()) {
-                    dbOperations.add(variableValueDao.storeArrayValue(asyncId, array.getId(), array.getName(), index,
-                            array.getValues().get(index)));
+                if(!variableAndArrayAlreadyPopulated.contains(array.getId())) {
+                    if(array.getName() == null) {
+                        int a = 1;
+                        a = a + 1;
+                    }
+                    dbOperations.add(variableValueDao.createVariableNameIdMap(asyncId, array.getId(), array.getName()));
+                    for(String index : array.getValues().keySet()) {
+                        dbOperations.add(variableValueDao.storeArrayValue(asyncId, array.getId(), array.getName(), index,
+                                array.getValues().get(index)));
+                    }
+                    variableAndArrayAlreadyPopulated.add(array.getId());
                 }
+
             }
+            // Batch addDagElementDependency
+            List<String> nextDagElementIds = new ArrayList<>();
             for(DagElement nextDagElement : dagElement.getNextElements()) {
-                dbOperations.add(dagElementDao.addDagElementDependency(dagElement.getId(), nextDagElement.getId()));
+                nextDagElementIds.add(nextDagElement.getId());
+            }
+            if (!nextDagElementIds.isEmpty()) {
+                dbOperations.add(dagElementDao.addDagElementDependencies(dagElement.getId(), nextDagElementIds));
             }
         }
         dbOperations.add(dagElementDao.mapDagElementToAsyncId(asyncId, dagElementIds));
@@ -177,27 +216,49 @@ public class RunService {
 
     public Future<Void> runDagElementId(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged) {
         Future<Void> future = Future.future();
-        dagElementDao.getDagElement(dagElementId).setHandler(handler -> {
-            BasicDagElement basicDagElement = handler.result();
-            //TODO: write the logic
-            refreshVariablesAndProvideOrchestratorAsyncId(asyncId, basicDagElement).setHandler(refreshVariablesHandler -> {
-                if (refreshVariablesHandler.succeeded()) {
-                    final String orchestratorAsyncId = refreshVariablesHandler.result();
-                    orchestrationApiCaller.runCode(asyncId,
-                                    basicDagElement.getFirstCommandId(), basicDagElement.getId(), vertx, orchestratorAsyncId, toBeDebugged, basicDagElement.getCommaSeparatedDebugPoints())
-                            .setHandler(orchestratorCallHandler -> {
-                                if(dagElementIdRan.contains(dagElementId)) {
-                                    logger.info("ALREADY THERE: " + dagElementId);
-                                }
-                                dagElementIdRan.add(dagElementId);
-                                future.complete();
-                            });
-                } else {
-                    future.fail(refreshVariablesHandler.cause());
-                }
-            });
+        storageDao.getDagElement(dagElementId).setHandler(handler -> {
+            if(handler.succeeded()) {
+                BasicDagElement basicDagElement = handler.result();
+                //TODO: write the logic
+                refreshVariablesAndProvideOrchestratorAsyncId(asyncId, basicDagElement).setHandler(refreshVariablesHandler -> {
+                    if (refreshVariablesHandler.succeeded()) {
+                        final String orchestratorAsyncId = refreshVariablesHandler.result();
+                        logger.info("Going to run for " + asyncId + "; dagElementId " + dagElementId);
+                        forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future, 5);
+                    } else {
+                        future.fail(refreshVariablesHandler.cause());
+                    }
+                });
+            } else {
+                logger.error("Failed to get dag element id: " + dagElementId, handler.cause());
+                future.fail(handler.cause());
+            }
         });
         return future;
+    }
+
+    private void forceRunOnOrchestrator(String asyncId, String dagElementId, Vertx vertx, Boolean toBeDebugged,
+                                        BasicDagElement basicDagElement, String orchestratorAsyncId, Future<Void> future,
+                                        int retryCount) {
+        if(retryCount == 0) {
+            logger.error("Can run orchestrator submit api; no more reties");
+            future.fail("Can run orchestrator submit api; no more reties");
+            return;
+        }
+        orchestrationApiCaller.runCode(asyncId,
+                        basicDagElement.getFirstCommandId(), basicDagElement.getId(), vertx, orchestratorAsyncId, toBeDebugged, basicDagElement.getCommaSeparatedDebugPoints())
+                .setHandler(orchestratorCallHandler -> {
+                    if(orchestratorCallHandler.failed()) {
+                        logger.error("Failed to run dag element id: " + dagElementId, orchestratorCallHandler.cause());
+                        forceRunOnOrchestrator(asyncId, dagElementId, vertx, toBeDebugged, basicDagElement, orchestratorAsyncId, future, retryCount - 1);
+                        return;
+                    }
+                    if(dagElementIdRan.contains(dagElementId)) {
+                        logger.info("ALREADY THERE: " + dagElementId);
+                    }
+                    dagElementIdRan.add(dagElementId);
+                    future.complete();
+                });
     }
 
     private Future<String> refreshVariablesAndProvideOrchestratorAsyncId(String asyncId, BasicDagElement basicDagElement) {
@@ -207,10 +268,21 @@ public class RunService {
         try {
             Long dbGetStart = new Date().toInstant().toEpochMilli();
             List<Future> futureList = new ArrayList<>();
+            // Collect variables for batch refresh
+            List<Variable> variablesToRefresh = new ArrayList<>();
             for(Variable variable : ruleEngineInput.getVariables()) {
-                futureList.add(refreshVariableValue(asyncId, variable.getId(), variable));
+                if(variable.getId() != null && !variable.getId().contains("func")) {
+                    variablesToRefresh.add(variable);
+                }
+            }
+            // Add batch refresh future if there are variables to refresh
+            if (!variablesToRefresh.isEmpty()) {
+                futureList.add(refreshVariableValuesBatch(asyncId, variablesToRefresh));
             }
             for(Array array : ruleEngineInput.getArrays()) {
+                if(array.getId() == null || array.getId().contains("func")) {
+                    continue;
+                }
                 futureList.add(refreshArrayIndexValue(asyncId, array, array.getId()));
             }
             futureList.add(dagElementDao.setDagElementAndOrchestratorAsyncIdMapping(basicDagElement.getId(), orchestratorAsyncId));
@@ -219,8 +291,12 @@ public class RunService {
                 if(handler.succeeded()) {
                     try {
                         Long storagePutStart = new Date().toInstant().toEpochMilli();
-                        storageDao.storeDagElement(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
+                        storageDao.storeDagElementInput(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
                             logger.info("storagePut: " + (new Date().toInstant().toEpochMilli() - storagePutStart));
+                            if(storageDaoHandler.failed()) {
+                                future.fail(storageDaoHandler.cause());
+                                return;
+                            }
                             future.complete(orchestratorAsyncId);
                         });
                     } catch (Exception e) {
@@ -290,6 +366,41 @@ public class RunService {
            }
         });
         return future;
+    }
+
+    private Future<Void> refreshVariableValuesBatch(String asyncId, List<Variable> variables) throws Exception {
+        Promise<Void> promise = Promise.promise();
+        if (variables == null || variables.isEmpty()) {
+            promise.complete();
+            return promise.future();
+        }
+        
+        List<String> variableIds = new ArrayList<>();
+        Map<String, Variable> variableMap = new HashMap<>();
+        
+        for (Variable variable : variables) {
+            variableIds.add(variable.getId());
+            variableMap.put(variable.getId(), variable);
+        }
+        
+        variableValueDao.getVariableValuesBatch(asyncId, variableIds).setHandler(getVariablesHandler -> {
+            if (getVariablesHandler.succeeded()) {
+                Map<String, Object> valuesMap = getVariablesHandler.result();
+                if (valuesMap != null) {
+                    for (String variableId : valuesMap.keySet()) {
+                        Variable variable = variableMap.get(variableId);
+                        if (variable != null) {
+                            variable.setValue(valuesMap.get(variableId));
+                        }
+                    }
+                }
+                promise.complete();
+            } else {
+                promise.fail(getVariablesHandler.cause());
+            }
+        });
+        
+        return promise.future();
     }
 
     public Future<Void> addDebugPoints(String asyncId, String firstDagElementId, FirstDebugPointPayload payload, Vertx vertx) {

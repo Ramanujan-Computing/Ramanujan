@@ -44,7 +44,18 @@ public class VariableValueHashMapImpl implements VariableValueDao {
 
     @Override
     public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, String arrayName, Map<String, Object> indexValueMap) {
-        // No-op for arrayName in in-memory impl
+        // Store all index-value pairs for the array in memory
+        Map<String, Map<String, Object>> map = arrayValueMap.get(asyncId);
+        if(map == null) {
+            map = new HashMap<>();
+            arrayValueMap.put(asyncId, map);
+        }
+        Map<String, Object> currentArrayIdMap = map.get(arrayId);
+        if(currentArrayIdMap == null) {
+            currentArrayIdMap = new HashMap<>();
+            map.put(arrayId, currentArrayIdMap);
+        }
+        currentArrayIdMap.putAll(indexValueMap);
         return Future.succeededFuture();
     }
 
@@ -119,5 +130,50 @@ public class VariableValueHashMapImpl implements VariableValueDao {
     public Future<Void> deletedAllVariablesForAsyncId(String asyncId) {
         variableValueMap.remove(asyncId);
         return Future.succeededFuture();
+    }
+
+    @Override
+    public Future<Void> createVariablesBatch(String asyncId, java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables) {
+        Map<String, Object> map = variableValueMap.get(asyncId);
+        if (map == null) {
+            map = new HashMap<>();
+            variableValueMap.put(asyncId, map);
+        }
+        for (in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable : variables) {
+            map.put(variable.getId(), variable.getValue());
+        }
+        return Future.succeededFuture();
+    }
+
+    @Override
+    public Future<Void> updateVariablesBatch(String asyncId, java.util.List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables) {
+        Map<String, Object> map = variableValueMap.get(asyncId);
+        if (map == null) {
+            map = new HashMap<>();
+            variableValueMap.put(asyncId, map);
+        }
+        for (in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable : variables) {
+            map.put(variable.getId(), variable.getValue());
+        }
+        return Future.succeededFuture();
+    }
+
+    @Override
+    public Future<Map<String, Object>> getVariableValuesBatch(String asyncId, java.util.List<String> variableIds) {
+        Map<String, Object> resultMap = new HashMap<>();
+        
+        if (variableIds == null || variableIds.isEmpty() || !variableValueMap.containsKey(asyncId)) {
+            return Future.succeededFuture(resultMap);
+        }
+        
+        Map<String, Object> asyncVariables = variableValueMap.get(asyncId);
+        
+        for (String variableId : variableIds) {
+            if (asyncVariables.containsKey(variableId)) {
+                resultMap.put(variableId, asyncVariables.get(variableId));
+            }
+        }
+        
+        return Future.succeededFuture(resultMap);
     }
 }

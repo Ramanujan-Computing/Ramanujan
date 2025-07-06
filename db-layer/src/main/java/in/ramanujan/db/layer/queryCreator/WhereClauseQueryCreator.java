@@ -66,6 +66,76 @@ public class WhereClauseQueryCreator {
         return customQuery;
     }
 
+    public CustomQuery batchUpdateQuery(Object obj, String indexName, List<Object> batchOpObjects) throws Exception {
+        if(batchOpObjects == null || batchOpObjects.isEmpty()) {
+            return query(obj, indexName, WhereTypeQuery.UPDATE);
+        }
+        // Use the first object to generate the SQL
+        CustomQuery templateQuery = query(batchOpObjects.get(0), indexName, WhereTypeQuery.UPDATE);
+        String sql = templateQuery.getSql();
+        List<List<Object>> tupleList = new ArrayList<>();
+        for(Object batchObj : batchOpObjects) {
+            CustomQuery cq = query(batchObj, indexName, WhereTypeQuery.UPDATE);
+            tupleList.add(cq.getObjects());
+        }
+        CustomQuery batchQuery = new CustomQuery();
+        batchQuery.setSql(sql);
+        batchQuery.setTupleList(tupleList);
+        return batchQuery;
+    }
+
+    /**
+     * Create a query using IN clause for batch operations
+     * @param obj Template object with annotations
+     * @param batchValues List of values to include in the IN clause
+     * @param inClauseKey The key for the IN clause field
+     * @param whereTypeQuery Type of query (SELECT, UPDATE, DELETE)
+     * @return CustomQuery with SQL and parameters
+     * @throws Exception If reflection fails
+     */
+    public CustomQuery queryWithInClause(Object obj, List<Object> batchValues, String inClauseKey, WhereTypeQuery whereTypeQuery) throws Exception {
+        final Table table = obj.getClass().getAnnotation(Table.class);
+        String inClauseField = null;
+        String inClauseColumnName = null;
+        
+        // Find the field with InClauseSupport annotation that matches our key
+        for(Field field : obj.getClass().getDeclaredFields()) {
+            if(field.isAnnotationPresent(InClauseSupport.class)) {
+                InClauseSupport inClauseSupport = field.getAnnotation(InClauseSupport.class);
+                if(inClauseSupport.keyValue().equals(inClauseKey)) {
+                    inClauseField = field.getName();
+                    inClauseColumnName = field.getAnnotation(ColumnName.class).value();
+                    break;
+                }
+            }
+        }
+        
+        if(inClauseField == null) {
+            throw new IllegalArgumentException("No field found with InClauseSupport annotation for key: " + inClauseKey);
+        }
+        
+        // Build the IN clause
+        StringBuilder placeholders = new StringBuilder();
+        for(int i = 0; i < batchValues.size(); i++) {
+            if(i > 0) {
+                placeholders.append(",");
+            }
+            placeholders.append("?");
+        }
+        
+        String sql = whereTypeQuery.getPrefix() + table.value() + 
+                     " WHERE " + inClauseColumnName + " IN (" + placeholders.toString() + ")";
+        
+        // Create the CustomQuery with the SQL and parameters
+        CustomQuery customQuery = new CustomQuery();
+        customQuery.setSql(sql);
+        customQuery.setObjects(batchValues);
+        
+        return customQuery;
+    }
+
+
+
     private Boolean addPrimaryKeyInformation(String indexName, List<PrimaryKeyInformation> primaryKeyInformations,
                                                  Field field, Object columnVal, String columnName) throws Exception {
         if(field.isAnnotationPresent(PrimaryKey.class)) {

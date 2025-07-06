@@ -8,6 +8,7 @@ import lombok.Data;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class HeartBeat {
+    private String uuid;
     private String hostId;
     private Object data;
     private Long heartBeatTimeEpoch;

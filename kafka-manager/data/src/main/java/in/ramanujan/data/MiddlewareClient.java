@@ -10,6 +10,7 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -20,6 +21,13 @@ public class MiddlewareClient {
     private ObjectMapper objectMapper = new ObjectMapper();
 
     private Logger logger = LoggerFactory.getLogger(MiddlewareClient.class);
+
+
+    private ConsumptionCallback consumptionCallback; // to be inited by middleware.
+
+    public void setConsumptionCallback(ConsumptionCallback consumptionCallback) {
+        this.consumptionCallback = consumptionCallback;
+    }
 
 
     private WebClient getWebClient() {
@@ -43,35 +51,29 @@ public class MiddlewareClient {
         );
     }
 
-    public Future<Void> callMiddlewareProcessNextElementApi(String asyncId, String dagElementId, Boolean toBeDebugged) {
-        Future<Void> future = Future.future();
-        JsonObject jsonObject = new JsonObject()
-                .put("asyncId", asyncId)
-                .put("dagElementId", dagElementId)
-                .put("toBeDebugged", toBeDebugged)
-                .put("source", "kafka");
-        Long startDateTime = new Date().toInstant().toEpochMilli();
-        getWebClient().put("/process/next").sendJsonObject(jsonObject, httpResponseAsyncResult -> {
-            logger.info("latency: " + (new Date().toInstant().toEpochMilli() - startDateTime));
-            if(httpResponseAsyncResult.succeeded()) {
-                if(httpResponseAsyncResult.result().statusCode() == 200) {
-                    future.complete();
-                } else {
-                    logger.error("API failed with status " + httpResponseAsyncResult.result().statusCode());
-                    future.fail("API status not 200");
+    public Future<Void> callMiddlewareProcessNextElementApi(String asyncId, String dagElementId, Boolean toBeDebugged, Vertx vertx) {
+        Future future = Future.future();
+        try {
+            logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
+            consumptionCallback.processNextElement(asyncId, dagElementId, toBeDebugged, vertx).setHandler(handler -> {
+                if(handler.failed()) {
+                    logger.error("Failed to process next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged, handler.cause());
+                    future.fail(handler.cause());
+                    return;
                 }
-            } else {
-                future.fail(httpResponseAsyncResult.cause());
-            }
-//            if(httpResponseAsyncResult.succeeded()) {
-//                future.complete();
-//            } else {
-//                callMiddlewareProcessNextElementApi(asyncId, dagElementId).setHandler(rehandler -> {
-//                    future.complete();
-//                });
-//            }
-        });
+                logger.info("Processed next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
+                future.complete();
+            });
+        } catch (Exception e) {
+            logger.error("Error processing next element", e);
+            future.fail(e);
+        }
+
         return future;
+    }
+
+    public static interface ConsumptionCallback {
+        Future<Void> processNextElement(String asyncId, String dagElementId, Boolean toBeDebugged, Vertx vertx) throws Exception;
     }
 
 }

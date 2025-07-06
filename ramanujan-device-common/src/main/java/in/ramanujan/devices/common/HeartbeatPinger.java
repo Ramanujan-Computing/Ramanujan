@@ -14,10 +14,10 @@ public class HeartbeatPinger {
 
     private static String heartBeatUri = "/pings/heartbeat";
 
-    public static void pingHeartbeat(String uuid, Credentials credentials) {
+    public static void pingHeartbeat(String uuid, String asyncId, Credentials credentials) {
         Request request = new Request.Builder()
                 .post(RequestBody.create(JSON, ""))
-                .url(host + heartBeatUri + "?uuid=" + uuid)
+                .url(host + heartBeatUri + "?uuid=" + uuid + "&asyncId=" + asyncId)
                 .build();
 
         try {

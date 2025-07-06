@@ -102,8 +102,8 @@ public class DagElementHashMapImpl implements DagElementDao {
     }
 
     @Override
-    public Future<Boolean> isAsyncTaskDone(String asyncId) {
-        return Future.succeededFuture(asyncTaskDagElementMap.get(asyncId).size() == 0);
+    public Future<Integer> isAsyncTaskDone(String asyncId) {
+        return Future.succeededFuture(asyncTaskDagElementMap.get(asyncId).size());
     }
 
     @Override
@@ -124,5 +124,21 @@ public class DagElementHashMapImpl implements DagElementDao {
     @Override
     public Future<BasicDagElement> getDagElement(String dagElementId) {
         return Future.succeededFuture(dagElementMap.get(dagElementId));
+    }
+
+    @Override
+    public Future<Void> addDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds) {
+        for (String nextDagElementId : nextDagElementIds) {
+            addDagElementDependency(dagElementId, nextDagElementId);
+        }
+        return Future.succeededFuture();
+    }
+
+    @Override
+    public Future<Void> removeDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds) {
+        for (String nextDagElementId : nextDagElementIds) {
+            removeDagElementDependency(dagElementId, nextDagElementId);
+        }
+        return Future.succeededFuture();
     }
 }

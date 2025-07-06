@@ -8,6 +8,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 public interface HeartBeatDao {
-    public Future<HeartBeat> getLastHeartBeat(String hostId);
+    public Future<HeartBeat> getLastHeartBeat(String asyncId, String hostId);
     public Future<Void> updateHeartBeat(HeartBeat heartBeat);
 }

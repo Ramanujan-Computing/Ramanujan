@@ -18,7 +18,7 @@ public class HeartBeatDaoHashMapImpl implements HeartBeatDao {
 //    }
 
     @Override
-    public Future<HeartBeat> getLastHeartBeat(String hostId) {
+    public Future<HeartBeat> getLastHeartBeat(String asyncId, String hostId) {
         return Future.succeededFuture(heartBeatMap.get(hostId));
     }
 

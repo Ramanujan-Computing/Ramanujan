@@ -2,6 +2,9 @@ package in.ramanujan.db.layer.utils;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import in.ramanujan.db.layer.annotations.ColumnName;
+import in.ramanujan.db.layer.annotations.Table;
+import in.ramanujan.db.layer.constants.Keys;
 import in.ramanujan.db.layer.queryCreator.*;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.monitoringutils.StatsRecorderUtils;
@@ -9,6 +12,9 @@ import in.ramanujan.db.layer.enums.QueryType;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.SqlConnection;
@@ -20,13 +26,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.lang.reflect.Field;
 
 @Component
 public class QueryExecutor {
@@ -48,6 +53,8 @@ public class QueryExecutor {
     private final InsertDuplicateQueryCreator insertDuplicateQueryCreator = new InsertDuplicateQueryCreator();
 
     HikariConfig config = new HikariConfig();
+
+    Logger logger = LoggerFactory.getLogger(QueryExecutor.class);
 
     Context context;
     DataSource dataSource;
@@ -81,8 +88,25 @@ public class QueryExecutor {
             config.setUsername(dbConfig.getUsername());
             config.setPassword(dbConfig.getPassword());
 
-            config.setMaximumPoolSize(50);
+            int maxPool = 100 * Runtime.getRuntime().availableProcessors();
+            config.setMaximumPoolSize(maxPool);
+            config.setConnectionTimeout(5000);
             dataSource = new HikariDataSource(config);
+
+            int connectionsMade = maxPool;
+            while(connectionsMade > 0) {
+                try {
+                    Connection connection = dataSource.getConnection();
+                    connection.close();
+                    connectionsMade--;
+                } catch (SQLException e) {
+                    logger.error("Failed to connect to the database: " + dbConfig.getDbName() + ". Retrying...", e);
+
+                }
+            }
+
+            logger.info("Database connection pool initialized with " + maxPool + " connections for database: " + dbConfig.getDbName());
+
         }
     }
 
@@ -104,9 +128,42 @@ public class QueryExecutor {
         }
         final CustomQuery customQuery = getCustomQuery(object, index, queryType, list);
         context.executeBlocking(blocking -> {
+            queryInternal(object, queryType, blocking, customQuery);
+        }, false, handler -> {
+            if(handler.succeeded()) {
+                future.complete((List<Object>) handler.result());
+            } else {
+               future.fail(handler.cause());
+            }
+        });
+//        connectionCreator.getConnection().setHandler(handler -> {
+//            if(handler.succeeded()) {
+//                handleConnectionCreate(handler.result(), customQuery, future, object, queryType);
+//            } else {
+//                future.fail(handler.cause());
+//            }
+//        });
+        return future;
+    }
+
+    private void queryInternal(Object object, QueryType queryType, Promise<Object> blocking, CustomQuery customQuery) {
+
+            Connection connection = null;
             try {
                 Long connStart = new Date().toInstant().toEpochMilli();
-                Connection connection = dataSource.getConnection();
+                int maxTry = 10;
+                while (maxTry -- > 0) {
+                    try {
+                        connection = dataSource.getConnection();
+                        break;
+                    } catch (SQLTimeoutException ex) {
+                        Thread.sleep(10_000);
+                    }
+                }
+                if(maxTry < 0) {
+                    logger.error("Couldn't get connection in 10 tries, giving up. Switching JVM off");
+                    System.exit(1);
+                }
                 publishMetric("dbCon", connStart);
                 Long stmtStart = new Date().toInstant().toEpochMilli();
                 PreparedStatement statement = connection.prepareStatement(customQuery.getSql());
@@ -130,7 +187,7 @@ public class QueryExecutor {
                 }
                 final ResultSet resultSet;
                 List<Object> objects = new ArrayList<>();
-                if(queryType == QueryType.SELECT) {
+                if(queryType == QueryType.SELECT || queryType == QueryType.SELECT_IN) {
                     resultSet = statement.executeQuery();
                     while(resultSet.next()) {
                         objects.add(RowToObjectConvertor.convert(resultSet, object));
@@ -144,24 +201,18 @@ public class QueryExecutor {
                 statement.close();
                 connection.close();
                 blocking.complete(objects);
+                return;
             } catch (Exception e) {
-                blocking.fail(e);
+                if(connection != null) {
+                    try {
+                        connection.close();
+                    } catch (SQLException ex) {
+                        logger.error("Failed to close connection", ex);
+                    }
+                }
+                    logger.error(e);
+                    blocking.fail(e);
             }
-        }, false, handler -> {
-            if(handler.succeeded()) {
-                future.complete((List<Object>) handler.result());
-            } else {
-               future.fail(handler.cause());
-            }
-        });
-//        connectionCreator.getConnection().setHandler(handler -> {
-//            if(handler.succeeded()) {
-//                handleConnectionCreate(handler.result(), customQuery, future, object, queryType);
-//            } else {
-//                future.fail(handler.cause());
-//            }
-//        });
-        return future;
     }
 
     private void executeStmt(PreparedStatement statement) throws SQLException {
@@ -219,6 +270,19 @@ public class QueryExecutor {
             customQuery = insertQueryCreator.query(object, batchOpObjects);
         } else if (queryType == QueryType.UPSERT) {
             customQuery = insertDuplicateQueryCreator.query(object, batchOpObjects);
+        } else if (queryType == QueryType.UPDATE && batchOpObjects != null) {
+            customQuery = whereClauseQueryCreator.batchUpdateQuery(object, index, batchOpObjects);
+        } else if (queryType == QueryType.SELECT_IN && batchOpObjects != null && !batchOpObjects.isEmpty()) {
+            // For SELECT_IN, use queryWithInClause
+            // - first element: a List of values for the IN clause
+            @SuppressWarnings("unchecked")
+            List<Object> inValues = (List<Object>) batchOpObjects.get(0);
+            customQuery = whereClauseQueryCreator.queryWithInClause(
+                object, 
+                inValues, 
+                index, // Use index as the key for the IN clause
+                WhereClauseQueryCreator.WhereTypeQuery.SELECT
+            );
         } else {
             customQuery = whereClauseQueryCreator.query(object, index,
                     WhereClauseQueryCreator.WhereTypeQuery.valueOf(queryType.name()));

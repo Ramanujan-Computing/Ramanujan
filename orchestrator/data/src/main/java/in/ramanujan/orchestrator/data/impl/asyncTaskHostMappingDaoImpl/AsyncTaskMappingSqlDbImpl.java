@@ -1,5 +1,6 @@
 package in.ramanujan.orchestrator.data.impl.asyncTaskHostMappingDaoImpl;
 
+import com.google.common.base.Strings;
 import in.ramanujan.orchestrator.data.dao.AsyncTaskHostMappingDao;
 import in.ramanujan.db.layer.constants.Keys;
 import in.ramanujan.db.layer.enums.QueryType;
@@ -7,6 +8,7 @@ import in.ramanujan.db.layer.schema.HostMapping;
 import in.ramanujan.db.layer.utils.QueryExecutor;
 import in.ramanujan.orchestrator.base.pojo.AsyncTask;
 import in.ramanujan.orchestrator.data.dao.AsyncTaskDao;
+import in.ramanujan.orchestrator.data.impl.asyncTaskDaoImpl.AsyncTaskDaoSqlImpl;
 import in.ramanujan.pojo.checkpoint.Checkpoint;
 import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
@@ -109,6 +111,22 @@ public class AsyncTaskMappingSqlDbImpl implements AsyncTaskHostMappingDao {
                     String uuid = ((HostMapping) handler.result().get(0)).getUuid();
                     asyncTaskDao.getAsyncTask(uuid).setHandler(getAsyncTaskHandler -> {
                         if(getAsyncTaskHandler.succeeded()) {
+                            if(getAsyncTaskHandler.result() instanceof AsyncTaskDaoSqlImpl.DummyAsyncTask) {
+                                logger.error("Host assigned is null for async task: " + uuid);
+                                try {
+                                    queryExecutor.execute(hostMapping, Keys.HOST_ID, QueryType.DELETE).setHandler(deleteHandler -> {
+                                        if (deleteHandler.succeeded())
+                                            future.complete();
+                                        else
+                                            future.fail(deleteHandler.cause());
+                                    });
+                                    return;
+                                } catch (Exception ex) {
+                                    future.fail(ex);
+                                    return;
+                                }
+
+                            }
                             AsyncTask asyncTask = getAsyncTaskHandler.result();
                             if("true".equals(((HostMapping)handler.result().get(0)).getResumeComputation())) {
                                 asyncTask.setCheckpoint(new Checkpoint());

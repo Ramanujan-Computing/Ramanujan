@@ -1,9 +1,11 @@
 package in.ramanujan.data.db.dao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
+import in.ramanujan.db.layer.enums.StorageType;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.pojo.RuleEngineInput;
+import in.ramanujan.translation.codeConverter.BasicDagElement;
+import in.ramanujan.translation.codeConverter.DagElement;
 import in.ramanujan.translation.codeConverter.UserReadableDebugPoints;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
@@ -14,6 +16,7 @@ public abstract class  StorageDao {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     protected final String dagElementResultBucketName = "dag_element_result";
+    protected final String dagElementBucketName = "dag-element";
     protected final String dagElementInputBucketName = "dag_element_input";
     protected final String dageElementCodeBucketName = "dag-element-code";
     protected final String commonFunctionCodeBucket = "common-function-code";
@@ -25,7 +28,7 @@ public abstract class  StorageDao {
         return context;
     }
 
-    public void setContext(Context context, ConfigurationGetter.StorageType storageType) {
+    public void setContext(Context context, StorageType storageType) {
         this.context = context;
     }
 
@@ -33,7 +36,7 @@ public abstract class  StorageDao {
         Future<Object> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                Object data = getObject(objectId, dagElementResultBucketName);
+                Object data = getObject(objectId, dagElementResultBucketName, 5);
                 blocking.complete(data);
             } catch (Exception e) {
                 blocking.fail(e);
@@ -52,7 +55,7 @@ public abstract class  StorageDao {
         Future<String> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(asyncId, commonFunctionCodeBucket);
+                String object = getObject(asyncId, commonFunctionCodeBucket, 5);
                 blocking.complete(object);
             } catch (Exception e) {
                 blocking.fail(e);
@@ -71,7 +74,7 @@ public abstract class  StorageDao {
         Future<UserReadableDebugPoints> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(orchestratorAsyncId, dagElementDebugValue);
+                String object = getObject(orchestratorAsyncId, dagElementDebugValue, 5);
                 blocking.complete(objectMapper.readValue(object, UserReadableDebugPoints.class));
             } catch (Exception e) {
                 blocking.fail(e);
@@ -90,7 +93,7 @@ public abstract class  StorageDao {
         Future<String> future = Future.future();
         getVertxContext().executeBlocking(blocking -> {
             try {
-                String object = getObject(dagElementId, dageElementCodeBucketName);
+                String object = getObject(dagElementId, dageElementCodeBucketName, 5);
                 blocking.complete(object);
             } catch (Exception e) {
                 blocking.fail(e);
@@ -110,7 +113,7 @@ public abstract class  StorageDao {
         try {
             getVertxContext().executeBlocking(blocking -> {
                 try {
-                    setObject(asyncId, commonFunctionCodeBucket, code);
+                    setObject(asyncId, commonFunctionCodeBucket, code, 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -133,7 +136,7 @@ public abstract class  StorageDao {
         try {
             getVertxContext().executeBlocking(blocking -> {
                 try {
-                    setObject(dagElementId, dageElementCodeBucketName, code);
+                    setObject(dagElementId, dageElementCodeBucketName, code, 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -151,12 +154,60 @@ public abstract class  StorageDao {
         return future;
     }
 
-    public final Future<Void> storeDagElement(String orchestratorAsyncId, RuleEngineInput ruleEngineInput) throws Exception {
+    public final Future<Void> storeDagElement(DagElement dagElement) {
         Future<Void> future = Future.future();
         try {
             getVertxContext().executeBlocking(blocking -> {
                 try {
-                    setObject(orchestratorAsyncId, dagElementInputBucketName, objectMapper.writeValueAsString(ruleEngineInput));
+                    BasicDagElement basicDagElement = new BasicDagElement();
+                    basicDagElement.setId(dagElement.getId());
+                    basicDagElement.setFirstCommandId(dagElement.getFirstCommandId());
+                    basicDagElement.setRuleEngineInput(dagElement.getRuleEngineInput());
+
+                    setObject(dagElement.getId(), dagElementBucketName, objectMapper.writeValueAsString(basicDagElement), 5);
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("storeDagElement", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    public final Future<BasicDagElement> getDagElement(String dagElementId) {
+        Future<BasicDagElement> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                String object = getObject(dagElementId, dagElementBucketName, 5);
+                BasicDagElement basicDagElement = objectMapper.readValue(object, BasicDagElement.class);
+                blocking.complete(basicDagElement);
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getDagElement", handler -> {
+            if(handler.succeeded()) {
+                future.complete((BasicDagElement) handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final Future<Void> storeDagElementInput(String orchestratorAsyncId, RuleEngineInput ruleEngineInput) {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    setObject(orchestratorAsyncId, dagElementInputBucketName, objectMapper.writeValueAsString(ruleEngineInput), 5);
                     blocking.complete();
                 } catch (Exception e) {
                     blocking.fail(e);
@@ -174,7 +225,7 @@ public abstract class  StorageDao {
         return future;
     }
 
-    protected abstract void setObject(String objectId, String buckName, String object) throws Exception;
-    protected abstract String getObject(String objectId, String bucketName) throws Exception;
+    protected abstract void setObject(String objectId, String buckName, String object, int currentRetryCount) throws Exception;
+    protected abstract String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception;
 }
 

@@ -25,9 +25,9 @@ public class OrchestratorApiCallHelper {
     static OkHttpClient getOkHttpClient() {
         if (okHttpClient == null) {
             okHttpClient = new OkHttpClient();
-            okHttpClient.setConnectTimeout(15, TimeUnit.SECONDS);
-            okHttpClient.setReadTimeout(60, TimeUnit.SECONDS);
-            okHttpClient.setWriteTimeout(60, TimeUnit.SECONDS);
+            okHttpClient.setConnectTimeout(5, TimeUnit.SECONDS);
+            okHttpClient.setReadTimeout(120, TimeUnit.SECONDS);
+            okHttpClient.setWriteTimeout(5, TimeUnit.SECONDS);
         }
         return okHttpClient;
     }

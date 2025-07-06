@@ -16,7 +16,7 @@ import java.util.Date;
 
 
 @Component
-public class TaskStatusService {
+public class OrchestratorTaskStatusService {
 
     @Autowired
     private AsyncTaskDao asyncTaskDao;
@@ -33,7 +33,7 @@ public class TaskStatusService {
     @Autowired
     private AsyncTaskHostMappingDao asyncTaskHostMappingDao;
 
-    private Logger logger= LoggerFactory.getLogger(TaskStatusService.class);
+    private Logger logger= LoggerFactory.getLogger(OrchestratorTaskStatusService.class);
 
     public Future<AsyncTask> getAsyncTaskStatus(String asyncTaskId) {
         Future<AsyncTask> future = Future.future();
@@ -51,7 +51,7 @@ public class TaskStatusService {
                     return;
                 }
                 asyncTask.setHostAssigned(getHostInfo.result());
-                heartBeatDao.getLastHeartBeat(asyncTask.getHostAssigned()).setHandler(heartBeatHandler -> {
+                heartBeatDao.getLastHeartBeat(asyncTask.getUuid(), asyncTask.getHostAssigned()).setHandler(heartBeatHandler -> {
                    if(heartBeatHandler.succeeded()) {
                        HeartBeat heartBeat = heartBeatHandler.result();
                        if (heartBeat == null || (new Date().toInstant().toEpochMilli() - heartBeat.getHeartBeatTimeEpoch()) > DateTimeUtils.maxHeartBeatDiff) {

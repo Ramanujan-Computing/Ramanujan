@@ -1,7 +1,7 @@
 package in.ramanujan.data.db.impl.storageDao;
 
 import in.ramanujan.data.db.dao.StorageDao;
-import in.ramanujan.middleware.base.configuration.ConfigurationGetter;
+import in.ramanujan.db.layer.enums.StorageType;
 import io.vertx.core.Context;
 import org.springframework.stereotype.Component;
 
@@ -10,9 +10,9 @@ public class StorageDaoInternal extends StorageDao {
     private StorageDaoInternal storageDaoInternal;
 
     @Override
-    public void setContext(Context context, ConfigurationGetter.StorageType storageType) {
+    public void setContext(Context context, StorageType storageType) {
         super.setContext(context, storageType);
-        if(storageType == ConfigurationGetter.StorageType.GCP) {
+        if(storageType == StorageType.GCP) {
             storageDaoInternal = new StorageDaoGoogleCloudImpl();
         } else {
             storageDaoInternal = new StorageDaoLocalContainerImpl();
@@ -20,12 +20,12 @@ public class StorageDaoInternal extends StorageDao {
     }
 
     @Override
-    protected void setObject(String objectId, String buckName, String object) throws Exception {
-        storageDaoInternal.setObject(objectId, buckName, object);
+    protected void setObject(String objectId, String buckName, String object, int currentRetryCount) throws Exception {
+        storageDaoInternal.setObject(objectId, buckName, object, currentRetryCount);
     }
 
     @Override
-    protected String getObject(String objectId, String bucketName) throws Exception {
-        return storageDaoInternal.getObject(objectId, bucketName);
+    protected String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception {
+        return storageDaoInternal.getObject(objectId, bucketName, currentRetryCount);
     }
 }

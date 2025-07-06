@@ -1,5 +1,6 @@
 package in.ramanujan.orchestrator.base.configuration;
 
+import in.ramanujan.db.layer.enums.StorageType;
 import in.ramanujan.db.layer.utils.QueryExecutor;
 import io.vertx.core.json.JsonObject;
 
@@ -7,19 +8,6 @@ import static in.ramanujan.orchestrator.base.configuration.ConfigKey.DB_TYPE_CON
 
 public class ConfigurationGetter {
     private static JsonObject config;
-
-    public static enum StorageType {
-        LOCAL, GCP;
-
-        public static StorageType fromString(String type) {
-            for(StorageType storageType : StorageType.values()) {
-                if(storageType.name().equalsIgnoreCase(type)) {
-                    return storageType;
-                }
-            }
-            return null;
-        }
-    }
 
     public static void init(JsonObject jsonObject) {
         config = jsonObject;

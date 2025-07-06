@@ -26,7 +26,7 @@ public class MainVerticle extends AbstractVerticle {
 
         logger.info("deploying application verticles");
         deploy(applicationContext.getBean(ConsumerVerticle.class), ConsumerVerticle.class.getName());
-        deploy(applicationContext.getBean(HttpVerticle.class), HttpVerticle.class.getName());
+        deploy(applicationContext.getBean(KafkaHttpVerticle.class), KafkaHttpVerticle.class.getName());
     }
 
     private void deploy(Verticle verticle, String className) {

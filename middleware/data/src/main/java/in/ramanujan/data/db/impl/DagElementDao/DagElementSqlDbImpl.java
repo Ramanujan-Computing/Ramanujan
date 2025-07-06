@@ -350,19 +350,77 @@ public class DagElementSqlDbImpl implements DagElementDao {
     }
 
     @Override
-    public Future<Boolean> isAsyncTaskDone(String asyncId) {
-        Future<Boolean> future = Future.future();
+    public Future<Integer> isAsyncTaskDone(String asyncId) {
+        Future<Integer> future = Future.future();
         try {
             OrchestratorMiddlewareMapping orchestratorMiddlewareMapping = new OrchestratorMiddlewareMapping();
             orchestratorMiddlewareMapping.setMiddlewareAsyncId(asyncId);
 
             queryExecutor.execute(orchestratorMiddlewareMapping, Keys.MIDDLEWARE_ASYNC_ID, QueryType.SELECT).setHandler(handler -> {
                if(handler.succeeded()) {
-                   future.complete(handler.result().size() == 0);
+                   future.complete(handler.result().size());
                } else {
                    future.fail(handler.cause());
                }
             });
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    @Override
+    public Future<Void> addDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> batch = new ArrayList<>();
+            for (String nextDagElementId : nextDagElementIds) {
+                DagElementRelationShip dagElementRelationShip = new DagElementRelationShip();
+                dagElementRelationShip.setDagElementId(dagElementId);
+                dagElementRelationShip.setNextDagElementId(nextDagElementId);
+                dagElementRelationShip.setRelation("true");
+                batch.add(dagElementRelationShip);
+            }
+            if (!batch.isEmpty()) {
+                queryExecutor.execute(batch.get(0), null, QueryType.INSERT, batch).setHandler(handler -> {
+                    if (handler.succeeded()) {
+                        future.complete();
+                    } else {
+                        future.fail(handler.cause());
+                    }
+                });
+            } else {
+                future.complete();
+            }
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    @Override
+    public Future<Void> removeDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds) {
+        Future<Void> future = Future.future();
+        try {
+            List<Object> batch = new ArrayList<>();
+            for (String nextDagElementId : nextDagElementIds) {
+                DagElementRelationShip dagElementRelationShip = new DagElementRelationShip();
+                dagElementRelationShip.setDagElementId(dagElementId);
+                dagElementRelationShip.setNextDagElementId(nextDagElementId);
+                dagElementRelationShip.setRelation("false");
+                batch.add(dagElementRelationShip);
+            }
+            if (!batch.isEmpty()) {
+                queryExecutor.execute(batch.get(0), Keys.DE_ID_NEXT_DE_ID, QueryType.UPDATE, batch).setHandler(handler -> {
+                    if (handler.succeeded()) {
+                        future.complete();
+                    } else {
+                        future.fail(handler.cause());
+                    }
+                });
+            } else {
+                future.complete();
+            }
         } catch (Exception e) {
             future.fail(e);
         }

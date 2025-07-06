@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import in.ramanujan.monitoringutils.MonitoringHandler;
 import in.ramanujan.orchestrator.base.enums.Status;
 import in.ramanujan.orchestrator.base.pojo.ApiResponse;
-import in.ramanujan.orchestrator.service.CheckpointService;
+import in.ramanujan.orchestrator.service.OrchestratorCheckpointService;
 import in.ramanujan.pojo.checkpoint.Checkpoint;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.vertx.core.Handler;
@@ -16,14 +16,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class CheckpointHandler implements Handler<RoutingContext> {
+public class OrchestratorCheckpointHandler implements Handler<RoutingContext> {
 
-    private Logger logger = LoggerFactory.getLogger(CheckpointHandler.class);
+    private Logger logger = LoggerFactory.getLogger(OrchestratorCheckpointHandler.class);
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
-    private CheckpointService checkpointService;
+    private OrchestratorCheckpointService orchestratorCheckpointService;
 
     @Override
     public void handle(RoutingContext event) {
@@ -31,7 +31,7 @@ public class CheckpointHandler implements Handler<RoutingContext> {
         String asyncTaskId = payload.getString("uuid");
         try {
             Checkpoint checkpoint = objectMapper.readValue(payload.getJsonObject("checkpoint").toString(), Checkpoint.class);
-            checkpointService.applyCheckpoint(checkpoint, asyncTaskId)
+            orchestratorCheckpointService.applyCheckpoint(checkpoint, asyncTaskId)
                     .setHandler(new MonitoringHandler<>("checkpoint",handler -> {
                 if(handler.succeeded()) {
                     event.response().setStatusCode(HttpResponseStatus.OK.code()).end(
