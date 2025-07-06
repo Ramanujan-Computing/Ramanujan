@@ -22,21 +22,30 @@ const FileUpload = ({ files, onFilesChange }) => {
   };
 
   const processFiles = async (newFiles) => {
+    // No file type restriction: accept all files
     const filePromises = newFiles.map(file => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
           resolve({
             fileName: file.name,
-            data: reader.result
+            data: reader.result,
+            size: file.size
           });
+        };
+        reader.onerror = () => {
+          reject(new Error(`Failed to read file: ${file.name}`));
         };
         reader.readAsText(file);
       });
     });
 
-    const processedFiles = await Promise.all(filePromises);
-    onFilesChange([...files, ...processedFiles]);
+    try {
+      const processedFiles = await Promise.all(filePromises);
+      onFilesChange([...files, ...processedFiles]);
+    } catch (error) {
+      console.error('Error processing files:', error);
+    }
   };
 
   const handleDragOver = (e) => {
@@ -96,7 +105,10 @@ const FileUpload = ({ files, onFilesChange }) => {
         />
         <CloudUpload color="primary" sx={{ fontSize: 48, mb: 1 }} />
         <Typography variant="h6" gutterBottom>
-          Drag & Drop CSV Files Here
+          Drag & Drop Code Files Here
+        </Typography>
+        <Typography variant="body2" color="textSecondary" gutterBottom>
+          All file types are supported.
         </Typography>
         <Typography variant="body2" color="textSecondary" gutterBottom>
           or
@@ -117,6 +129,7 @@ const FileUpload = ({ files, onFilesChange }) => {
               <ListItem key={index} divider={index < files.length - 1}>
                 <ListItemText
                   primary={file.fileName}
+                  secondary={file.size ? formatFileSize(file.size) : 'Unknown size'}
                 />
                 <ListItemSecondaryAction>
                   <IconButton edge="end" onClick={() => handleDeleteFile(index)}>
