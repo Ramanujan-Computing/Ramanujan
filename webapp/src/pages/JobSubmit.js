@@ -111,8 +111,10 @@ const JobSubmit = () => {
     // If using file as code and a file is uploaded, populate the editor with the file content
     if (useFileAsCode && newFiles.length > 0) {
       setCode(newFiles[0].data);
+    } else if (useFileAsCode && newFiles.length === 0) {
+      setCode('');
     }
-  };
+  }
 
   const handleUseFileAsCodeChange = (event) => {
     setUseFileAsCode(event.target.checked);
@@ -127,10 +129,11 @@ const JobSubmit = () => {
 
   const isSubmitDisabled = () => {
     if (useFileAsCode) {
-      return loading || files.length === 0 || !files[0]?.data?.trim();
+      // Enable submit if a file is attached and its content is non-empty
+      return loading || files.length === 0 || !(files[0]?.data && files[0].data.trim());
     }
     return loading || !code.trim();
-  };
+  }
 
   return (
     <Box>
