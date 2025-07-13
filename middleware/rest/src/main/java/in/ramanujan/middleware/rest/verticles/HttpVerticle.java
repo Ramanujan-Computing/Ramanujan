@@ -18,6 +18,8 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.CorsHandler;
+import io.vertx.core.http.HttpMethod;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -125,7 +127,19 @@ public class HttpVerticle extends AbstractVerticle {
 
     private Router createRouter() {
         Router router = Router.router(vertx);
+        
+        // Add CORS handler for all routes
+        CorsHandler corsHandler = CorsHandler.create("*")
+                .allowedMethod(HttpMethod.GET)
+                .allowedMethod(HttpMethod.POST)
+                .allowedMethod(HttpMethod.OPTIONS)
+                .allowedHeader("Content-Type")
+                .allowedHeader("Authorization")
+                .allowedHeader("Accept");
+        
+        router.route().handler(corsHandler);
         router.route().handler(BodyHandler.create());
+        
         runUserCodeHandle(router);
         clientCreatApis(router);
         runHealthCheck(router);
@@ -140,6 +154,29 @@ public class HttpVerticle extends AbstractVerticle {
     }
 
     private void runUserCodeHandle(Router router) {
+        // Handle OPTIONS preflight for /run endpoint
+        router.options("/run").handler(handler -> {
+            handler.response()
+                    .setStatusCode(200)
+                    .putHeader("Access-Control-Allow-Origin", "*")
+                    .putHeader("Access-Control-Allow-Methods", "POST, OPTIONS")
+                    .putHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+                    .putHeader("Access-Control-Max-Age", "3600")
+                    .end();
+        });
+        
+        // Handle OPTIONS preflight for /status endpoint
+        router.options("/status").handler(handler -> {
+            handler.response()
+                    .setStatusCode(200)
+                    .putHeader("Access-Control-Allow-Origin", "*")
+                    .putHeader("Access-Control-Allow-Methods", "GET, OPTIONS")
+                    .putHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+                    .putHeader("Access-Control-Max-Age", "3600")
+                    .end();
+        });
+        
+        // Existing handlers
         router.post("/run").handler(translateAndRunHandler);
         router.post("/run/package").handler(packageRunner);
         router.get("/status").handler(statusHandler);
@@ -149,9 +186,6 @@ public class HttpVerticle extends AbstractVerticle {
         router.post("/checkpoint/resume").handler(checkpointResumeHandler);
         router.post("/checkpoints").handler(addFirstDebugPointHandler);
         router.get("/dagElementId").handler(getDagElementCodeHandler);
-
-
-
     }
 
     private void clientCreatApis(Router router) {

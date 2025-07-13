@@ -58,7 +58,7 @@ public class HttpVerticle extends AbstractVerticle {
                     logger.error("Exception for request: error: {}", event);
                 }
         ).listen(
-                config().getInteger("event.http.port", 8887), next
+                config().getInteger("event.http.port", 8887), "0.0.0.0", next
         );
     }
 
@@ -80,7 +80,15 @@ public class HttpVerticle extends AbstractVerticle {
 
         loadTester(router);
 
+        healthCheck(router);
+
         return router;
+    }
+
+    private void healthCheck(Router router) {
+        router.get("/health").handler(handler -> {
+            handler.response().setStatusCode(200).end("OK");
+        });
     }
 
     private void spawnDevices(Router router) {

@@ -2,7 +2,7 @@
 # FROM anapsix/alpine-java
 
 # Pull base image.
-FROM ubuntu:16.04
+FROM ubuntu:24.04
 # Specify the platform as AMD64
 # FROM --platform=linux/amd64 ubuntu:16.04
 
@@ -30,4 +30,4 @@ ENV RAMANUJAN_WS /
 
 MAINTAINER PSAXENA
 EXPOSE 8887:8887/tcp
-CMD ["java","-jar", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5008", "rest-1.0-SNAPSHOT-fat.jar", "-conf", "config.json"]
+CMD ["java","-jar", "-Xmx1G", "rest-1.0-SNAPSHOT-fat.jar", "-conf", "config.json"]

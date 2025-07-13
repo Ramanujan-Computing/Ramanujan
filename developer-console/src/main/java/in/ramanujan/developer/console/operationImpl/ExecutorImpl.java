@@ -25,39 +25,15 @@ public class ExecutorImpl implements Operation {
     public static final Map<String, Map<String, Object>> arrayStore = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
-    public void execute(List<String> args) {
-            int experimentSize = 10;
-            CountDownLatch countDownLatch = new CountDownLatch(experimentSize);
-            long startTime = System.currentTimeMillis();
-            for (int i=0 ; i< experimentSize;i++)
-            {
-                new Thread(() -> {
-                    try {
-                        runCode(args);
-                    } catch (Exception e) {
-                        System.out.println("Error during code execution: " + e.getMessage());
-                    } finally {
-                        countDownLatch.countDown();
-                        synchronized (this) {
-                            System.out.println("Thread completed execution, remaining count: " + countDownLatch.getCount());
-                        }
-                    }
-                }).start();
-            }
-            try {
-                countDownLatch.await();
-                System.out.println("All threads completed execution in " + (System.currentTimeMillis() - startTime) + " ms");
-            } catch (Exception ec)
-            {
-                System.out.println("Error waiting for threads to complete: " + ec.getMessage());
-            }
+    public void execute(List<String> args) throws IOException {
+            runCode(args);
     }
 
     private static void runCode(List<String> args) throws JsonProcessingException {
         OkHttpClient httpClient = new OkHttpClient();
         String json = new ObjectMapper().writeValueAsString(createJson(args));
         RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
-        Request request = new Request.Builder().url("http://35.232.220.56:8888/run?debug=false").post(requestBody).build();
+        Request request = new Request.Builder().url("https://server.ramanujan.dev/run?debug=false").post(requestBody).build();
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             Response response = httpClient.newCall(request).execute();
@@ -69,7 +45,7 @@ public class ExecutorImpl implements Operation {
                 System.out.println(taskId);
                 Diagram diagram = codeRunAsyncResponse.getDiagram();
                 System.out.println(diagram);
-                request = new Request.Builder().url("http://35.232.220.56:8888/status?uuid=" + taskId).build();
+                request = new Request.Builder().url("https://server.ramanujan.dev/status?uuid=" + taskId).build();
                 while(true) {
                     try {
                         Thread.sleep(5000);
@@ -89,7 +65,6 @@ public class ExecutorImpl implements Operation {
                     if("200 OK".equalsIgnoreCase(apiResponse.getStatus())) {
                         Map<String, Object> asyncTask = (Map<String, Object>) apiResponse.getData();
                         if("SUCCESS".equalsIgnoreCase((String) asyncTask.get("taskStatus")) || "FAILED".equalsIgnoreCase((String) asyncTask.get("taskStatus"))) {
-                            System.out.println(asyncTask);
                             // Extract and store variable/array values for later querying
                             Object resultObj = asyncTask.get("result");
                             if (resultObj instanceof Map) {
@@ -123,7 +98,7 @@ public class ExecutorImpl implements Operation {
                                 }
                             }
                             // Start interactive console for querying variables/arrays
-                            //startQueryConsole();
+                            startQueryConsole();
                             break;
                         }
                     }

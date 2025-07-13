@@ -17,11 +17,13 @@ import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.*;
 
 import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJson;
 
 /**
  * This class contains the core logic from DebugFetcher, excluding debug file and server creation.
+ * It executes DAG elements in parallel where possible, respecting dependencies for optimal performance.
  */
 public class ExecuteInline implements Operation {
     protected final TranslateUtil translateUtil = new TranslateUtil();
@@ -72,6 +74,138 @@ public class ExecuteInline implements Operation {
         postProcess(dagElement, nativeProcessor);
     }
 
+    /**
+     * Execute DAG elements in parallel where possible, respecting dependencies
+     */
+    protected void executeInParallel(DagElement firstDagElement, List<DagElement> dagElementList,
+                                   Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws IOException {
+        // Use synchronized collections for thread safety
+        Set<DagElement> completedElements = Collections.synchronizedSet(new HashSet<>());
+        Set<DagElement> allElements = new HashSet<>(dagElementList);
+        allElements.add(firstDagElement);
+        
+        // Create thread pool - using number of available processors
+        int threadPoolSize = Runtime.getRuntime().availableProcessors();
+        ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
+        
+        try {
+            // Start with the first element
+            Set<DagElement> readyQueue = Collections.synchronizedSet(new HashSet<>());
+            readyQueue.add(firstDagElement);
+
+            while (completedElements.size() < allElements.size()) {
+                // Find all elements that are ready to execute (dependencies satisfied)
+                List<DagElement> readyToExecute = new ArrayList<>();
+                
+                synchronized (readyQueue) {
+                    Iterator<DagElement> iterator = readyQueue.iterator();
+                    while (iterator.hasNext()) {
+                        DagElement element = iterator.next();
+                        if (completedElements.contains(element)) {
+                            iterator.remove();
+                            continue;
+                        }
+                        
+                        boolean dependenciesSatisfied = true;
+                        if (!element.getPreviousElements().isEmpty()) {
+                            for (DagElement dependency : element.getPreviousElements()) {
+                                if (!completedElements.contains(dependency)) {
+                                    dependenciesSatisfied = false;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (dependenciesSatisfied) {
+                            readyToExecute.add(element);
+                            iterator.remove();
+                        }
+                    }
+                }
+                
+                if (readyToExecute.isEmpty()) {
+                    // Check if any new elements have become ready
+                    for (DagElement element : allElements) {
+                        if (!completedElements.contains(element)) {
+                            boolean dependenciesSatisfied = true;
+                            if (!element.getPreviousElements().isEmpty()) {
+                                for (DagElement dependency : element.getPreviousElements()) {
+                                    if (!completedElements.contains(dependency)) {
+                                        dependenciesSatisfied = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (dependenciesSatisfied) {
+                                synchronized (readyQueue) {
+                                    readyQueue.add(element);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // If still nothing ready, wait a bit
+                    if (readyToExecute.isEmpty()) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("Execution interrupted", e);
+                        }
+                        continue;
+                    }
+                }
+                
+                // Submit ready elements for parallel execution
+                List<Future<Void>> futures = new ArrayList<>();
+                for (DagElement element : readyToExecute) {
+                    Future<Void> future = executorService.submit(() -> {
+                        try {
+                            executeDagElement(element, variableMap, arrayMap);
+                            completedElements.add(element);
+                            
+                            // Add next elements to ready queue
+                            synchronized (readyQueue) {
+                                readyQueue.addAll(element.getNextElements());
+                            }
+                            return null;
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                    futures.add(future);
+                }
+                
+                // Wait for all submitted tasks to complete
+                for (Future<Void> future : futures) {
+                    try {
+                        future.get();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Execution interrupted", e);
+                    } catch (ExecutionException e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof RuntimeException && cause.getCause() instanceof IOException) {
+                            throw (IOException) cause.getCause();
+                        } else {
+                            throw new IOException("Execution failed", cause);
+                        }
+                    }
+                }
+            }
+        } finally {
+            executorService.shutdown();
+            try {
+                if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executorService.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
     @Override
     public void execute(List<String> args) throws IOException {
         try {
@@ -107,46 +241,13 @@ public class ExecuteInline implements Operation {
             translateResponse.setCodeAndDagElementMap(dagElementAndCodeMap);
             translateResponse.setCommonFunctionCode(extractedCodeAndFunctionCode.getFunctionCode());
 
-            Queue<DagElement> dagElementQueue = new LinkedList<>();
-            dagElementQueue.add(firstDagElement);
-            Set<DagElement> dagElements = new HashSet<>();
-            for(DagElement dagElement : dagElementList) {
-                dagElements.add(dagElement);
-            }
             System.out.println("compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
 
             startTime = System.currentTimeMillis();
-            while(true) {
-                Set<DagElement> dagElementsWaiting = new HashSet<>();
-                while (!dagElementQueue.isEmpty()) {
-                    DagElement dagElement = dagElementQueue.poll();
-                    if (dagElement.getPreviousElements().isEmpty()) {
-                        dagElements.add(dagElement);
-                        dagElementQueue.addAll(dagElement.getNextElements());
-                        executeDagElement(dagElement, variableMap, arrayMap);
-                    } else {
-                        boolean allPreviousTraversed = true;
-                        for (DagElement previousDagElement : dagElement.getPreviousElements()) {
-                            if (!dagElements.contains(previousDagElement)) {
-                                allPreviousTraversed = false;
-                                break;
-                            }
-                        }
-                        if (allPreviousTraversed) {
-                            dagElements.add(dagElement);
-                            dagElementQueue.addAll(dagElement.getNextElements());
-                            executeDagElement(dagElement, variableMap, arrayMap);
-                        } else {
-                            dagElementsWaiting.add(dagElement);
-                        }
-                    }
-                }
-                if(dagElementsWaiting.isEmpty()) {
-                    break;
-                } else {
-                    dagElementQueue.addAll(dagElementsWaiting);
-                }
-            }
+            
+            // Execute DAG in parallel mode
+            System.out.println("Executing DAG in parallel mode");
+            executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
 
             System.out.println("execution time: " + (System.currentTimeMillis() - startTime) + "ms");
 
