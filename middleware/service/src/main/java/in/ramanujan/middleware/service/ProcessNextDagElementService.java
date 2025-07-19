@@ -80,7 +80,7 @@ public class ProcessNextDagElementService {
             }
             Long statusApiStart = new Date().toInstant().toEpochMilli();
             orchestrationApiCaller.callStatusApi(asyncId, orchId, dagElementId).setHandler(statusApiHandler -> {
-                logger.info("status API: " + getTimeElapsed(statusApiStart));
+                //logger.info("status API: " + getTimeElapsed(statusApiStart));
                 if (statusApiHandler.succeeded()) {
                     if(statusApiHandler.result() == null) {
                         future.fail("Status API returned null for asyncId: " + asyncId);
@@ -100,16 +100,16 @@ public class ProcessNextDagElementService {
                         Long refreshVarStart = new Date().toInstant().toEpochMilli();
                         refreshVariables(asyncId, dagElementId, deviceExecStatus.getData())
                                 .setHandler(new MonitoringHandler<>("refreshVariables", refreshVariablesHandler -> {
-                            logger.info("refreshVar : " + getTimeElapsed(refreshVarStart));
+                            //logger.info("refreshVar : " + getTimeElapsed(refreshVarStart));
                             if(refreshVariablesHandler.succeeded()) {
                                 Long removeStart = new Date().toInstant().toEpochMilli();
                                 dagElementDao.removeDagElementAsyncIdMap(asyncId, dagElementId) //redundant in case of sql.
                                         .setHandler(new MonitoringHandler<>("removeDagElementIdFromAsyncTask", removeDagElementHandler -> {
-                                    logger.info("remove time: " + getTimeElapsed(removeStart));
+                                    //logger.info("remove time: " + getTimeElapsed(removeStart));
                                     Long nextIdFetchStart = new Date().toInstant().toEpochMilli();
                                     dagElementDao.getNextId(dagElementId, false/*so that if nextElem was not able to get started, we dont stop here in the next run.*/).
                                             setHandler(new MonitoringHandler<>("getNextDagElementId", getNextDagElements -> {
-                                        logger.info("nextId fetch: " + getTimeElapsed(nextIdFetchStart));
+                                        //logger.info("nextId fetch: " + getTimeElapsed(nextIdFetchStart));
                                         if(getNextDagElements.succeeded()) {
                                             if(getNextDagElements.result().size() == 0) {
                                                 handleNoNextDagElement(asyncId).setHandler(noNextDagElementHandler -> {
@@ -287,7 +287,7 @@ public class ProcessNextDagElementService {
         Long noDependencyCheckStart = new Date().toInstant().toEpochMilli();
         dagElementDao.isDagElementStillDependent(nextDagElementId)
                 .setHandler(new MonitoringHandler<>("isDagElementStillDependent", dependenceHandler -> {
-            logger.info("noDependencyCheck: " + getTimeElapsed(noDependencyCheckStart));
+            //logger.info("noDependencyCheck: " + getTimeElapsed(noDependencyCheckStart));
             if(dependenceHandler.failed()) {
                 logger.error("Failed to check dependency for " + nextDagElementId, dependenceHandler.cause());
                 future.fail(dependenceHandler.cause());
@@ -296,13 +296,13 @@ public class ProcessNextDagElementService {
             if (!dependenceHandler.result()) {
                 Long lockCheckStart = new Date().toInstant().toEpochMilli();
                 attainLock(nextDagElementId).setHandler(new MonitoringHandler<>("attainLockOnDagElementId", attainer -> {
-                    logger.info("lockCheck: " + getTimeElapsed(lockCheckStart));
+                    //logger.info("lockCheck: " + getTimeElapsed(lockCheckStart));
                     if(attainer.result()) {
                         logger.info(dagElementId + " calling for " + nextDagElementId);
                         Long orchestratorCallStart = new Date().toInstant().toEpochMilli();
                         runService.runDagElementId(asyncId, nextDagElementId, vertx, toBeDebugged)
                                 .setHandler(new MonitoringHandler<>("runDagElementId", runHandler -> {
-                            logger.info("orchestratorAPI: " + getTimeElapsed(orchestratorCallStart));
+                            //logger.info("orchestratorAPI: " + getTimeElapsed(orchestratorCallStart));
                             if(!runHandler.succeeded()) {
                                 logger.error("Failed to run dag element id: " + nextDagElementId, runHandler.cause());
                                 future.fail(runHandler.cause());

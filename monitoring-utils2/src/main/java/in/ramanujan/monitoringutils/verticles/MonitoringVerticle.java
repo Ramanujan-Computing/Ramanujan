@@ -173,7 +173,7 @@ public class MonitoringVerticle extends AbstractVerticle {
         }
 
         private void emitMetric(MetricServiceClient metricServiceClient, List<Point> pointList, String metricName) {
-            logger.info("Emitting metric for " + metricName);
+            //logger.info("Emitting metric for " + metricName);
             try {
                 ProjectName name = ProjectName.of(projectId);
 
@@ -212,9 +212,9 @@ public class MonitoringVerticle extends AbstractVerticle {
 
 // Writes time series data
                 metricServiceClient.createTimeSeries(request);
-                logger.info("Done writing time series value.");
+                //logger.info("Done writing time series value.");
             } catch (Exception e) {
-                logger.error("Failed writing metric", e);
+                //logger.error("Failed writing metric", e);
             }
         }
     }
