@@ -73,11 +73,11 @@ public class PythonConversionDemo {
         System.out.println("=============================");
         
         String[][] equivalents = {
-            {"x = 10", "{x}={10};"},
+            {"x = 10", "x = 10"},
             {"def add(a, b):", "def add(var a:integer, var b:integer) {"},
-            {"if x > 5:", "if({x}>{5}) {"},
-            {"while i < 10:", "while({i}<{10}) {"},
-            {"y = x + 1", "{y}={{x}+{1}};"}
+            {"if x > 5:", "if(x > 5) {"},
+            {"while i < 10:", "while(i < 10) {"},
+            {"y = x + 1", "y = x + 1"}
         };
         
         for (String[] pair : equivalents) {
@@ -88,8 +88,8 @@ public class PythonConversionDemo {
         
         System.out.println("Key Differences:");
         System.out.println("- Python uses indentation, Ramanujan uses braces");
-        System.out.println("- Python variables: x, Ramanujan variables: {x}");
-        System.out.println("- Python type inference, Ramanujan explicit types");
+        System.out.println("- Python has type inference, Ramanujan requires explicit type declarations");
         System.out.println("- Python function calls: func(args), Ramanujan: exec func(args)");
+        System.out.println("- Python allows dynamic typing, Ramanujan enforces static typing");
     }
 }

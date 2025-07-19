@@ -27,10 +27,10 @@ The Ramanujan platform now supports both its original syntax and Python syntax f
 
 | Python | Ramanujan | Description |
 |--------|-----------|-------------|
-| `x = 10` | `{x}={10};` | Variable assignment |
+| `x = 10` | `x = 10` | Variable assignment |
 | `def func(a, b):` | `def func(var a:integer, var b:integer) {` | Function definition |
-| `if x > 5:` | `if({x}>{5}) {` | Conditional statement |
-| `while i < 10:` | `while({i}<{10}) {` | Loop statement |
+| `if x > 5:` | `if(x > 5) {` | Conditional statement |
+| `while i < 10:` | `while(i < 10) {` | Loop statement |
 | `func(a, b)` | `exec func(a, b)` | Function call |
 
 ## Usage

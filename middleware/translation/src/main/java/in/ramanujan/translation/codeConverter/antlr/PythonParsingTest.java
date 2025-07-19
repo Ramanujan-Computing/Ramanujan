@@ -66,10 +66,10 @@ public class PythonParsingTest {
         String[] testCodes = {
             "x = 10",  // Python
             "def test(): pass",  // Python
-            "{x}={10};",  // Ramanujan
-            "var x:integer;",  // Ramanujan
+            "var x:integer;",  // Ramanujan (type declaration)
             "if x > 5:",  // Python
-            "if({x}<{5}) {}"  // Ramanujan
+            "if(x > 5) {",  // Ramanujan
+            "exec func(a, b);"  // Ramanujan function call
         };
         
         for (String code : testCodes) {
