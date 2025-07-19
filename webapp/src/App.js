@@ -1,5 +1,6 @@
 import React, { useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import JobSubmit from './pages/JobSubmit';
@@ -21,8 +22,9 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={
+      <Route path="/dashboard" element={
         <ProtectedRoute>
           <Layout />
         </ProtectedRoute>

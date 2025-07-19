@@ -16,7 +16,7 @@ public class SpawnService {
     private DeviceMock deviceMock;
 
     public void init() {
-        for(int i= 0; i < 2* Runtime.getRuntime().availableProcessors(); i++) {
+        for(int i= 0; i < 10 * Runtime.getRuntime().availableProcessors(); i++) {
             deviceMock.mock(Vertx.vertx());
         }
     }

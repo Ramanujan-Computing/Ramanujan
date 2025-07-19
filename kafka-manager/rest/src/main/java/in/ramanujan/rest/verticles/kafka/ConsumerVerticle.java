@@ -112,12 +112,25 @@ public class ConsumerVerticle extends AbstractVerticle {
     private class BlockingWrapper {
         private Boolean blocked;
 
-        public void block() {
+        private long blockedLastTime;
+
+        public synchronized void block() {
             blocked = true;
+            blockedLastTime = System.currentTimeMillis();
         }
 
-        public void unblock() {
+        public synchronized void unblock() {
             blocked = false;
+        }
+
+        public synchronized Boolean getBlocked() {
+            if(blocked == null || !blocked) {
+                return false;
+            }
+            if(System.currentTimeMillis() - blockedLastTime > 60_000L) {
+                System.exit(1);
+            }
+            return blocked;
         }
     }
 

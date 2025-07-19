@@ -63,12 +63,12 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             // spawn a thread to run the native code
-            for(int i=0;i<1;i++) {
+            for(int i=0;i<Runtime.getRuntime().availableProcessors();i++) {
                 new Thread(new Runnable() {
                     @Override
                     public void run() {
                         try {
-                            RamanujanController ramanujanController = new RamanujanController("http://35.232.220.56:8890",
+                            RamanujanController ramanujanController = new RamanujanController("https://server.ramanujan.dev",
                                     new LoggerFactory());
                             ramanujanController.startOrchestrations();
                         } catch (Exception ex) {

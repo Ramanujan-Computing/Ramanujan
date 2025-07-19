@@ -68,13 +68,13 @@ const Layout = () => {
   const handleLogout = () => {
     handleProfileMenuClose();
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-    { text: 'Submit Job', icon: <CodeIcon />, path: '/submit' },
-    { text: 'Job Status', icon: <ListIcon />, path: '/status' },
+    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+    { text: 'Submit Job', icon: <CodeIcon />, path: '/dashboard/submit' },
+    { text: 'Job Status', icon: <ListIcon />, path: '/dashboard/status' },
   ];
 
   return (

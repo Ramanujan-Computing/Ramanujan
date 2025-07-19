@@ -38,6 +38,7 @@ public class Orchestrator {
                     Thread.sleep(1_000L);
                     final OpenPingApiResponse openPingApiResponse = callBackendOpenAPI(hostId, credentials);
                     if (openPingApiResponse == null || openPingApiResponse.getRuleEngineInput() == null) {
+                        Thread.sleep(15_000L);
                         continue;
                     }
                     logger.info("starting processing " + hostId);

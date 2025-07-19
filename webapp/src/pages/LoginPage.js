@@ -11,13 +11,13 @@ const LoginPage = () => {
   useEffect(() => {
     // Redirect to dashboard if already authenticated
     if (isAuthenticated) {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [isAuthenticated, navigate]);
 
   const handleLoginSuccess = (credentialResponse) => {
     login(credentialResponse);
-    navigate('/');
+    navigate('/dashboard');
   };
 
   const handleLoginError = () => {
