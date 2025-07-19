@@ -35,6 +35,10 @@
 
 lexer grammar Python3Lexer;
 
+@header {
+package in.ramanujan.translation.codeConverter.antlr;
+}
+
 // All comments that start with "///" are copy-pasted from
 // The Python Language Reference
 

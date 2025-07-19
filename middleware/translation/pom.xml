@@ -69,8 +69,7 @@
                 <version>4.13.1</version>
                 <configuration>
                     <sourceDirectory>src/main/antlr4</sourceDirectory>
-                    <outputDirectory>src/main/java</outputDirectory>
-                    <package>in.ramanujan.translation.codeConverter.antlr</package>
+                    <outputDirectory>src/main/java/in/ramanujan/translation/codeConverter/antlr</outputDirectory>
                 </configuration>
                 <executions>
                     <execution>

@@ -36,6 +36,10 @@
 
 parser grammar Python3Parser;
 
+@header {
+package in.ramanujan.translation.codeConverter.antlr;
+}
+
 options {
     superClass = Python3ParserBase;
     tokenVocab = Python3Lexer;
