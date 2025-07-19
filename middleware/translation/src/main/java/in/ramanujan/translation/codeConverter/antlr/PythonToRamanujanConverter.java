@@ -187,7 +187,7 @@ public class PythonToRamanujanConverter extends Python3ParserBaseListener {
     
     @Override
     public void enterIf_stmt(Python3Parser.If_stmtContext ctx) {
-        // Handle if statements: if condition:
+        // Handle if statements: if condition: [elif condition:]* [else:]?
         if (ctx.getChildCount() >= 3) {
             String conditionText = extractConditionText(ctx.getChild(1));
             
@@ -201,18 +201,65 @@ public class PythonToRamanujanConverter extends Python3ParserBaseListener {
                 ifBlock.setConditionId(condition.getId());
             }
             
-            ruleEngineInput.getIfBlocks().add(ifBlock);
-            
-            if (debugLevelCodeCreator != null) {
-                debugLevelCodeCreator.concat("if(" + conditionText + ") {");
+            // Check for else clause
+            // Python grammar: 'if' test ':' block ('elif' test ':' block)* ('else' ':' block)?
+            // Look for 'else' token in the children
+            boolean hasElse = false;
+            for (int i = 0; i < ctx.getChildCount(); i++) {
+                if (ctx.getChild(i) instanceof TerminalNode) {
+                    TerminalNode terminal = (TerminalNode) ctx.getChild(i);
+                    if ("else".equals(terminal.getText())) {
+                        hasElse = true;
+                        break;
+                    }
+                }
             }
+            
+            if (hasElse) {
+                // Create a command for the else block
+                Command elseCommand = new Command();
+                elseCommand.setId(UUID.randomUUID().toString());
+                commands.add(elseCommand);
+                ruleEngineInput.getCommands().add(elseCommand);
+                
+                // Link the else command to the if block
+                ifBlock.setElseCommandId(elseCommand.getId());
+                
+                if (debugLevelCodeCreator != null) {
+                    debugLevelCodeCreator.concat("if(" + conditionText + ") {");
+                    // Note: else block will be handled in the block processing
+                }
+            } else {
+                if (debugLevelCodeCreator != null) {
+                    debugLevelCodeCreator.concat("if(" + conditionText + ") {");
+                }
+            }
+            
+            ruleEngineInput.getIfBlocks().add(ifBlock);
         }
     }
     
     @Override
     public void exitIf_stmt(Python3Parser.If_stmtContext ctx) {
+        // Check if this if statement has an else clause
+        boolean hasElse = false;
+        for (int i = 0; i < ctx.getChildCount(); i++) {
+            if (ctx.getChild(i) instanceof TerminalNode) {
+                TerminalNode terminal = (TerminalNode) ctx.getChild(i);
+                if ("else".equals(terminal.getText())) {
+                    hasElse = true;
+                    break;
+                }
+            }
+        }
+        
         if (debugLevelCodeCreator != null) {
-            debugLevelCodeCreator.concat("}");
+            if (hasElse) {
+                debugLevelCodeCreator.concat("} else {");
+                debugLevelCodeCreator.concat("}");
+            } else {
+                debugLevelCodeCreator.concat("}");
+            }
         }
     }
     
