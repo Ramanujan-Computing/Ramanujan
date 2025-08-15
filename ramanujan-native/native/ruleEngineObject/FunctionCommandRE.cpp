@@ -115,52 +115,111 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
 }
 
 void FunctionCommandRE::process() {
+    // ==================== DEBUG SETUP ====================
 #ifdef DEBUG_BUILD
+    // Get debug point for tracking function call execution
     std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
 #endif
+
+    // ==================== PHASE 1: PARAMETER SETUP AND VARIABLE CONTEXT SAVING ====================
+    
+    /*
+     * For each variable parameter passed to the function:
+     * 1. Save the current value of the called function's parameter variable (for stack restoration)
+     * 2. Copy the calling function's argument value to the called function's parameter
+     * 3. Save the current state of the parameter variable for later restoration
+     */
     for (int i = 0; i < varCount; i++) {
 #ifdef DEBUG_BUILD
+        // Record the current function variable value for debugging
         debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
+        // Save the current value of the parameter in the called function (stack save)
         variableStackCurrent[i] = *methodCalledOriginalPlaceHolderAddrs[i];
+        
+        // Copy the argument value from calling context to called function parameter
         *methodCalledOriginalPlaceHolderAddrs[i] = (*methodCallingOriginalPlaceHolderAddrs[i]);
+        
+        // Save the current value of the parameter variable for restoration after function execution
         methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
     }
+
 #ifdef DEBUG_BUILD
-    //iterate arrayNameMethodMap and add to debugPoint
+    // Record array name mappings for debugging purposes
+    // This helps track which calling arrays correspond to which function parameters
     for(auto it = arrayNameMethodMap.begin(); it != arrayNameMethodMap.end(); it++) {
         debugPoint->addArrayInFuncCall(it->first, it->second);
     }
     debugger->commitDebugPoint();
 #endif
+
+    /*
+     * For local variables in the function (non-parameters):
+     * Save their current values so they can be restored after function execution.
+     * These variables start from index varCount (after the parameters).
+     */
     for(int i=varCount; i < totalVarCount; i++) {
         methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
     }
+
+    // ==================== PHASE 2: ARRAY PARAMETER SETUP ====================
+    
+    /*
+     * For each array parameter passed to the function:
+     * 1. Save the current array reference in the called function (for stack restoration)
+     * 2. Point the called function's parameter array to the calling function's argument array
+     * 3. Save the current array pointer for later restoration
+     */
     for(int i = 0; i < arrCount; i++) {
+        // Save the current array reference in the called function (stack save)
         arrayStackCurrent[i] = *methodCalledArrayPlaceHolderAddrs[i];
+        
+        // Point the called function's parameter array to the calling function's argument array
         *methodCalledArrayPlaceHolderAddrs[i] = *methodCallingArrayPlaceHolderAddrs[i];
+        
+        // Save the current array pointer for restoration after function execution
         methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
-    }
-    for(int i=arrCount;i< totalArrCount;i++) {
-        methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
-        *methodArgArrayAddr[i] = new double[methodArgArrayTotalSize[i]];
-    }
-
-
-    CommandRE* command = firstCommand;
-    while(command != nullptr) {
-        command = command->get();
     }
 
     /*
-     * We need pop no matter, for ex:
-     * func(a,b) {
-     *      c = a+ 1
-     *      func(c,b)
-     *      d = a + 1   <- If not popped, a will have c val.
-     * }
-     * */
+     * For local arrays in the function (non-parameters):
+     * 1. Save their current array pointers
+     * 2. Allocate new memory for local arrays with their specified sizes
+     * These arrays start from index arrCount (after the parameters).
+     */
+    for(int i=arrCount;i< totalArrCount;i++) {
+        methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
+        // Allocate new array for local array variables
+        *methodArgArrayAddr[i] = new double[methodArgArrayTotalSize[i]];
+    }
 
+    // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
+    
+    /*
+     * Execute the function body by traversing the command chain.
+     * Each command returns the next command to execute, forming a linked execution chain.
+     * Execution continues until there are no more commands (nullptr).
+     */
+    CommandRE* command = firstCommand;
+    while(command != nullptr) {
+        command = command->get();  // Execute current command and get next command
+    }
+
+    // ==================== PHASE 4: CONTEXT RESTORATION AND CLEANUP ====================
+    
+    /*
+     * CRITICAL: We must restore the calling context regardless of function execution outcome.
+     * This is essential for recursive functions and proper stack management.
+     * 
+     * Example scenario requiring restoration:
+     * func(a,b) {
+     *      c = a + 1
+     *      func(c,b)    // Recursive call modifies 'a'
+     *      d = a + 1    // Without restoration, 'a' would have value of 'c'
+     * }
+     */
+
+    // First, update our stack copies with the final values from the called function context
     for(int i=0; i< varCount;i++) {
         variableStackCurrent[i] = *methodCalledOriginalPlaceHolderAddrs[i];
     }
@@ -168,23 +227,239 @@ void FunctionCommandRE::process() {
         arrayStackCurrent[i] = *methodCalledArrayPlaceHolderAddrs[i];
     }
 
+    // ==================== PHASE 5: VARIABLE RESTORATION ====================
+    
+    /*
+     * DETAILED VARIABLE RESTORATION EXPLANATION:
+     * 
+     * The restoration process is critical for maintaining proper function call semantics,
+     * especially for recursive functions. Here's what happens with concrete examples:
+     * 
+     * EXAMPLE CODE SCENARIO:
+     * ```
+     * func factorial(n) {
+     *     if (n <= 1) return 1;
+     *     temp = n - 1;
+     *     return n * factorial(temp);  // Recursive call
+     * }
+     * 
+     * main() {
+     *     x = 5;
+     *     result = factorial(x);  // Call with x=5
+     * }
+     * ```
+     * 
+     * FIELD CHANGES DURING EXECUTION:
+     * 
+     * 1. BEFORE CALL factorial(5):
+     *    - Main context: x = 5
+     *    - Function parameter 'n' is uninitialized
+     * 
+     * 2. DURING PARAMETER SETUP:
+     *    - methodCallingOriginalPlaceHolderAddrs[0] points to 'x' (value: 5)
+     *    - methodCalledOriginalPlaceHolderAddrs[0] points to 'n' (will receive 5)
+     *    - variableStackCurrent[0] saves old value of 'n' (for restoration)
+     *    - *methodCalledOriginalPlaceHolderAddrs[0] = 5 (n becomes 5)
+     * 
+     * 3. DURING FUNCTION EXECUTION:
+     *    - 'n' = 5, 'temp' gets allocated and set to 4
+     *    - When factorial(4) is called recursively:
+     *      - 'n' temporarily becomes 4 for the inner call
+     *      - Original 'n' (5) is saved in stack
+     * 
+     * 4. DURING RESTORATION (this phase):
+     *    - Inner call completes, 'n' needs to be restored to 5
+     *    - All local variables need to be reset to their pre-call state
+     */
+    
+    /*
+     * Variable Parameter Restoration Loop:
+     * For each variable parameter (i = 0 to varCount-1):
+     */
     for(int i = 0; i < varCount; i++) {
+        /*
+         * Step 1: Restore the function parameter to its saved state
+         * 
+         * WHAT HAPPENS:
+         * - methodArgVariableAddr[i] points to the parameter variable in function scope
+         * - methodArgVariableCurrentVal[i] contains the saved value from before function execution
+         * 
+         * EXAMPLE:
+         * If this is the inner factorial(4) call completing:
+         * - methodArgVariableAddr[0] points to 'n' (currently 4)
+         * - methodArgVariableCurrentVal[0] contains the saved value (4)
+         * - *methodArgVariableAddr[0] = 4 (restore 'n' to its pre-execution state)
+         */
         *methodArgVariableAddr[i] = methodArgVariableCurrentVal[i];
+        
+        /*
+         * Step 2: Restore the calling context variable to its stack-saved value
+         * 
+         * WHAT HAPPENS:
+         * - methodCallingOriginalPlaceHolderAddrs[i] points to the argument variable in calling context
+         * - variableStackCurrent[i] contains the calling context's variable value from Phase 4
+         * 
+         * EXAMPLE:
+         * If this is factorial(4) completing and returning to factorial(5):
+         * - methodCallingOriginalPlaceHolderAddrs[0] points to 'temp' in factorial(5) context
+         * - variableStackCurrent[0] contains the value of 'temp' (4)
+         * - *methodCallingOriginalPlaceHolderAddrs[0] = 4 (restore 'temp' to 4)
+         * 
+         * This ensures that when factorial(4) returns, the factorial(5) context
+         * has 'temp' = 4 (not some corrupted value from the inner call)
+         */
         *methodCallingOriginalPlaceHolderAddrs[i] = variableStackCurrent[i];
     }
+    
+    /*
+     * Local Variable Restoration Loop:
+     * For local variables (non-parameters) (i = varCount to totalVarCount-1):
+     * 
+     * WHAT HAPPENS:
+     * These are variables declared within the function that are not parameters.
+     * 
+     * EXAMPLE:
+     * In factorial function: 'temp' is a local variable
+     * - Before function: temp = some_previous_value (or 0.0 if first time)
+     * - During function: temp = n - 1
+     * - After restoration: temp = some_previous_value
+     * 
+     * WHY NEEDED:
+     * If factorial(5) calls factorial(4), and factorial(4) has its own 'temp',
+     * we need to restore factorial(5)'s 'temp' when factorial(4) completes.
+     */
     for(int i=varCount; i< totalVarCount; i++) {
+        /*
+         * Restore local variable to its pre-function-execution value
+         * 
+         * FIELD EXPLANATION:
+         * - methodArgVariableAddr[i] points to the local variable
+         * - methodArgVariableCurrentVal[i] contains the saved value from Phase 1
+         */
         *methodArgVariableAddr[i] = methodArgVariableCurrentVal[i];
     }
+
+    // ==================== PHASE 6: ARRAY RESTORATION AND CLEANUP ====================
+    
+    /*
+     * DETAILED ARRAY RESTORATION EXPLANATION:
+     * 
+     * Arrays have more complex restoration because they involve pointer management
+     * and dynamic memory allocation.
+     * 
+     * EXAMPLE CODE SCENARIO:
+     * ```
+     * func processArray(arr, size) {
+     *     localArr[10];  // Local array
+     *     // Process arrays...
+     *     processArray(arr, size-1);  // Recursive call
+     * }
+     * 
+     * main() {
+     *     mainArray[20] = {1,2,3,...};
+     *     processArray(mainArray, 20);
+     * }
+     * ```
+     * 
+     * FIELD CHANGES FOR ARRAYS:
+     * 
+     * 1. PARAMETER ARRAYS (i = 0 to arrCount-1):
+     *    - methodCallingArrayPlaceHolderAddrs[i] points to 'mainArray' in main()
+     *    - methodCalledArrayPlaceHolderAddrs[i] points to 'arr' parameter
+     *    - During function: 'arr' points to same memory as 'mainArray'
+     * 
+     * 2. LOCAL ARRAYS (i = arrCount to totalArrCount-1):
+     *    - methodArgArrayAddr[i] points to 'localArr' pointer
+     *    - During function: new memory allocated for 'localArr'
+     *    - After function: memory must be freed and pointer restored
+     */
+    
+    /*
+     * Array Parameter Restoration Loop:
+     * For each array parameter (i = 0 to arrCount-1):
+     */
     for(int i=0; i< arrCount; i++) {
+        /*
+         * Step 1: Restore the function parameter array to its saved pointer
+         * 
+         * WHAT HAPPENS:
+         * - methodArgArrayAddr[i] points to the array parameter's pointer in function scope
+         * - methodArgArrayCurrentVal[i] contains the saved array pointer from Phase 2
+         * 
+         * EXAMPLE:
+         * If processArray(subArray, 15) is completing:
+         * - methodArgArrayAddr[0] points to 'arr' parameter pointer
+         * - methodArgArrayCurrentVal[0] contains the saved pointer value
+         * - *methodArgArrayAddr[0] = saved_pointer (restore 'arr' pointer)
+         */
         *methodArgArrayAddr[i] = methodArgArrayCurrentVal[i];
+        
+        /*
+         * Step 2: Restore the calling context array to its stack-saved reference
+         * 
+         * WHAT HAPPENS:
+         * - methodCallingArrayPlaceHolderAddrs[i] points to argument array in calling context
+         * - arrayStackCurrent[i] contains the calling context's array reference from Phase 4
+         * 
+         * EXAMPLE:
+         * When processArray(15) returns to processArray(20):
+         * - methodCallingArrayPlaceHolderAddrs[0] points to 'arr' in processArray(20)
+         * - arrayStackCurrent[0] contains the array reference from processArray(20)
+         * - *methodCallingArrayPlaceHolderAddrs[0] = array_ref (restore outer 'arr')
+         * 
+         * This ensures proper array reference restoration across recursive calls.
+         */
         *methodCallingArrayPlaceHolderAddrs[i] = arrayStackCurrent[i];
     }
+    
+    /*
+     * Local Array Cleanup and Restoration Loop:
+     * For local arrays (non-parameters) (i = arrCount to totalArrCount-1):
+     * 
+     * CRITICAL MEMORY MANAGEMENT:
+     * Local arrays are dynamically allocated during function execution and must be
+     * properly cleaned up to prevent memory leaks.
+     */
     for(int i=arrCount;i< totalArrCount;i++) {
+        /*
+         * Step 1: Free the dynamically allocated memory for local arrays
+         * 
+         * WHAT HAPPENS:
+         * - *methodArgArrayAddr[i] points to the dynamically allocated array memory
+         * - This memory was allocated in Phase 2 with: new double[methodArgArrayTotalSize[i]]
+         * - delete[] frees this memory to prevent memory leaks
+         * 
+         * EXAMPLE:
+         * - Local array 'localArr' was allocated with: new double[10]
+         * - *methodArgArrayAddr[1] points to this allocated memory
+         * - delete[] *methodArgArrayAddr[1] frees the 10*sizeof(double) bytes
+         * 
+         * MEMORY LEAK PREVENTION:
+         * Without this cleanup, each function call would leak memory equal to
+         * the size of all local arrays, leading to unbounded memory growth.
+         */
         delete[] *methodArgArrayAddr[i];
+        
+        /*
+         * Step 2: Restore the array pointer to its pre-function-call value
+         * 
+         * WHAT HAPPENS:
+         * - methodArgArrayCurrentVal[i] contains the saved array pointer from Phase 2
+         * - This restores the array pointer to whatever it pointed to before function execution
+         * 
+         * EXAMPLE:
+         * - Before function: 'localArr' pointer = nullptr (or previous value)
+         * - During function: 'localArr' pointer = allocated_memory
+         * - After restoration: 'localArr' pointer = nullptr (restored)
+         * 
+         * RECURSIVE CALL SAFETY:
+         * This ensures that recursive calls don't interfere with each other's
+         * local array allocations and each call has clean local array state.
+         */
         *methodArgArrayAddr[i] = methodArgArrayCurrentVal[i];
     }
 
-
+    // Function execution complete - calling context fully restored
 }
 
 void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
