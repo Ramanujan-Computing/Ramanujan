@@ -50,13 +50,55 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         if(dynamic_cast<ArrayRE*>(functionInfoRE->arguments[i]) != nullptr) {
             arrCount++;
             methodCalledArrayPlaceHolderAddrsList.push_back(((ArrayRE*)functionInfoRE->arguments[i])->getValPtr());
-            methodCallingArrayPlaceHolderAddrsList.push_back(((ArrayRE*)map->at(functionCommandInfo->arguments[i]))->getValPtr());
-            arrayNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
+            
+            // Use frame-based resolution if available, fallback to name-based lookup
+            RuleEngineInputUnits* callingArg = nullptr;
+            
+            // Try to get the calling argument using frame-based resolution
+            // First check if it has sequence information available via name lookup
+            RuleEngineInputUnits* tempUnit = map->at(functionCommandInfo->arguments[i]);
+            ArrayRE* tempArr = dynamic_cast<ArrayRE*>(tempUnit);
+            if (tempArr != nullptr) {
+                if (tempArr->localSequence >= 0) {
+                    callingArg = resolveFromLocalFrame(tempArr->localSequence);
+                } else if (tempArr->globalSequence >= 0) {
+                    callingArg = resolveFromGlobalFrame(tempArr->globalSequence);
+                }
+            }
+            
+            // Fallback to name-based resolution if frame-based failed
+            if (callingArg == nullptr) {
+                callingArg = map->at(functionCommandInfo->arguments[i]);
+            }
+            
+            methodCallingArrayPlaceHolderAddrsList.push_back(((ArrayRE*)callingArg)->getValPtr());
+            arrayNameMethodMap.insert(std::make_pair(((ArrayRE *) callingArg)->name,
                                                 ((ArrayRE *) functionInfoRE->arguments[i])->name));
         } else {
             varCount++;
             methodCalledOriginalPlaceHolderAddrsList.push_back(((DoublePtr*)functionInfoRE->arguments[i])->getValPtrPtr());
-            methodCallingOriginalPlaceHolderAddrsList.push_back(((DoublePtr*)map->at(functionCommandInfo->arguments[i]))->getValPtrPtr());
+            
+            // Use frame-based resolution if available, fallback to name-based lookup
+            RuleEngineInputUnits* callingArg = nullptr;
+            
+            // Try to get the calling argument using frame-based resolution
+            // First check if it has sequence information available via name lookup
+            RuleEngineInputUnits* tempUnit = map->at(functionCommandInfo->arguments[i]);
+            VariableRE* tempVar = dynamic_cast<VariableRE*>(tempUnit);
+            if (tempVar != nullptr) {
+                if (tempVar->localSequence >= 0) {
+                    callingArg = resolveFromLocalFrame(tempVar->localSequence);
+                } else if (tempVar->globalSequence >= 0) {
+                    callingArg = resolveFromGlobalFrame(tempVar->globalSequence);
+                }
+            }
+            
+            // Fallback to name-based resolution if frame-based failed
+            if (callingArg == nullptr) {
+                callingArg = map->at(functionCommandInfo->arguments[i]);
+            }
+            
+            methodCallingOriginalPlaceHolderAddrsList.push_back(((DoublePtr*)callingArg)->getValPtrPtr());
         }
     }
 
@@ -466,11 +508,44 @@ void FunctionCommandRE::process() {
 }
 
 void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    // Populate frames for frame-based resolution
+    populateFrames(map);
+    
     std::list<double *> methodArgVariableAddrList;
     std::list<ArrayValue **> methodArgArrayAddrList;
 
     for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
-        auto arg = map->at(functionCommandInfo->arguments[i]);
+        // Use frame-based resolution if available, fallback to name-based lookup
+        RuleEngineInputUnits* arg = nullptr;
+        
+        // First try name-based lookup to check sequence information
+        RuleEngineInputUnits* tempUnit = map->at(functionCommandInfo->arguments[i]);
+        
+        // Check if it's an array and has sequence information
+        ArrayRE* tempArr = dynamic_cast<ArrayRE*>(tempUnit);
+        if (tempArr != nullptr) {
+            if (tempArr->localSequence >= 0) {
+                arg = resolveFromLocalFrame(tempArr->localSequence);
+            } else if (tempArr->globalSequence >= 0) {
+                arg = resolveFromGlobalFrame(tempArr->globalSequence);
+            }
+        } else {
+            // Check if it's a variable and has sequence information
+            VariableRE* tempVar = dynamic_cast<VariableRE*>(tempUnit);
+            if (tempVar != nullptr) {
+                if (tempVar->localSequence >= 0) {
+                    arg = resolveFromLocalFrame(tempVar->localSequence);
+                } else if (tempVar->globalSequence >= 0) {
+                    arg = resolveFromGlobalFrame(tempVar->globalSequence);
+                }
+            }
+        }
+        
+        // Fallback to name-based resolution if frame-based failed
+        if (arg == nullptr) {
+            arg = map->at(functionCommandInfo->arguments[i]);
+        }
+        
         if (dynamic_cast<ArrayRE *>(arg) != nullptr) {
             arrCount++;
             methodArgArrayAddrList.push_back(((ArrayRE *) arg)->getValPtr());
