@@ -14,6 +14,7 @@
 #include "FunctionCallRE.h"
 #include<unordered_map>
 #include <list>
+#include <vector>
 
 /**
  * FunctionCommandRE class handles function call execution in the rule engine.
@@ -311,6 +312,22 @@ private:
      */
     std::unordered_map<std::string, std::string> arrayNameMethodMap;
 
+    // ==================== Frame-based Variable Resolution (CPython-like) ====================
+    
+    /**
+     * Local frame containing pointers to variables/arrays in local scope.
+     * This enables CPython-like variable resolution by position rather than name.
+     * Each position corresponds to the localSequence field in Variable/Array objects.
+     */
+    std::vector<RuleEngineInputUnits*> localFrame;
+    
+    /**
+     * Global frame containing pointers to variables/arrays in global scope.
+     * This enables CPython-like variable resolution by position rather than name.
+     * Each position corresponds to the globalSequence field in Variable/Array objects.
+     */
+    std::vector<RuleEngineInputUnits*> globalFrame;
+
 public:
     // ==================== Constructor and Destructor ====================
     
@@ -387,6 +404,35 @@ public:
      * or specialized execution paths for different function types.
      */
     void processMethod();
+
+    // ==================== Frame-based Variable Resolution Methods ====================
+    
+    /**
+     * Populates local and global frames with variables and arrays based on their sequence numbers.
+     * This method implements CPython-like variable ordering by organizing variables
+     * by their position rather than name-based lookup.
+     * 
+     * @param map Global map containing all rule engine objects indexed by their IDs
+     */
+    void populateFrames(std::unordered_map<std::string, RuleEngineInputUnits *> *map);
+    
+    /**
+     * Resolves a variable or array from the local frame by sequence number.
+     * Enables fast variable access by index similar to CPython.
+     * 
+     * @param localSequence The position in the local frame (0-based index)
+     * @return Pointer to the RuleEngineInputUnits object, or nullptr if not found
+     */
+    RuleEngineInputUnits* resolveFromLocalFrame(int localSequence);
+    
+    /**
+     * Resolves a variable or array from the global frame by sequence number.
+     * Enables fast variable access by index similar to CPython.
+     * 
+     * @param globalSequence The position in the global frame (0-based index)
+     * @return Pointer to the RuleEngineInputUnits object, or nullptr if not found
+     */
+    RuleEngineInputUnits* resolveFromGlobalFrame(int globalSequence);
 
 };
 

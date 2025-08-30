@@ -112,6 +112,9 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     }
     variableStackCurrent = new double[varCount];
     arrayStackCurrent = new ArrayValue*[arrCount];
+    
+    // Populate frames for CPython-like variable resolution
+    populateFrames(map);
 }
 
 void FunctionCommandRE::process() {
@@ -608,4 +611,94 @@ void POW::process() {
     if(varCount == 2) {
         *methodArgVariableAddr[0] = std::pow(*methodArgVariableAddr[0], *methodArgVariableAddr[1]);
     }
+}
+
+// ==================== Frame-based Variable Resolution Implementation ====================
+
+void FunctionCommandRE::populateFrames(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    // Clear existing frames
+    localFrame.clear();
+    globalFrame.clear();
+    
+    // Find the maximum sequence numbers to size the frames appropriately
+    int maxLocalSeq = -1;
+    int maxGlobalSeq = -1;
+    
+    // First pass: determine frame sizes
+    for (auto& pair : *map) {
+        RuleEngineInputUnits* unit = pair.second;
+        
+        // Check if this is a VariableRE
+        VariableRE* varRE = dynamic_cast<VariableRE*>(unit);
+        if (varRE != nullptr) {
+            if (varRE->localSequence >= 0) {
+                maxLocalSeq = std::max(maxLocalSeq, varRE->localSequence);
+            }
+            if (varRE->globalSequence >= 0) {
+                maxGlobalSeq = std::max(maxGlobalSeq, varRE->globalSequence);
+            }
+            continue;
+        }
+        
+        // Check if this is an ArrayRE
+        ArrayRE* arrRE = dynamic_cast<ArrayRE*>(unit);
+        if (arrRE != nullptr) {
+            if (arrRE->localSequence >= 0) {
+                maxLocalSeq = std::max(maxLocalSeq, arrRE->localSequence);
+            }
+            if (arrRE->globalSequence >= 0) {
+                maxGlobalSeq = std::max(maxGlobalSeq, arrRE->globalSequence);
+            }
+        }
+    }
+    
+    // Resize frames to accommodate all variables
+    if (maxLocalSeq >= 0) {
+        localFrame.resize(maxLocalSeq + 1, nullptr);
+    }
+    if (maxGlobalSeq >= 0) {
+        globalFrame.resize(maxGlobalSeq + 1, nullptr);
+    }
+    
+    // Second pass: populate frames
+    for (auto& pair : *map) {
+        RuleEngineInputUnits* unit = pair.second;
+        
+        // Handle VariableRE
+        VariableRE* varRE = dynamic_cast<VariableRE*>(unit);
+        if (varRE != nullptr) {
+            if (varRE->localSequence >= 0 && varRE->localSequence < localFrame.size()) {
+                localFrame[varRE->localSequence] = unit;
+            }
+            if (varRE->globalSequence >= 0 && varRE->globalSequence < globalFrame.size()) {
+                globalFrame[varRE->globalSequence] = unit;
+            }
+            continue;
+        }
+        
+        // Handle ArrayRE
+        ArrayRE* arrRE = dynamic_cast<ArrayRE*>(unit);
+        if (arrRE != nullptr) {
+            if (arrRE->localSequence >= 0 && arrRE->localSequence < localFrame.size()) {
+                localFrame[arrRE->localSequence] = unit;
+            }
+            if (arrRE->globalSequence >= 0 && arrRE->globalSequence < globalFrame.size()) {
+                globalFrame[arrRE->globalSequence] = unit;
+            }
+        }
+    }
+}
+
+RuleEngineInputUnits* FunctionCommandRE::resolveFromLocalFrame(int localSequence) {
+    if (localSequence >= 0 && localSequence < localFrame.size()) {
+        return localFrame[localSequence];
+    }
+    return nullptr;
+}
+
+RuleEngineInputUnits* FunctionCommandRE::resolveFromGlobalFrame(int globalSequence) {
+    if (globalSequence >= 0 && globalSequence < globalFrame.size()) {
+        return globalFrame[globalSequence];
+    }
+    return nullptr;
 }
