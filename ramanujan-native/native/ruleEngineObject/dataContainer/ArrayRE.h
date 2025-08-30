@@ -20,6 +20,7 @@ private:
 public:
     ArrayValue* arrayValue;
     std::string name, frameCount;
+    int localSequence, globalSequence;
 
     ArrayRE(Array *array) {
         this->array = array;
@@ -29,6 +30,8 @@ public:
         this->arrayValue = new ArrayValue(array, this->id);
         this->valPtr = reinterpret_cast<DataContainerValue **>(&arrayValue);
         this->frameCount = array->frameCount;
+        this->localSequence = array->localSequence;
+        this->globalSequence = array->globalSequence;
     }
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {

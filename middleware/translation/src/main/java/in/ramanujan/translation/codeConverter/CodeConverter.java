@@ -22,6 +22,12 @@ public class CodeConverter {
     private Map<String, Variable> variableMap ;
     private Map<String, Array> arrayMap;
     private Map<String, String> csvDataMap;
+    
+    // Frame management for variable ordering like CPython
+    private List<RuleEngineInputUnits> localFrame = new ArrayList<>();
+    private List<RuleEngineInputUnits> globalFrame = new ArrayList<>();
+    private Map<String, Integer> localFrameSequenceMap = new HashMap<>();
+    private Map<String, Integer> globalFrameSequenceMap = new HashMap<>();
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
 //        return variable;
@@ -33,10 +39,81 @@ public class CodeConverter {
 //
     public void setVariable(Variable variable, String variableScope) {
         variableMap.put(variableScope + variable.getName(), variable);
+        // Add to appropriate frame based on scope
+        addToFrame(variable, variableScope);
     }
 
     public void setArray(Array array, String variableScope) {
         arrayMap.put(variableScope + array.getName(), array);
+        // Add to appropriate frame based on scope
+        addToFrame(array, variableScope);
+    }
+    
+    /**
+     * Adds a variable or array to the appropriate frame (local or global)
+     * and sets the sequence number.
+     */
+    private void addToFrame(RuleEngineInputUnits unit, String variableScope) {
+        if (variableScope == null || variableScope.isEmpty()) {
+            // Global scope
+            int sequence = globalFrame.size();
+            globalFrame.add(unit);
+            globalFrameSequenceMap.put(unit.getId(), sequence);
+            
+            if (unit instanceof Variable) {
+                ((Variable) unit).setGlobalSequence(sequence);
+                ((Variable) unit).setLocalSequence(-1);
+            } else if (unit instanceof Array) {
+                ((Array) unit).setGlobalSequence(sequence);
+                ((Array) unit).setLocalSequence(-1);
+            }
+        } else {
+            // Local scope
+            int sequence = localFrame.size();
+            localFrame.add(unit);
+            localFrameSequenceMap.put(unit.getId(), sequence);
+            
+            if (unit instanceof Variable) {
+                ((Variable) unit).setLocalSequence(sequence);
+                ((Variable) unit).setGlobalSequence(-1);
+            } else if (unit instanceof Array) {
+                ((Array) unit).setLocalSequence(sequence);
+                ((Array) unit).setGlobalSequence(-1);
+            }
+        }
+    }
+    
+    /**
+     * Creates a new local frame for function calls.
+     * Saves current local frame state and creates a new one.
+     */
+    public void pushLocalFrame() {
+        // For simplicity, we'll create a new local frame
+        // In a more complex implementation, we might maintain a stack of frames
+        localFrame = new ArrayList<>();
+        localFrameSequenceMap = new HashMap<>();
+    }
+    
+    /**
+     * Removes scope from frames when scope is removed.
+     */
+    public void popLocalFrame() {
+        localFrame.clear();
+        localFrameSequenceMap.clear();
+    }
+    
+    /**
+     * Gets the local frame list.
+     */
+    public List<RuleEngineInputUnits> getLocalFrame() {
+        return localFrame;
+    }
+    
+    /**
+     * Gets the global frame list.
+     */
+    public List<RuleEngineInputUnits> getGlobalFrame() {
+        return globalFrame;
     }
 
 

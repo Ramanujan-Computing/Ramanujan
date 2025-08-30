@@ -15,6 +15,8 @@ class Array : public RuleEngineInputUnit {
         std::vector<int> dimension;
         int dimensionSize = 0;
         std::unordered_map<std::string, double> values;
+        int localSequence = -1;
+        int globalSequence = -1;
 
         Array() = default;
 
@@ -39,6 +41,14 @@ class Array : public RuleEngineInputUnit {
             Json::Value values = (*value)["values"];
             for (Json::Value::iterator it = values.begin(); it != values.end(); it++) {
                 this->values[it.key().asString()] = it->asDouble();
+            }
+            
+            // Handle localSequence and globalSequence fields
+            if ((*value).isMember("localSequence") && !(*value)["localSequence"].isNull()) {
+                this->localSequence = (*value)["localSequence"].asInt();
+            }
+            if ((*value).isMember("globalSequence") && !(*value)["globalSequence"].isNull()) {
+                this->globalSequence = (*value)["globalSequence"].asInt();
             }
         }
 

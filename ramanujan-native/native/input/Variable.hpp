@@ -12,7 +12,9 @@ class Variable : public RuleEngineInputUnit {
     Variable(Json::Value *pValue);
 
     std::string name, dataType, frameCount;
-        double value;
+    double value;
+    int localSequence = -1;
+    int globalSequence = -1;
 
     RuleEngineInputUnits *getInternalAnalogy();
 };
