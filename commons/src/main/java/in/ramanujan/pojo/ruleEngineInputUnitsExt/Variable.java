@@ -17,6 +17,18 @@ public class Variable extends RuleEngineInputUnits {
      * For ex: func(arg0, arg1) -> arg0 is 0; arg1 is 1
      */
     private Integer frameCount;
+    
+    /**
+     * Sequence number in local frame. -1 if not in local frame.
+     * This enables variable resolution by position in local frame similar to CPython.
+     */
+    private Integer localSequence = -1;
+    
+    /**
+     * Sequence number in global frame. -1 if not in global frame.
+     * This enables variable resolution by position in global frame similar to CPython.
+     */
+    private Integer globalSequence = -1;
 
     public Variable() {
         setClazz(Variable.class);

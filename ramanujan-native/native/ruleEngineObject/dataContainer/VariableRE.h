@@ -28,6 +28,8 @@ class VariableRE : public DoublePtr {
 
 public:
     std::string name, frameCount;
+    int localSequence, globalSequence;
+    
     VariableRE(Variable *variable) {
         this->variable = variable;
 
@@ -39,6 +41,8 @@ public:
         }
         value = val;
         frameCount = variable->frameCount;
+        localSequence = variable->localSequence;
+        globalSequence = variable->globalSequence;
     }
 
     void destroy() override {

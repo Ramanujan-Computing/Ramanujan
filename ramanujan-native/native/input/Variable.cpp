@@ -18,6 +18,14 @@ Variable::Variable(Json::Value *pValue) {
     dataType = (*pValue)["dataType"].asString();
     value = (*pValue)["value"].asDouble();
     frameCount = (*pValue)["frameCount"].asString();
+    
+    // Handle localSequence and globalSequence fields
+    if ((*pValue).isMember("localSequence") && !(*pValue)["localSequence"].isNull()) {
+        localSequence = (*pValue)["localSequence"].asInt();
+    }
+    if ((*pValue).isMember("globalSequence") && !(*pValue)["globalSequence"].isNull()) {
+        globalSequence = (*pValue)["globalSequence"].asInt();
+    }
 }
 
 
