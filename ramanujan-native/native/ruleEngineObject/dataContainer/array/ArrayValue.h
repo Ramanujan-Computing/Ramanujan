@@ -17,7 +17,7 @@
 
 class AbstractDataContainer;
 
-class ArrayValue : public DataContainerValue {
+class ArrayValue {
 private:
     Array* array = nullptr;
 
@@ -114,6 +114,30 @@ public:
             sizeAtIndex[index - 1] = result;
         }
         return result;
+    }
+};
+
+class ArrayDataContainerValue : public DataContainerValue
+{
+public:
+    ArrayValue * arrayValue;
+
+    ArrayDataContainerValue() = default;
+
+    ArrayDataContainerValue(ArrayValue* arrayValueIn)
+    {
+        arrayValue = arrayValueIn;
+    }
+
+    void setArrayValue(ArrayValue* arrayValueIn) {
+        if(arrayValue)
+            delete arrayValue;
+        arrayValue = arrayValueIn;
+    }
+
+    void copyDataContainerValue(DataContainerValue* toBeCopied) override
+    {
+        arrayValue = ((ArrayDataContainerValue*) toBeCopied)->arrayValue;
     }
 };
 

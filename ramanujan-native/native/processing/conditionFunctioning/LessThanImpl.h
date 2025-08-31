@@ -27,52 +27,52 @@ public:
 };
 
 class LessThanLeftVar : public CachedConditionFunctioning {
-    double *compareWhatValue;
+    DoublePtr *compareWhatValue;
     DataOperation *compareWithOp;
 public:
-    LessThanLeftVar(double *compareWhatValue, DataOperation *compareWithOp) {
+    LessThanLeftVar(DoublePtr *compareWhatValue, DataOperation *compareWithOp) {
         this->compareWhatValue = compareWhatValue;
         this->compareWithOp = compareWithOp;
     }
 
     bool operate() override {
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWhatValue);
-        return *compareWhatValue < compareWithOp->get();
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWhatValue->value);
+        return *compareWhatValue->value < compareWithOp->get();
     }
 };
 
 class LessThanRightVar : public CachedConditionFunctioning {
     DataOperation *compareWhatOp;
-    double *compareWithValue;
+    DoublePtr *compareWithValue;
 public:
-    LessThanRightVar(DataOperation *compareWhatOp, double *compareWithValue) {
+    LessThanRightVar(DataOperation *compareWhatOp, DoublePtr *compareWithValue) {
         this->compareWhatOp = compareWhatOp;
         this->compareWithValue = compareWithValue;
     }
 
     bool operate() override {
-        bool val = compareWhatOp->get() < *compareWithValue;
+        bool val = compareWhatOp->get() < *compareWithValue->value;
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue);
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue->value);
         return val;
     }
 };
 
 class LessThanBothVar : public CachedConditionFunctioning {
-    double *compareWhatValue;
-    double *compareWithValue;
+    DoublePtr *compareWhatValue;
+    DoublePtr *compareWithValue;
 public:
-    LessThanBothVar(double *compareWhatValue, double *compareWithValue) {
+    LessThanBothVar(DoublePtr *compareWhatValue, DoublePtr *compareWithValue) {
         this->compareWhatValue = compareWhatValue;
         this->compareWithValue = compareWithValue;
     }
 
     bool operate() override {
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWhatValue);
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue);
-        return *compareWhatValue < *compareWithValue;
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWhatValue->value);
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue->value);
+        return *compareWhatValue->value < *compareWithValue->value;
     }
 };
 
@@ -85,8 +85,8 @@ public:
         DataOperation *compareWhatOp = compareWhat->getDataOperation();
         DataOperation *compareWithOp = compareWith->getDataOperation();
 
-        double *compareWhatValue = compareWhat->getVar();
-        double *compareWithValue = compareWith->getVar();
+        DoublePtr *compareWhatValue = compareWhat->getVar();
+        DoublePtr *compareWithValue = compareWith->getVar();
 
 
         if (compareWhatValue != nullptr && compareWithValue != nullptr) {

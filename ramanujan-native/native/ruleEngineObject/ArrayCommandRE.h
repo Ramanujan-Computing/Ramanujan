@@ -24,30 +24,32 @@ public:
 class ArrayCommandRE : public DataOperation {
 private:
     ArrayRE* arrayRe;
+    ArrayDataContainerValue* arrayDataContainerValue;
     std::vector<std::string*>* index;
-    double** valPtrArr;
+    DoublePtr** valPtrArr;
 
     int dimensionSize;
     int* dimensionIndex;
 
     double * getArrayValueDataContainer() {
         int translatedIndex = 0;
-        ArrayValue * arrayVal = arrayRe->arrayValue;
+        ArrayValue * arrayVal = arrayDataContainerValue->arrayValue;
         int *sizeAtIndex = arrayVal->sizeAtIndex;
         //indexes can be only variables.
         for (int i = 0; i < (dimensionSize - 1); i++) {
 
-            int indexVal = *valPtrArr[i];//(int) dataContainers[i]->get();
+            int indexVal = *valPtrArr[i]->value;//(int) dataContainers[i]->get();
             translatedIndex += sizeAtIndex[i] * indexVal;
         }
-        translatedIndex += *valPtrArr[dimensionSize - 1];//(int) dataContainers[dimensionSize - 1]->get();
+        translatedIndex += *valPtrArr[dimensionSize - 1]->value;//(int) dataContainers[dimensionSize - 1]->get();
         return arrayVal->val + translatedIndex;
     }
 
 public:
     ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap) {
         this->arrayRe = arrayRe;
-        valPtrArr = new double *[index->size()];
+        arrayDataContainerValue = (ArrayDataContainerValue*) arrayRe->getVal();
+        valPtrArr = new DoublePtr *[index->size()];
 
         dimensionSize = 0;
         for (auto i : *index) {
@@ -58,10 +60,10 @@ public:
             VariableRE* var = dynamic_cast<VariableRE*>(iterator->second);
 //            dataContainers[dimensionSize] = dataContainerRe;
             if(var != nullptr) {
-                valPtrArr[dimensionSize] = var->getValPtrPtr();
+                valPtrArr[dimensionSize] = (DoublePtr*)var->getVal();
             } else {
                 ConstantRE* constant = dynamic_cast<ConstantRE*>(iterator->second);
-                valPtrArr[dimensionSize] = constant->getValPtrPtr();
+                valPtrArr[dimensionSize] = (DoublePtr*)constant->getVal();
             }
             dimensionSize++;
         }

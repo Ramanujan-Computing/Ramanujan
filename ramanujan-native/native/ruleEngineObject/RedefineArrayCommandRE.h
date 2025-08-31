@@ -17,13 +17,9 @@ public:
     std::vector<bool> isVariableDimension; // true if dimension is a variable, false if explicit integer
 
     // Pointer to the ArrayValue* of the target ArrayRE
-    ArrayValue **arrayValuePtr = nullptr;
+    ArrayDataContainerValue* arrayValuePtr;
 
     void destroy() override {
-        if (arrayValuePtr) {
-            delete *arrayValuePtr; // Assuming ownership of the ArrayValue
-            arrayValuePtr = nullptr;
-        }
     }
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits*> *map) {
@@ -35,7 +31,7 @@ public:
         if (itArr != map->end()) {
             ArrayRE* arrayRE = dynamic_cast<ArrayRE*>(itArr->second);
             if (arrayRE) {
-                arrayValuePtr = arrayRE->getValPtr();
+                arrayValuePtr = (ArrayDataContainerValue*)(arrayRE->getVal());
             }
         }
         for (const auto& varId : newDimensions) {

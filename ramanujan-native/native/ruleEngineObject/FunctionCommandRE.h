@@ -11,6 +11,7 @@
 #include "dataContainer/array/ArrayValue.h"
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
+#include "dataContainer/DataContainerValue.h"
 #include "FunctionCallRE.h"
 #include<unordered_map>
 #include <list>
@@ -121,195 +122,105 @@ private:
      */
     int totalArrCount = 0;
 
-    // ==================== Parameter Mapping - Variable Arguments ====================
+    // ==================== Parameter Mapping - DataContainer Arguments ====================
     
     /**
-     * Array of pointers to parameter variable addresses in the called function.
-     * Each element points to the memory location of a parameter variable in the function definition.
-     * Size: varCount
+     * Array of pointers to parameter DataContainerValue in the called function.
+     * Each element points to the DataContainerValue* of parameters in the function definition.
+     * Size: argSize (total arguments including both variables and arrays)
      * 
      * Usage:
-     * - During parameter setup: receives values from calling context
-     * - During restoration: restored to original values for proper stack management
+     * - During parameter setup: saves original DataContainerValue* references from called function context
+     * - During restoration: restored to original DataContainerValue* references for proper stack management
      * 
-     * Example: If function is func(a, b), methodCalledOriginalPlaceHolderAddrs[0] points to 'a'
+     * Example: If function is func(a, b), methodCalledOriginalPlaceHolderAddrs[0] points to 'a's DataContainerValue*
      */
-    double** methodCalledOriginalPlaceHolderAddrs = nullptr;
+    DataContainerValue** methodCalledOriginalPlaceHolderAddrs = nullptr;
     
     /**
-     * Array of pointers to argument variable addresses in the calling function.
-     * Each element points to the memory location of variables being passed as arguments.
-     * Size: varCount
+     * Array of pointers to argument DataContainerValue addresses in the calling function.
+     * Each element points to the DataContainerValue* of arguments being passed to the function.
+     * Size: argSize (total arguments including both variables and arrays)
      * 
      * Usage:
-     * - Source of values during parameter setup
-     * - Destination for restoration during cleanup
+     * - Source of DataContainerValue references during parameter setup
+     * - Target for DataContainerValue reference restoration during cleanup
      * 
-     * Example: If called as func(x, y), methodCallingOriginalPlaceHolderAddrs[0] points to 'x'
+     * Example: If called as func(x, y), methodCallingOriginalPlaceHolderAddrs[0] points to 'x's DataContainerValue*
      */
-    double** methodCallingOriginalPlaceHolderAddrs = nullptr;
+    DataContainerValue** methodCallingOriginalPlaceHolderAddrs = nullptr;
 
-    // ==================== Parameter Mapping - Array Arguments ====================
+    // ==================== Local Data Management ====================
     
     /**
-     * Array of pointers to array parameter addresses in the called function.
-     * Each element points to the ArrayValue** of array parameters in the function definition.
-     * Size: arrCount
-     * 
-     * Usage:
-     * - During parameter setup: these array parameters receive references from calling arrays
-     * - During restoration: restored to original array references
-     * 
-     * Memory Structure: ArrayValue*** -> ArrayValue** -> ArrayValue* -> actual array data
-     */
-    ArrayValue*** methodCalledArrayPlaceHolderAddrs = nullptr;
-
-    /**
-     * Array of pointers to argument array addresses in the calling function.
-     * Each element points to the ArrayValue** of arrays being passed as arguments.
-     * Size: arrCount
-     * 
-     * Usage:
-     * - Source of array references during parameter setup
-     * - Target for array reference restoration during cleanup
-     * 
-     * Purpose: Enables array parameter passing by reference semantics
-     */
-    ArrayValue*** methodCallingArrayPlaceHolderAddrs = nullptr;
-
-    // ==================== Local Variable Management ====================
-    
-    /**
-     * Array to store current values of all variables in the function scope.
-     * Used for saving variable state before function execution and restoring after completion.
-     * Size: totalVarCount
+     * Array to store current DataContainerValue pointers for all data containers in the function scope.
+     * Used for saving data container state before function execution and restoring after completion.
+     * Size: totalVarCount + totalArrCount (all data containers in function)
      * 
      * Purpose:
-     * - Index 0 to varCount-1: Parameter variable values
-     * - Index varCount to totalVarCount-1: Local variable values
+     * - Index 0 to argSize-1: Parameter data container pointers (both variables and arrays)
+     * - Index argSize to total-1: Local data container pointers
      * 
      * Usage Timeline:
-     * 1. Phase 1: Save current values before function execution
-     * 2. Phase 5: Restore saved values after function completion
+     * 1. Phase 1: Save current DataContainerValue pointers before function execution
+     * 2. Phase 5: Restore saved DataContainerValue pointers after function completion
      * 
-     * Critical for recursive function support - prevents variable corruption
+     * Critical for recursive function support - prevents data container corruption
      */
-    double* methodArgVariableCurrentVal = nullptr;
+    DataContainerValue** methodArgDataContainerCurrentVal = nullptr;
     
     /**
-     * Array of pointers to all variable addresses within the function.
-     * Includes both parameters and local variables declared in the function.
-     * Size: totalVarCount
+     * Array of pointers to all DataContainerValue addresses within the function.
+     * Includes both parameters and local data containers declared in the function.
+     * Size: totalVarCount + totalArrCount (all data containers in function)
      * 
      * Structure:
-     * - Index 0 to varCount-1: Function parameter variable addresses
-     * - Index varCount to totalVarCount-1: Local variable addresses
+     * - Index 0 to argSize-1: Function parameter data container addresses
+     * - Index argSize to total-1: Local data container addresses
      * 
      * Usage:
-     * - Allows direct access to any variable in function scope
-     * - Used during restoration to reset variables to saved values
+     * - Allows direct access to any data container in function scope
+     * - Used during restoration to reset data containers to saved values
      */
-    double** methodArgVariableAddr = nullptr;
-
-    // ==================== Local Array Management ====================
-    
-    /**
-     * Array to store current array pointers for all arrays in the function scope.
-     * Used for saving array state before function execution and restoring after completion.
-     * Size: totalArrCount
-     * 
-     * Purpose:
-     * - Index 0 to arrCount-1: Parameter array pointers
-     * - Index arrCount to totalArrCount-1: Local array pointers
-     * 
-     * Memory Management:
-     * - For parameters: saves existing array references
-     * - For local arrays: saves current pointers (often nullptr) before allocation
-     * 
-     * Critical for proper cleanup and preventing memory leaks
-     */
-    double** methodArgArrayCurrentVal = nullptr;
-    
-    /**
-     * Array of pointers to all array addresses within the function.
-     * Points to the actual ArrayValue* pointers for both parameters and local arrays.
-     * Size: totalArrCount
-     * 
-     * Memory Structure: double*** -> double** -> double* (actual array data)
-     * 
-     * Usage:
-     * - Direct access to array pointers in function scope
-     * - Memory allocation for local arrays (new double[size])
-     * - Memory deallocation during cleanup (delete[])
-     */
-    double*** methodArgArrayAddr = nullptr;
-    
-    /**
-     * Array storing the total size of each array in the function.
-     * Used for proper memory allocation of local arrays during function execution.
-     * Size: totalArrCount
-     * 
-     * Purpose:
-     * - Index 0 to arrCount-1: Sizes of parameter arrays (for reference)
-     * - Index arrCount to totalArrCount-1: Sizes of local arrays (for allocation)
-     * 
-     * Usage:
-     * - During Phase 2: new double[methodArgArrayTotalSize[i]] for local arrays
-     * - During Phase 6: Ensures proper memory management
-     */
-    int* methodArgArrayTotalSize = nullptr;
+    DataContainerValue** methodArgDataContainerAddr = nullptr;
 
     // ==================== Stack Management for Function Calls ====================
     
     /**
-     * Temporary storage for variable values during function call stack operations.
-     * Used to preserve calling context variable values across function execution.
-     * Size: varCount
+     * Temporary storage for DataContainerValue pointers during function call stack operations.
+     * Used to preserve calling context data container values across function execution.
+     * Size: argSize (total number of arguments passed to function)
      * 
      * Usage Timeline:
-     * 1. Phase 1: Save parameter values from called function context
-     * 2. Phase 4: Update with final values from called function
-     * 3. Phase 5: Use to restore calling context variables
+     * 1. Phase 1: Save parameter DataContainerValue pointers from called function context
+     * 2. Phase 4: Update with final DataContainerValue pointers from called function
+     * 3. Phase 5: Use to restore calling context data containers
      * 
-     * Purpose: Ensures proper variable restoration in recursive calls
-     * Example: Prevents outer function variables from being corrupted by inner calls
+     * Purpose: Ensures proper data container restoration in recursive calls
+     * Example: Prevents outer function data containers from being corrupted by inner calls
      */
-    double* variableStackCurrent = nullptr;
-    
-    /**
-     * Temporary storage for array references during function call stack operations.
-     * Used to preserve calling context array references across function execution.
-     * Size: arrCount
-     * 
-     * Usage Timeline:
-     * 1. Phase 2: Save array references from called function context
-     * 2. Phase 4: Update with final references from called function
-     * 3. Phase 6: Use to restore calling context arrays
-     * 
-     * Purpose: Maintains proper array reference semantics across function calls
-     */
-    ArrayValue** arrayStackCurrent = nullptr;
+    DataContainerValue** dataContainerStackCurrent = nullptr;
 
     // ==================== Name Mapping for Debugging ====================
     
     /**
-     * Maps array names from calling context to function parameter names.
-     * Used primarily for debugging and tracking array parameter relationships.
+     * Maps data container names from calling context to function parameter names.
+     * Used primarily for debugging and tracking parameter relationships.
      * 
-     * Key: Name of array variable in calling context
-     * Value: Name of array parameter in function definition
+     * Key: Name of data container (variable/array) in calling context
+     * Value: Name of parameter in function definition
      * 
      * Example Mapping:
-     * Function definition: func(paramArray) { ... }
-     * Function call: func(callingArray)
-     * Map entry: {"callingArray" -> "paramArray"}
+     * Function definition: func(paramVar, paramArray) { ... }
+     * Function call: func(callingVar, callingArray)
+     * Map entries: {"callingVar" -> "paramVar", "callingArray" -> "paramArray"}
      * 
      * Usage:
-     * - Debugging: Track which calling arrays map to which parameters
+     * - Debugging: Track which calling data containers map to which parameters
      * - Error reporting: Provide meaningful variable names in stack traces
      * - Development: Understand parameter flow in complex recursive calls
      */
-    std::unordered_map<std::string, std::string> arrayNameMethodMap;
+    std::unordered_map<std::string, std::string> dataContainerNameMethodMap;
 
 public:
     // ==================== Constructor and Destructor ====================
@@ -429,24 +340,15 @@ protected:
     // ==================== Simplified Parameter Access ====================
     
     /**
-     * Direct access to array arguments passed to built-in functions.
-     * Simplified version of array parameter handling for built-in functions.
-     * Size: arrCount
+     * Direct access to DataContainerValue pointers for arguments passed to built-in functions.
+     * Simplified version of parameter handling for built-in functions.
+     * Size: argSize (total number of arguments passed to function)
      * 
-     * Usage: Allows built-in functions to directly modify array arguments
-     * without the overhead of full function call parameter mapping.
+     * Usage: Allows built-in functions to directly access and modify argument data containers
+     * without the overhead of full function call parameter mapping and stack management.
+     * This unified approach handles both variable and array arguments through the same interface.
      */
-    ArrayValue*** methodArgArrayAddr = nullptr;
-    
-    /**
-     * Direct access to variable arguments passed to built-in functions.
-     * Simplified version of variable parameter handling for built-in functions.
-     * Size: varCount
-     * 
-     * Usage: Allows built-in functions to directly read/modify variable arguments
-     * without the complexity of stack management and restoration.
-     */
-    double** methodArgVariableAddr = nullptr;
+    DataContainerValue** methodArgDataContainerAddr = nullptr;
 public:
     // ==================== Built-in Function Constructor ====================
     
@@ -467,11 +369,8 @@ public:
      * Note: Much simpler than base class since no complex stack management needed.
      */
     void destroy() override {
-        if(methodArgVariableAddr != nullptr) {
-            delete[] methodArgVariableAddr;
-        }
-        if(methodArgArrayAddr != nullptr) {
-            delete[] methodArgArrayAddr;
+        if(methodArgDataContainerAddr != nullptr) {
+            delete[] methodArgDataContainerAddr;
         }
     }
 

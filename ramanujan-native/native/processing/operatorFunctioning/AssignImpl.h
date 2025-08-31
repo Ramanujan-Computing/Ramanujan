@@ -46,26 +46,26 @@ public:
 
 //take ispiration from AddImpl and have the impl classes
 class AssignImplLeftVar : public AssignImplCachedOperationFunctioningBase {
-    double *v1;
+    DoublePtr *v1;
     DataOperation *op2;
 
 public:
 
-    AssignImplLeftVar(double *v1, DataOperation *op2) {
+    AssignImplLeftVar(DoublePtr *v1, DataOperation *op2) {
         this->v1 = v1;
         this->op2 = op2;
     }
 
     double get() override {
-        *v1 = op2->get();
+        *v1->value = op2->get();
         return 0;
     }
 
     void set() override {
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1);
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
         double val = op2->get();
-        *v1 = val;
+        *v1->value = val;
         DEBUG_ADD_DATA_DOUBLE_SET_AFTER(val);
     }
 
@@ -73,50 +73,50 @@ public:
 
 class AssignImplRightVar : public AssignImplCachedOperationFunctioningBase {
     DataOperation *op1;
-    double *v2;
+    DoublePtr *v2;
 
 public:
 
-    AssignImplRightVar(DataOperation *op1, double *v2) {
+    AssignImplRightVar(DataOperation *op1, DoublePtr *v2) {
         this->op1 = op1;
         this->v2 = v2;
     }
 
     double get() override {
-        op1->set(*v2);
+        op1->set(*v2->value);
         return 0;
     }
 
     void set() override {
         DEBUG_PRE();
         DEBUG_ADD_DATA_OP_SET_BEFORE(op1);
-        double val = *v2;
+        double val = *v2->value;
         op1->set(val);
         DEBUG_ADD_DATA_DOUBLE_SET_AFTER(val);
     }
 };
 
 class AssignImplBothVar : public AssignImplCachedOperationFunctioningBase {
-    double *v1;
-    double *v2;
+    DoublePtr *v1;
+    DoublePtr *v2;
 
 public:
 
-    AssignImplBothVar(double *v1, double *v2) {
+    AssignImplBothVar(DoublePtr *v1, DoublePtr *v2) {
         this->v1 = v1;
         this->v2 = v2;
     }
 
     double get() override {
-        *v1 = *v2;
+        *v1->value = *v2->value;
         return 0;
     }
 
     void set() override {
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1);
-        double val = *v2;
-        *v1 = val;
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
+        double val = *v2->value;
+        *v1->value = val;
         DEBUG_ADD_DATA_DOUBLE_SET_AFTER(val);
     }
 };
@@ -128,8 +128,8 @@ public:
         DataOperation *op1 = commandRe1->getDataOperation();
         DataOperation *op2 = commandRe2->getDataOperation();
 
-        double *v1 = commandRe1->getVar();
-        double *v2 = commandRe2->getVar();
+        DoublePtr *v1 = commandRe1->getVar();
+        DoublePtr *v2 = commandRe2->getVar();
 
 
         if (v1 != nullptr && v2 != nullptr) {

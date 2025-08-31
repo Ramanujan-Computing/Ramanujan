@@ -30,59 +30,59 @@ public:
 
 
 class MinusImplLeftVar : public CachedOperationFunctioning {
-    double *v1;
+    DoublePtr *v1;
     DataOperation *op2;
 
 public:
 
-    MinusImplLeftVar(double *v1, DataOperation *op2) {
+    MinusImplLeftVar(DoublePtr *v1, DataOperation *op2) {
         this->v1 = v1;
         this->op2 = op2;
     }
 
     double get() override {
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1);
-        return *v1 - op2->get();
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
+        return *v1->value - op2->get();
     }
 
 };
 
 class MinusImplRightVar : public CachedOperationFunctioning {
     DataOperation *op1;
-    double *v2;
+    DoublePtr *v2;
 
 public:
 
-    MinusImplRightVar(DataOperation *op1, double *v2) {
+    MinusImplRightVar(DataOperation *op1, DoublePtr *v2) {
         this->op1 = op1;
         this->v2 = v2;
     }
 
     double get() override {
-        double val = op1->get() - *v2;
+        double val = op1->get() - *v2->value;
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(v2);
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(v2->value);
         return val;
     }
 };
 
 class MinusImplBothVar : public CachedOperationFunctioning {
-    double *v1;
-    double *v2;
+    DoublePtr *v1;
+    DoublePtr *v2;
 
 public:
 
-    MinusImplBothVar(double *v1, double *v2) {
+    MinusImplBothVar(DoublePtr *v1, DoublePtr *v2) {
         this->v1 = v1;
         this->v2 = v2;
     }
 
     double get() override {
         DEBUG_PRE();
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1);
-        DEBUG_ADD_DOUBLE_PTR_BEFORE(v2);
-        return *v1 - *v2;
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
+        DEBUG_ADD_DOUBLE_PTR_BEFORE(v2->value);
+        return *v1->value - *v2->value;
     }
 };
 
@@ -94,8 +94,8 @@ public:
         DataOperation *operand1Op = operandCommandRE1->getDataOperation();
         DataOperation *operand2Op = operandCommandRE2->getDataOperation();
 
-        double *v1 = operandCommandRE1->getVar();
-        double *v2 = operandCommandRE2->getVar();
+        DoublePtr *v1 = operandCommandRE1->getVar();
+        DoublePtr *v2 = operandCommandRE2->getVar();
 
         if (v1 != nullptr && v2 != nullptr) {
             return new MinusImplBothVar(v1, v2);

@@ -137,16 +137,16 @@ bool CommandRE::evalCondition() {
     return conditionRe->operate();
 }
 
-double* CommandRE::getVar() {
+DoublePtr * CommandRE::getVar() {
     if(getDataOperation() != nullptr) {
         return nullptr;
     }
     if(variableRE != nullptr) {
-        return variableRE->getValPtrPtr();
+        return (DoublePtr* )variableRE->getVal();
     }
 
     if(constantRE != nullptr){
-        return constantRE->getValPtrPtr();
+        return (DoublePtr* )constantRE->getVal();
 
     }
 }
