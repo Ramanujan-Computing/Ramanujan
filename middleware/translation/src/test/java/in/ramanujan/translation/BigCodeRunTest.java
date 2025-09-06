@@ -210,6 +210,387 @@ public class BigCodeRunTest {
         assertTrue("Should have some arrays", arrayMap.size() > 0);
     }
 
+    @Test
+    public void testNestedWhileLoops() throws Exception {
+        String code = "def nestedWhileTest(var outer:integer, var inner:integer, var result:integer) {\n" +
+                "    var i,j:integer;\n" +
+                "    result = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < outer) {\n" +
+                "        j = 0;\n" +
+                "        while(j < inner) {\n" +
+                "            result = result + i * j;\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var testResult:integer;\n" +
+                "exec nestedWhileTest(3, 4, testResult);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("testResult", 18d); // Expected: (0*0+0*1+0*2+0*3) + (1*0+1*1+1*2+1*3) + (2*0+2*1+2*2+2*3) = 0 + 6 + 12 = 18
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testNestedIfElseBlocks() throws Exception {
+        String code = "def nestedIfElseTest(var x:integer, var y:integer, var result:integer) {\n" +
+                "    if(x > 0) {\n" +
+                "        if(y > 0) {\n" +
+                "            result = 1;\n" +
+                "        } else {\n" +
+                "            if(y == 0) {\n" +
+                "                result = 2;\n" +
+                "            } else {\n" +
+                "                result = 3;\n" +
+                "            }\n" +
+                "        }\n" +
+                "    } else {\n" +
+                "        if(x == 0) {\n" +
+                "            result = 4;\n" +
+                "        } else {\n" +
+                "            result = 5;\n" +
+                "        }\n" +
+                "    }\n" +
+                "}\n" +
+                "var result1,result2,result3,result4,result5:integer;\n" +
+                "exec nestedIfElseTest(1, 1, result1);\n" +
+                "exec nestedIfElseTest(1, 0, result2);\n" +
+                "exec nestedIfElseTest(1, -1, result3);\n" +
+                "exec nestedIfElseTest(0, 5, result4);\n" +
+                "exec nestedIfElseTest(-1, 5, result5);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result1", 1d); // x>0, y>0
+        variablesToAssert.put("result2", 2d); // x>0, y==0
+        variablesToAssert.put("result3", 3d); // x>0, y<0
+        variablesToAssert.put("result4", 4d); // x==0
+        variablesToAssert.put("result5", 5d); // x<0
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testRecursiveFactorial() throws Exception {
+        String code = "def factorial(var n:integer, var result:integer) {\n" +
+                "    if(n <= 1) {\n" +
+                "        result = 1;\n" +
+                "    } else {\n" +
+                "        var temp:integer;\n" +
+                "        var n_minus_1:integer;\n" +
+                "        n_minus_1 = n - 1;\n" +
+                "        exec factorial(n_minus_1, temp);\n" +
+                "        result = n * temp;\n" +
+                "    }\n" +
+                "}\n" +
+                "var fact5,fact0,fact1:integer;\n" +
+                "exec factorial(5, fact5);\n" +
+                "exec factorial(0, fact0);\n" +
+                "exec factorial(1, fact1);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("fact5", 120d); // 5! = 120
+        variablesToAssert.put("fact0", 1d);   // 0! = 1
+        variablesToAssert.put("fact1", 1d);   // 1! = 1
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testRecursiveFibonacci() throws Exception {
+        String code = "def fibonacci(var n:integer, var result:integer) {\n" +
+                "    if(n <= 1) {\n" +
+                "        result = n;\n" +
+                "    } else {\n" +
+                "        var fib1,fib2:integer;\n" +
+                "        var n_minus_1,n_minus_2:integer;\n" +
+                "        n_minus_1 = n - 1;\n" +
+                "        n_minus_2 = n - 2;\n" +
+                "        exec fibonacci(n_minus_1, fib1);\n" +
+                "        exec fibonacci(n_minus_2, fib2);\n" +
+                "        result = fib1 + fib2;\n" +
+                "    }\n" +
+                "}\n" +
+                "var fib0,fib1,fib5,fib7:integer;\n" +
+                "exec fibonacci(0, fib0);\n" +
+                "exec fibonacci(1, fib1);\n" +
+                "exec fibonacci(5, fib5);\n" +
+                "exec fibonacci(7, fib7);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("fib0", 0d); // fib(0) = 0
+        variablesToAssert.put("fib1", 1d); // fib(1) = 1
+        variablesToAssert.put("fib5", 5d); // fib(5) = 5
+        variablesToAssert.put("fib7", 13d); // fib(7) = 13
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testFunctionChaining() throws Exception {
+        String code = "def addOne(var input:integer, var output:integer) {\n" +
+                "    output = input + 1;\n" +
+                "}\n" +
+                "def multiplyByTwo(var input:integer, var output:integer) {\n" +
+                "    output = input * 2;\n" +
+                "}\n" +
+                "def square(var input:integer, var output:integer) {\n" +
+                "    output = input * input;\n" +
+                "}\n" +
+                "def chainedOperation(var start:integer, var result:integer) {\n" +
+                "    var temp1,temp2,temp3:integer;\n" +
+                "    exec addOne(start, temp1);\n" +
+                "    exec multiplyByTwo(temp1, temp2);\n" +
+                "    exec square(temp2, temp3);\n" +
+                "    exec addOne(temp3, result);\n" +
+                "}\n" +
+                "var finalResult:integer;\n" +
+                "exec chainedOperation(3, finalResult);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Chain: 3 -> addOne(4) -> multiplyByTwo(8) -> square(64) -> addOne(65)
+        variablesToAssert.put("finalResult", 65d);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testComplexWhileWithArrays() throws Exception {
+        String code = "def bubbleSort(var arr:array, var size:integer) {\n" +
+                "    var i,j,temp:integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < size - 1) {\n" +
+                "        j = 0;\n" +
+                "        while(j < size - i - 1) {\n" +
+                "            if(arr[j] > arr[j + 1]) {\n" +
+                "                temp = arr[j];\n" +
+                "                arr[j] = arr[j + 1];\n" +
+                "                arr[j + 1] = temp;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var sortArray[5]:array;\n" +
+                "sortArray[0] = 64;\n" +
+                "sortArray[1] = 34;\n" +
+                "sortArray[2] = 25;\n" +
+                "sortArray[3] = 12;\n" +
+                "sortArray[4] = 22;\n" +
+                "exec bubbleSort(sortArray, 5);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        Map<String, Object> expectedSortedArray = new HashMap<>();
+        expectedSortedArray.put("0", 12);
+        expectedSortedArray.put("1", 22);
+        expectedSortedArray.put("2", 25);
+        expectedSortedArray.put("3", 34);
+        expectedSortedArray.put("4", 64);
+        variablesToAssert.put("sortArray", expectedSortedArray);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testNestedIfWithWhileLoop() throws Exception {
+        String code = "def findPrimes(var limit:integer, var primes:array, var count:integer) {\n" +
+                "    var num,i,isPrime:integer;\n" +
+                "    count = 0;\n" +
+                "    num = 2;\n" +
+                "    while(num <= limit) {\n" +
+                "        isPrime = 1;\n" +
+                "        i = 2;\n" +
+                "        while(i * i <= num) {\n" +
+                "            if(num % i == 0) {\n" +
+                "                isPrime = 0;\n" +
+                "            }\n" +
+                "            i = i + 1;\n" +
+                "        }\n" +
+                "        if(isPrime == 1) {\n" +
+                "            primes[count] = num;\n" +
+                "            count = count + 1;\n" +
+                "        }\n" +
+                "        num = num + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var primeArray[10]:array;\n" +
+                "var primeCount:integer;\n" +
+                "exec findPrimes(20, primeArray, primeCount);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("primeCount", 8); // Primes <= 20: 2,3,5,7,11,13,17,19
+        Map<String, Object> expectedPrimes = new HashMap<>();
+        expectedPrimes.put("0", 2);
+        expectedPrimes.put("1", 3);
+        expectedPrimes.put("2", 5);
+        expectedPrimes.put("3", 7);
+        expectedPrimes.put("4", 11);
+        expectedPrimes.put("5", 13);
+        expectedPrimes.put("6", 17);
+        expectedPrimes.put("7", 19);
+        variablesToAssert.put("primeArray", expectedPrimes);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testRecursiveArraySum() throws Exception {
+        String code = "def arraySum(var arr:array, var index:integer, var size:integer, var sum:integer) {\n" +
+                "    if(index >= size) {\n" +
+                "        sum = 0;\n" +
+                "    } else {\n" +
+                "        var restSum:integer;\n" +
+                "        var nextIndex:integer;\n" +
+                "        nextIndex = index + 1;\n" +
+                "        exec arraySum(arr, nextIndex, size, restSum);\n" +
+                "        sum = arr[index] + restSum;\n" +
+                "    }\n" +
+                "}\n" +
+                "var testArray[5]:array;\n" +
+                "testArray[0] = 10;\n" +
+                "testArray[1] = 20;\n" +
+                "testArray[2] = 30;\n" +
+                "testArray[3] = 40;\n" +
+                "testArray[4] = 50;\n" +
+                "var totalSum:integer;\n" +
+                "exec arraySum(testArray, 0, 5, totalSum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("totalSum", 150d); // 10+20+30+40+50 = 150
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
+    @Test
+    public void testComplexNestedStructures() throws Exception {
+        String code = "def processMatrix(var matrix:array, var rows:integer, var cols:integer, var result:integer) {\n" +
+                "    var i,j,sum,product:integer;\n" +
+                "    result = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < rows) {\n" +
+                "        sum = 0;\n" +
+                "        j = 0;\n" +
+                "        while(j < cols) {\n" +
+                "            var index:integer;\n" +
+                "            index = i * cols + j;\n" +
+                "            if(i == j) {\n" +
+                "                sum = sum + matrix[index] * 2;\n" +
+                "            } else {\n" +
+                "                if(i < j) {\n" +
+                "                    sum = sum + matrix[index];\n" +
+                "                } else {\n" +
+                "                    sum = sum - matrix[index];\n" +
+                "                }\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        if(sum > 0) {\n" +
+                "            result = result + sum;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var matrix[9]:array;\n" +
+                "matrix[0] = 1; matrix[1] = 2; matrix[2] = 3;\n" +
+                "matrix[3] = 4; matrix[4] = 5; matrix[5] = 6;\n" +
+                "matrix[6] = 7; matrix[7] = 8; matrix[8] = 9;\n" +
+                "var matrixResult:integer;\n" +
+                "exec processMatrix(matrix, 3, 3, matrixResult);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
+        
+        NativeProcessor processor = new NativeProcessor();
+        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        
+        resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
+        
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Row 0: (1*2) + 2 + 3 = 7 > 0, add 7
+        // Row 1: -4 + (5*2) + 6 = 12 > 0, add 12  
+        // Row 2: -7 - 8 + (9*2) = 3 > 0, add 3
+        // Total: 7 + 12 + 3 = 22
+        variablesToAssert.put("matrixResult", 22d);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert);
+    }
+
     private RuleEngineInput getRuleEngineInputWithMaps(String code, Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws Exception {
         Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
         TranslateUtil translateUtil = new TranslateUtil();
@@ -414,8 +795,8 @@ public class BigCodeRunTest {
                 System.out.println("Variable " + varName + ": " + foundVariable.getValue());
                 if (expectedValue != null) {
                     // Use JUnit assertion instead of just printing
-                    assertEquals("Variable " + varName + " value mismatch", 
-                        expectedValue, foundVariable.getValue());
+                    assertEquals("Variable " + varName + " value mismatch",
+                            expectedValue, foundVariable.getValue());
                     System.out.println("  Assertion PASSED: " + expectedValue + " == " + foundVariable.getValue());
                 } else {
                     System.out.println("  Analysis complete (no assertion specified)");
