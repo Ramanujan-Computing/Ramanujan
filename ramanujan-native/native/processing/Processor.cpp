@@ -44,7 +44,7 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
 
     for(RuleEngineInputUnits* array : arrayREs) {
         ArrayRE* arrayRE = (ArrayRE*)(array);
-        ArrayValue* arrayValue = (ArrayValue*)(arrayRE->getVal());
+        ArrayValue* arrayValue = ((ArrayDataContainerValue*)(arrayRE->getVal()))->arrayValue;
         int size = arrayValue->totalSize;
         for(int i = 0; i < size; i++) {
             dataFieldOriginalData.insert(std::make_pair(&arrayValue->val[i],arrayValue->val[i]));

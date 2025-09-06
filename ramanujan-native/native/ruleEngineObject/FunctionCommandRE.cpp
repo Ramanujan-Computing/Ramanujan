@@ -463,22 +463,6 @@ void FunctionCommandRE::process() {
     }
 
     /*
-     * MEMORY CLEANUP:
-     * 
-     * Clean up the stack management memory allocated for this function call.
-     * Each recursive call allocates its own dataContainerStackCurrent array,
-     * so each must clean up its own allocation.
-     * 
-     * RECURSIVE SAFETY:
-     * This cleanup only affects the current call level.
-     * Other recursive levels have their own separate allocations.
-     */
-    for(int i = 0; i < argSize; i++) {
-        delete dataContainerStackCurrent[i];
-    }
-    delete[] dataContainerStackCurrent;
-
-    /*
      * RECURSIVE EXECUTION COMPLETE:
      * 
      * At this point, the current function call is completely unwound:
