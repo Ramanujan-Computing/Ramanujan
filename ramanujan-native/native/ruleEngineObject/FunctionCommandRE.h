@@ -193,9 +193,6 @@ private:
      */
     double** methodArgVariableAddr = nullptr;
 
-    std::stack<double*> methodArgVariableAddrStack;
-    std::stack<double*> methodCalledVariablValueStack;
-
     // ==================== Local Array Management ====================
     /**
      * Array of pointers to all array addresses within the function.
@@ -210,9 +207,6 @@ private:
      * - Memory deallocation during cleanup (delete[])
      */
     double*** methodArgArrayAddr = nullptr;
-
-    std::stack<double**> methodArgArrayAddrStack;
-    std::stack<ArrayValue**> methodCalledArrayValueStack;
     
     /**
      * Array storing the total size of each array in the function.

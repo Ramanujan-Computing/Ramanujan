@@ -124,8 +124,8 @@ void FunctionCommandRE::process() {
      * 2. Copy the calling function's argument value to the called function's parameter
      * 3. Save the current state of the parameter variable for later restoration
      */
-    double* methodArgVariableCurrentVal = new double[totalVarCount];
-    double* methodCalledVariablValue = new double[varCount];
+    double methodArgVariableCurrentVal[totalVarCount];
+    double methodCalledVariablValue[varCount];
     for (int i = 0; i < varCount; i++) {
 #ifdef DEBUG_BUILD
         // Record the current function variable value for debugging
@@ -138,7 +138,6 @@ void FunctionCommandRE::process() {
         // Copy the argument value from calling context to called function parameter
         *methodCalledOriginalPlaceHolderAddrs[i] = (*methodCallingOriginalPlaceHolderAddrs[i]);
     }
-    methodCalledVariablValueStack.push(methodCalledVariablValue);
 
 #ifdef DEBUG_BUILD
     // Record array name mappings for debugging purposes
@@ -158,7 +157,6 @@ void FunctionCommandRE::process() {
         methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
     }
 
-    methodArgVariableAddrStack.push(methodArgVariableCurrentVal);
 
     // ==================== PHASE 2: ARRAY PARAMETER SETUP ====================
     
@@ -168,8 +166,8 @@ void FunctionCommandRE::process() {
      * 2. Point the called function's parameter array to the calling function's argument array
      * 3. Save the current array pointer for later restoration
      */
-    double** methodArgArrayCurrentVal = new double*[totalArrCount];
-    ArrayValue** methodCalledArrayValue = new ArrayValue*[arrCount];
+    double* methodArgArrayCurrentVal[totalArrCount];
+    ArrayValue* methodCalledArrayValue[arrCount];
     for(int i = 0; i < arrCount; i++) {
 
         // Save the current array pointer for restoration after function execution
@@ -181,7 +179,6 @@ void FunctionCommandRE::process() {
         // Point the called function's parameter array to the calling function's argument array
         *methodCalledArrayPlaceHolderAddrs[i] = *methodCallingArrayPlaceHolderAddrs[i];
     }
-    methodCalledArrayValueStack.push(methodCalledArrayValue);
 
     /*
      * For local arrays in the function (non-parameters):
@@ -194,7 +191,6 @@ void FunctionCommandRE::process() {
         // Allocate new array for local array variables
         *methodArgArrayAddr[i] = new double[methodArgArrayTotalSize[i]];
     }
-    methodArgArrayAddrStack.push(methodArgArrayCurrentVal);
 
     // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
     
@@ -241,13 +237,11 @@ void FunctionCommandRE::process() {
      * If factorial(5) calls factorial(4), and factorial(4) has its own 'temp',
      * we need to restore factorial(5)'s 'temp' when factorial(4) completes.
      */
-    double* varArr = methodArgVariableAddrStack.top();
     for(int i =varCount; i<totalVarCount;i++)
     {
-        *methodArgVariableAddr[i] = varArr[i];
+        *methodArgVariableAddr[i] = methodArgVariableCurrentVal[i];
     }
-    methodArgVariableAddrStack.pop();
-    delete varArr;
+    //delete[] methodArgVariableCurrentVal;
     
     /*
      * DETAILED VARIABLE RESTORATION EXPLANATION:
@@ -296,7 +290,6 @@ void FunctionCommandRE::process() {
      * Variable Parameter Restoration Loop:
      * For each variable parameter (i = 0 to varCount-1):
      */
-    double* variableStackCurrent = methodCalledVariablValueStack.top();
     for(int i = 0; i < varCount; i++) {
         /*
          * Step 2: Restore the calling context variable to its stack-saved value
@@ -315,7 +308,7 @@ void FunctionCommandRE::process() {
          * has 'temp' = 4 (not some corrupted value from the inner call)
          */
         double methodArgReturnVal = *methodCalledOriginalPlaceHolderAddrs[i];
-        *methodCalledOriginalPlaceHolderAddrs[i] = variableStackCurrent[i];
+        *methodCalledOriginalPlaceHolderAddrs[i] = methodCalledVariablValue[i];
         /*
          * Why not set methodCallingOriginalPlaceHolderAddrs to methodCallingOriginalPlaceHolderAddrs, and then
          * set methodCalledOriginalPlaceHolderAddrs to methodArgReturnVal?
@@ -326,8 +319,6 @@ void FunctionCommandRE::process() {
          */
         *methodCallingOriginalPlaceHolderAddrs[i] = methodArgReturnVal;
     }
-    methodCalledVariablValueStack.pop();
-    delete variableStackCurrent;
     
 
 
@@ -342,8 +333,6 @@ void FunctionCommandRE::process() {
  * properly cleaned up to prevent memory leaks.
  */
 
-    double ** arr = methodArgArrayAddrStack.top();
-    methodArgArrayAddrStack.pop();
     for(int i=arrCount;i< totalArrCount;i++) {
         /*
          * Step 1: Free the dynamically allocated memory for local arrays
@@ -380,9 +369,9 @@ void FunctionCommandRE::process() {
          * This ensures that recursive calls don't interfere with each other's
          * local array allocations and each call has clean local array state.
          */
-        *methodArgArrayAddr[i] = arr[i];
+        *methodArgArrayAddr[i] = methodArgArrayCurrentVal[i];
     }
-    delete[] arr;
+    //delete[] methodArgArrayCurrentVal;
     /*
      * DETAILED ARRAY RESTORATION EXPLANATION:
      * 
@@ -420,7 +409,6 @@ void FunctionCommandRE::process() {
      * Array Parameter Restoration Loop:
      * For each array parameter (i = 0 to arrCount-1):
      */
-    auto arrayStackCurrent = methodCalledArrayValueStack.top();
     for(int i=0; i< arrCount; i++) {
         
         /*
@@ -439,11 +427,10 @@ void FunctionCommandRE::process() {
          * This ensures proper array reference restoration across recursive calls.
          */
         auto methodArgReturnVal = *methodCalledArrayPlaceHolderAddrs[i];
-        *methodCalledArrayPlaceHolderAddrs[i] = arrayStackCurrent[i];
+        *methodCalledArrayPlaceHolderAddrs[i] = methodCalledArrayValue[i];
         *methodCallingArrayPlaceHolderAddrs[i] = methodArgReturnVal;
     }
-    methodCalledArrayValueStack.pop();
-    delete[] arrayStackCurrent;
+    //delete[] methodCalledArrayValue;
     
 
 
