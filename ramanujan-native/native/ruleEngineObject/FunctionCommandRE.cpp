@@ -11,33 +11,63 @@
 #include <limits>
 #include <random>
 
+/**
+ * Constructor for FunctionCommandRE.
+ * Initializes a function call execution context by setting up the relationship
+ * between the function call information (caller side) and function definition (callee side).
+ * 
+ * @param functionCommand Information about the function call being made (caller context)
+ * @param functionInfo Rule engine representation of the function definition (callee context)
+ */
 FunctionCommandRE::FunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo) {
     this->functionCommandInfo = functionCommand;
     this->functionInfoRE = functionInfo;
 }
 
-/*
- * How will we process it?
- * 1. functionInfo has the information about the function. It has the arguments and the first command.
- * 2. it has the allVariablesInMethod.
- * 3. when the function has to be started, we would have to put the values to the arg variables only, and other as 0.0
- * 4. when the function is popped, we would have to transfer the value to calling method variables, and the de-set the args in the current function.
- *    This step is to be done with care, as in the case of recursive function, the value of the variable should not be lost.
+/**
+ * FUNCTION EXECUTION OVERVIEW:
+ * 
+ * The function execution process follows these key steps:
+ * 1. functionInfoRE contains the function definition with parameters and execution commands
+ * 2. functionCommandInfo contains the calling context with argument values
+ * 3. During function start: Parameter variables receive argument values, local variables are initialized
+ * 4. During function completion: Final parameter values are propagated back to calling context,
+ *    and all function variables are restored to their pre-call state
+ * 
+ * CRITICAL CONSIDERATION FOR RECURSIVE FUNCTIONS:
+ * The restoration process must carefully preserve variable states to handle recursive calls correctly.
+ * Each recursive call creates its own variable scope that must be properly isolated and restored.
+ * 
+ * CALL-BY-REFERENCE SEMANTICS:
+ * This system uses call-by-reference semantics where parameters are modified in-place.
+ * There are no explicit return statements - instead, parameter modifications are propagated
+ * back to the calling context as the mechanism for returning computed results.
  */
 
+/**
+ * Sets up field mappings and initializes data structures for function execution.
+ * This method performs comprehensive parameter mapping between calling and called functions,
+ * including separation of variables and arrays, address mapping setup, and local storage initialization.
+ * 
+ * @param map Global map containing all rule engine objects indexed by their IDs
+ */
 void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    // Initialize the function definition's fields first
     functionInfoRE->setFields(map);
 
+    // Set the total number of arguments for this function call
     argSize = functionCommandInfo->argumentsSize;
 
+    // Determine the first command to execute in the function body
     firstCommand = functionInfoRE->commmandRe;
     if (firstCommand == nullptr) {
         firstCommand = dynamic_cast<CommandRE *>(getFromMap(map, functionInfoRE->functionCall->firstCommandId));
     }
 
-
-    /*
-     * Demarcate the functionInfoRE->argument in variables and arrays.
+    /**
+     * PARAMETER MAPPING PHASE:
+     * Categorize function parameters into variables and arrays, and establish
+     * address mappings between calling arguments and function parameters.
      */
 
     std::list<double*> methodCalledOriginalPlaceHolderAddrsList;
@@ -46,25 +76,42 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     std::list<double*> methodCallingOriginalPlaceHolderAddrsList;
     std::list<ArrayValue**> methodCallingArrayPlaceHolderAddrsList;
 
+    /**
+     * ARGUMENT CATEGORIZATION LOOP:
+     * Iterate through all function parameters to separate variables from arrays
+     * and establish bidirectional address mappings between caller and callee contexts.
+     */
     for(int i = 0; i < functionInfoRE->argSize; i++) {
         if(dynamic_cast<ArrayRE*>(functionInfoRE->arguments[i]) != nullptr) {
+            // Array parameter found
             arrCount++;
             methodCalledArrayPlaceHolderAddrsList.push_back(((ArrayRE*)functionInfoRE->arguments[i])->getValPtr());
             methodCallingArrayPlaceHolderAddrsList.push_back(((ArrayRE*)map->at(functionCommandInfo->arguments[i]))->getValPtr());
+            
+            // Build name mapping for debugging purposes
             arrayNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
                                                 ((ArrayRE *) functionInfoRE->arguments[i])->name));
         } else {
+            // Variable parameter found
             varCount++;
             methodCalledOriginalPlaceHolderAddrsList.push_back(((DoublePtr*)functionInfoRE->arguments[i])->getValPtrPtr());
             methodCallingOriginalPlaceHolderAddrsList.push_back(((DoublePtr*)map->at(functionCommandInfo->arguments[i]))->getValPtrPtr());
         }
     }
 
+    /**
+     * MEMORY ALLOCATION FOR PARAMETER MAPPING ARRAYS:
+     * Allocate arrays to store address mappings for efficient parameter passing.
+     */
     methodCallingOriginalPlaceHolderAddrs = new double*[varCount];
     methodCallingArrayPlaceHolderAddrs = new ArrayValue**[arrCount];
     methodCalledOriginalPlaceHolderAddrs = new double*[varCount];
     methodCalledArrayPlaceHolderAddrs = new ArrayValue**[arrCount];
 
+    /**
+     * POPULATE VARIABLE PARAMETER MAPPINGS:
+     * Transfer variable address mappings from lists to arrays for indexed access.
+     */
     for(int i = 0; i < varCount; i++) {
         methodCalledOriginalPlaceHolderAddrs[i] = methodCalledOriginalPlaceHolderAddrsList.front();
         methodCalledOriginalPlaceHolderAddrsList.pop_front();
@@ -73,6 +120,10 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         methodCallingOriginalPlaceHolderAddrsList.pop_front();
     }
 
+    /**
+     * POPULATE ARRAY PARAMETER MAPPINGS:
+     * Transfer array address mappings from lists to arrays for indexed access.
+     */
     for(int i = 0; i < arrCount; i++) {
         methodCalledArrayPlaceHolderAddrs[i] = methodCalledArrayPlaceHolderAddrsList.front();
         methodCalledArrayPlaceHolderAddrsList.pop_front();
@@ -81,6 +132,11 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         methodCallingArrayPlaceHolderAddrsList.pop_front();
     }
 
+    /**
+     * LOCAL VARIABLE AND ARRAY ANALYSIS:
+     * Analyze all variables and arrays declared within the function scope
+     * (including both parameters and local declarations) to set up complete variable management.
+     */
     std::list<double*> methodArgVariableAddrList;
     std::list<ArrayValue**> methodArgArrayAddrList;
 
@@ -94,14 +150,27 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         }
     }
 
+    /**
+     * ALLOCATE COMPLETE VARIABLE AND ARRAY MANAGEMENT STRUCTURES:
+     * Set up arrays for managing all variables and arrays in function scope.
+     */
     methodArgVariableAddr = new double*[totalVarCount];
     methodArgArrayAddr = new double**[totalArrCount];
     methodArgArrayTotalSize = new int[totalArrCount];
 
+    /**
+     * POPULATE COMPLETE VARIABLE ADDRESS MAPPING:
+     * Store addresses of all variables in the function (parameters + locals).
+     */
     for(int i = 0; i < totalVarCount; i++) {
         methodArgVariableAddr[i] = methodArgVariableAddrList.front();
         methodArgVariableAddrList.pop_front();
     }
+    
+    /**
+     * POPULATE COMPLETE ARRAY ADDRESS MAPPING:
+     * Store addresses and sizes of all arrays in the function (parameters + locals).
+     */
     for(int i = 0; i < totalArrCount; i++) {
         methodArgArrayAddr[i] = &(*methodArgArrayAddrList.front())->val;
         methodArgArrayTotalSize[i] = (*methodArgArrayAddrList.front())->totalSize;
@@ -109,6 +178,20 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     }
 }
 
+/**
+ * Main execution method for function calls.
+ * 
+ * Orchestrates the complete function call lifecycle through 6 distinct phases:
+ * 1. Parameter setup and variable context saving
+ * 2. Array parameter setup and local array allocation
+ * 3. Function body execution
+ * 4. Context restoration preparation
+ * 5. Variable restoration and call-by-reference value propagation
+ * 6. Array restoration and memory cleanup
+ * 
+ * This method handles complex stack management required for proper function
+ * call semantics, including recursive calls and comprehensive memory management.
+ */
 void FunctionCommandRE::process() {
     // ==================== DEBUG SETUP ====================
 #ifdef DEBUG_BUILD
@@ -118,24 +201,27 @@ void FunctionCommandRE::process() {
 
     // ==================== PHASE 1: PARAMETER SETUP AND VARIABLE CONTEXT SAVING ====================
     
-    /*
+    /**
+     * VARIABLE PARAMETER SETUP:
      * For each variable parameter passed to the function:
-     * 1. Save the current value of the called function's parameter variable (for stack restoration)
-     * 2. Copy the calling function's argument value to the called function's parameter
-     * 3. Save the current state of the parameter variable for later restoration
+     * 1. Save the current value of the function parameter variable (for restoration)
+     * 2. Save the current value of the calling argument variable (for restoration)
+     * 3. Copy the calling function's argument value to the function parameter
+     * 
+     * This establishes the parameter passing mechanism while preserving state for restoration.
      */
-    double methodArgVariableCurrentVal[totalVarCount];
+    double   methodArgVariableCurrentVal[totalVarCount];
     double methodCalledVariablValue[varCount];
     for (int i = 0; i < varCount; i++) {
 #ifdef DEBUG_BUILD
-        // Record the current function variable value for debugging
+        // Record the argument value being passed for debugging
         debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
-        // Save the current value of the parameter variable for restoration after function execution
+        // Save the current value of ALL function variables (for complete restoration)
         methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
-        // Save the current value of the called function's parameter variable
+        // Save the current value of the function parameter (before receiving new value)
         methodCalledVariablValue[i] = *methodCalledOriginalPlaceHolderAddrs[i];
-        // Copy the argument value from calling context to called function parameter
+        // Transfer argument value from calling context to function parameter
         *methodCalledOriginalPlaceHolderAddrs[i] = (*methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
@@ -148,56 +234,63 @@ void FunctionCommandRE::process() {
     debugger->commitDebugPoint();
 #endif
 
-    /*
-     * For local variables in the function (non-parameters):
-     * Save their current values so they can be restored after function execution.
-     * These variables start from index varCount (after the parameters).
+    /**
+     * LOCAL VARIABLE STATE PRESERVATION:
+     * Save current values of all local variables (non-parameters) so they can be
+     * restored after function execution. Local variables are indexed from varCount onwards.
      */
-    for(int i=varCount; i < totalVarCount; i++) {
+    for(int i = varCount; i < totalVarCount; i++) {
         methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
     }
 
 
-    // ==================== PHASE 2: ARRAY PARAMETER SETUP ====================
+    // ==================== PHASE 2: ARRAY PARAMETER SETUP AND LOCAL ARRAY ALLOCATION ====================
     
-    /*
-     * For each array parameter passed to the function:
-     * 1. Save the current array reference in the called function (for stack restoration)
-     * 2. Point the called function's parameter array to the calling function's argument array
-     * 3. Save the current array pointer for later restoration
+    /**
+     * ARRAY PARAMETER AND LOCAL ARRAY SETUP:
+     * Handle both array parameters (passed by reference) and local arrays (dynamically allocated).
+     * Array parameters point to calling arrays, while local arrays get fresh memory allocation.
      */
     double* methodArgArrayCurrentVal[totalArrCount];
     ArrayValue* methodCalledArrayValue[arrCount];
+    
+    /**
+     * ARRAY PARAMETER SETUP LOOP:
+     * For each array parameter (i = 0 to arrCount-1):
+     * Set up pass-by-reference semantics for array parameters.
+     */
     for(int i = 0; i < arrCount; i++) {
-
-        // Save the current array pointer for restoration after function execution
+        // Save the current array pointer for complete restoration after function execution
         methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
 
-        // Save the current array pointer in the called function
+        // Save the current array reference in the function parameter (before receiving new reference)
         methodCalledArrayValue[i] = *methodCalledArrayPlaceHolderAddrs[i];
         
-        // Point the called function's parameter array to the calling function's argument array
+        // Establish pass-by-reference: function parameter array now points to calling array
         *methodCalledArrayPlaceHolderAddrs[i] = *methodCallingArrayPlaceHolderAddrs[i];
     }
 
-    /*
-     * For local arrays in the function (non-parameters):
-     * 1. Save their current array pointers
-     * 2. Allocate new memory for local arrays with their specified sizes
-     * These arrays start from index arrCount (after the parameters).
+    /**
+     * LOCAL ARRAY ALLOCATION LOOP:
+     * For local arrays (non-parameters) (i = arrCount to totalArrCount-1):
+     * Allocate fresh memory for arrays declared within the function.
      */
-    for(int i=arrCount;i< totalArrCount;i++) {
+    for(int i = arrCount; i < totalArrCount; i++) {
+        // Save current array pointer (likely nullptr for local arrays)
         methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
-        // Allocate new array for local array variables
+        // Allocate new memory for local array with its specified size
         *methodArgArrayAddr[i] = new double[methodArgArrayTotalSize[i]];
     }
 
     // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
     
-    /*
-     * Execute the function body by traversing the command chain.
-     * Each command returns the next command to execute, forming a linked execution chain.
-     * Execution continues until there are no more commands (nullptr).
+    /**
+     * COMMAND CHAIN EXECUTION:
+     * Execute the function body by traversing the linked command chain.
+     * Each command's get() method executes the command and returns the next command to execute.
+     * Execution continues until there are no more commands (nullptr is returned).
+     * 
+     * This forms the core execution loop that processes all statements in the function body.
      */
     CommandRE* command = firstCommand;
     while(command != nullptr) {
@@ -206,242 +299,203 @@ void FunctionCommandRE::process() {
 
     // ==================== PHASE 4: CONTEXT RESTORATION AND CLEANUP ====================
     
-    /*
-     * CRITICAL: We must restore the calling context regardless of function execution outcome.
+    /**
+     * CRITICAL RESTORATION PHASE:
+     * We must restore the calling context regardless of how function execution completed.
      * This is essential for recursive functions and proper stack management.
      * 
-     * Example scenario requiring restoration:
-     * func(a,b) {
-     *      c = a + 1
-     *      func(c,b)    // Recursive call modifies 'a'
-     *      d = a + 1    // Without restoration, 'a' would have value of 'c'
+     * RECURSIVE FUNCTION EXAMPLE:
+     * ```
+     * func fibonacci(n) {
+     *     if (n <= 1) return n;
+     *     temp1 = n - 1;
+     *     temp2 = n - 2;
+     *     return fibonacci(temp1) + fibonacci(temp2);  // Multiple recursive calls
      * }
+     * ```
+     * 
+     * Without proper restoration, variables like 'temp1' and 'temp2' would retain
+     * values from inner recursive calls, corrupting the outer call's execution.
      */
 
-    // ==================== PHASE 5: VARIABLE RESTORATION ====================
+    // ==================== PHASE 5: VARIABLE RESTORATION AND CALL-BY-REFERENCE VALUE PROPAGATION ====================
 
-    /*
-     * Local Variable Restoration Loop:
-     * For local variables (non-parameters) (i = varCount to totalVarCount-1):
-     *
-     * WHAT HAPPENS:
-     * These are variables declared within the function that are not parameters.
-     *
-     * EXAMPLE:
-     * In factorial function: 'temp' is a local variable
-     * - Before function: temp = some_previous_value (or 0.0 if first time)
-     * - During function: temp = n - 1
-     * - After restoration: temp = some_previous_value
-     *
-     * WHY NEEDED:
-     * If factorial(5) calls factorial(4), and factorial(4) has its own 'temp',
-     * we need to restore factorial(5)'s 'temp' when factorial(4) completes.
+    /**
+     * LOCAL VARIABLE RESTORATION:
+     * Restore all local variables (non-parameters) to their pre-function-call state.
+     * This ensures that each function call has isolated local variable scope.
+     * 
+     * Index Range: i = varCount to totalVarCount-1 (local variables only)
      */
-    for(int i =varCount; i<totalVarCount;i++)
-    {
+    for(int i = varCount; i < totalVarCount; i++) {
         *methodArgVariableAddr[i] = methodArgVariableCurrentVal[i];
     }
-    //delete[] methodArgVariableCurrentVal;
     
-    /*
-     * DETAILED VARIABLE RESTORATION EXPLANATION:
+    /**
+     * VARIABLE PARAMETER RESTORATION AND CALL-BY-REFERENCE HANDLING:
      * 
-     * The restoration process is critical for maintaining proper function call semantics,
-     * especially for recursive functions. Here's what happens with concrete examples:
+     * This critical phase handles both parameter restoration and call-by-reference semantics.
+     * The order of operations is carefully designed to handle recursive function calls correctly.
      * 
-     * EXAMPLE CODE SCENARIO:
+     * IMPORTANT: This system uses CALL-BY-REFERENCE semantics, NOT return values.
+     * All function parameters are passed by reference and their final values are propagated
+     * back to the calling context. There is no explicit "return" statement - instead,
+     * parameter modifications are the mechanism for passing results back.
+     * 
+     * EXECUTION FLOW EXAMPLE (factorial function):
      * ```
      * func factorial(n) {
-     *     if (n <= 1) return 1;
-     *     temp = n - 1;
-     *     return n * factorial(temp);  // Recursive call
+     *     if (n <= 1) {
+     *         n = 1;  // Set parameter to result value
+     *     } else {
+     *         temp = n - 1;
+     *         factorial(temp);  // Recursive call modifies temp
+     *         n = n * temp;     // Set parameter to computed result
+     *     }
      * }
      * 
      * main() {
      *     x = 5;
-     *     result = factorial(x);  // Call with x=5
+     *     factorial(x);  // x will be modified to contain the factorial result
      * }
      * ```
      * 
-     * FIELD CHANGES DURING EXECUTION:
-     * 
-     * 1. BEFORE CALL factorial(5):
-     *    - Main context: x = 5
-     *    - Function parameter 'n' is uninitialized
-     * 
-     * 2. DURING PARAMETER SETUP:
-     *    - methodCallingOriginalPlaceHolderAddrs[0] points to 'x' (value: 5)
-     *    - methodCalledOriginalPlaceHolderAddrs[0] points to 'n' (will receive 5)
-     *    - variableStackCurrent[0] saves old value of 'n' (for restoration)
-     *    - *methodCalledOriginalPlaceHolderAddrs[0] = 5 (n becomes 5)
-     * 
-     * 3. DURING FUNCTION EXECUTION:
-     *    - 'n' = 5, 'temp' gets allocated and set to 4
-     *    - When factorial(4) is called recursively:
-     *      - 'n' temporarily becomes 4 for the inner call
-     *      - Original 'n' (5) is saved in stack
-     * 
-     * 4. DURING RESTORATION (this phase):
-     *    - Inner call completes, 'n' needs to be restored to 5
-     *    - All local variables need to be reset to their pre-call state
+     * STEP-BY-STEP VARIABLE HANDLING:
+     * 1. BEFORE factorial(5): x = 5, n = undefined
+     * 2. PARAMETER SETUP: n = 5 (copied from x by reference)
+     * 3. DURING EXECUTION: n is modified to contain the factorial result
+     * 4. RESTORATION: n's final value (120) is propagated back to x
      */
     
-    /*
-     * Variable Parameter Restoration Loop:
-     * For each variable parameter (i = 0 to varCount-1):
-     */
     for(int i = 0; i < varCount; i++) {
-        /*
-         * Step 2: Restore the calling context variable to its stack-saved value
-         * 
-         * WHAT HAPPENS:
-         * - methodCallingOriginalPlaceHolderAddrs[i] points to the argument variable in calling context
-         * - variableStackCurrent[i] contains the calling context's variable value from Phase 4
-         * 
-         * EXAMPLE:
-         * If this is factorial(4) completing and returning to factorial(5):
-         * - methodCallingOriginalPlaceHolderAddrs[0] points to 'temp' in factorial(5) context
-         * - variableStackCurrent[0] contains the value of 'temp' (4)
-         * - *methodCallingOriginalPlaceHolderAddrs[0] = 4 (restore 'temp' to 4)
-         * 
-         * This ensures that when factorial(4) returns, the factorial(5) context
-         * has 'temp' = 4 (not some corrupted value from the inner call)
+        /**
+         * FINAL VALUE EXTRACTION:
+         * Extract the final value of the function parameter after execution.
+         * This captures the computed result that was stored in the parameter
+         * during function execution (call-by-reference semantics).
          */
-        double methodArgReturnVal = *methodCalledOriginalPlaceHolderAddrs[i];
+        double methodArgFinalValue = *methodCalledOriginalPlaceHolderAddrs[i];
+        
+        /**
+         * FUNCTION PARAMETER RESTORATION:
+         * Restore the function parameter to its pre-call state.
+         * This is crucial for recursive functions where the same parameter
+         * variable is used across multiple call levels.
+         */
         *methodCalledOriginalPlaceHolderAddrs[i] = methodCalledVariablValue[i];
-        /*
-         * Why not set methodCallingOriginalPlaceHolderAddrs to methodCallingOriginalPlaceHolderAddrs, and then
-         * set methodCalledOriginalPlaceHolderAddrs to methodArgReturnVal?
-         *
-         * Because in the case of recursive functions, methodCallingOriginalPlaceHolderAddrs[i] might be
-         * the same as methodCalledOriginalPlaceHolderAddrs[i].
-         *
+        
+        /**
+         * CALL-BY-REFERENCE VALUE PROPAGATION:
+         * Propagate the final computed value back to the calling context variable.
+         * This implements the call-by-reference mechanism where parameter modifications
+         * are reflected in the calling context.
+         * 
+         * RECURSIVE FUNCTION CONSIDERATION:
+         * In recursive calls, methodCallingOriginalPlaceHolderAddrs[i] might point
+         * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
+         * The careful ordering of operations above prevents corruption in such cases.
          */
-        *methodCallingOriginalPlaceHolderAddrs[i] = methodArgReturnVal;
+        *methodCallingOriginalPlaceHolderAddrs[i] = methodArgFinalValue;
     }
-    
+    // ==================== PHASE 6: ARRAY RESTORATION AND MEMORY CLEANUP ====================
 
-
-    // ==================== PHASE 6: ARRAY RESTORATION AND CLEANUP ====================
-
-    /*
- * Local Array Cleanup and Restoration Loop:
- * For local arrays (non-parameters) (i = arrCount to totalArrCount-1):
- *
- * CRITICAL MEMORY MANAGEMENT:
- * Local arrays are dynamically allocated during function execution and must be
- * properly cleaned up to prevent memory leaks.
- */
-
-    for(int i=arrCount;i< totalArrCount;i++) {
-        /*
-         * Step 1: Free the dynamically allocated memory for local arrays
-         *
-         * WHAT HAPPENS:
-         * - *methodArgArrayAddr[i] points to the dynamically allocated array memory
-         * - This memory was allocated in Phase 2 with: new double[methodArgArrayTotalSize[i]]
-         * - delete[] frees this memory to prevent memory leaks
-         *
-         * EXAMPLE:
-         * - Local array 'localArr' was allocated with: new double[10]
-         * - *methodArgArrayAddr[1] points to this allocated memory
-         * - delete[] *methodArgArrayAddr[1] frees the 10*sizeof(double) bytes
-         *
-         * MEMORY LEAK PREVENTION:
-         * Without this cleanup, each function call would leak memory equal to
-         * the size of all local arrays, leading to unbounded memory growth.
+    /**
+     * LOCAL ARRAY CLEANUP AND RESTORATION:
+     * Handle memory deallocation for local arrays and pointer restoration.
+     * This phase is critical for preventing memory leaks and maintaining proper array state.
+     * 
+     * Index Range: i = arrCount to totalArrCount-1 (local arrays only)
+     */
+    for(int i = arrCount; i < totalArrCount; i++) {
+        /**
+         * MEMORY DEALLOCATION:
+         * Free the dynamically allocated memory for local arrays.
+         * This prevents memory leaks that would accumulate with each function call.
+         * 
+         * Memory allocated in Phase 2 with: new double[methodArgArrayTotalSize[i]]
+         * Now freed with: delete[] to match the allocation method.
          */
         delete[] *methodArgArrayAddr[i];
 
-        /*
-         * Step 2: Restore the array pointer to its pre-function-call value
-         *
-         * WHAT HAPPENS:
-         * - methodArgArrayCurrentVal[i] contains the saved array pointer from Phase 2
-         * - This restores the array pointer to whatever it pointed to before function execution
-         *
-         * EXAMPLE:
-         * - Before function: 'localArr' pointer = nullptr (or previous value)
-         * - During function: 'localArr' pointer = allocated_memory
-         * - After restoration: 'localArr' pointer = nullptr (restored)
-         *
-         * RECURSIVE CALL SAFETY:
-         * This ensures that recursive calls don't interfere with each other's
-         * local array allocations and each call has clean local array state.
+        /**
+         * POINTER RESTORATION:
+         * Restore the array pointer to its pre-function-call value.
+         * This ensures clean state for subsequent function calls and recursive safety.
          */
         *methodArgArrayAddr[i] = methodArgArrayCurrentVal[i];
     }
-    //delete[] methodArgArrayCurrentVal;
-    /*
-     * DETAILED ARRAY RESTORATION EXPLANATION:
+    
+    /**
+     * ARRAY PARAMETER RESTORATION:
+     * Restore array parameter references to maintain proper calling context.
+     * Unlike local arrays, parameter arrays are not deallocated since they reference
+     * memory owned by the calling context.
      * 
-     * Arrays have more complex restoration because they involve pointer management
-     * and dynamic memory allocation.
-     * 
-     * EXAMPLE CODE SCENARIO:
+     * ARRAY PARAMETER FLOW EXAMPLE:
      * ```
-     * func processArray(arr, size) {
-     *     localArr[10];  // Local array
-     *     // Process arrays...
-     *     processArray(arr, size-1);  // Recursive call
+     * func processArray(arr) {
+     *     arr[0] = arr[0] + 1;  // Modify the array
+     *     processArray(arr);    // Recursive call with same array
      * }
      * 
      * main() {
-     *     mainArray[20] = {1,2,3,...};
-     *     processArray(mainArray, 20);
+     *     myArray[5] = {1, 2, 3, 4, 5};
+     *     processArray(myArray);  // Pass array by reference
      * }
      * ```
      * 
-     * FIELD CHANGES FOR ARRAYS:
-     * 
-     * 1. PARAMETER ARRAYS (i = 0 to arrCount-1):
-     *    - methodCallingArrayPlaceHolderAddrs[i] points to 'mainArray' in main()
-     *    - methodCalledArrayPlaceHolderAddrs[i] points to 'arr' parameter
-     *    - During function: 'arr' points to same memory as 'mainArray'
-     * 
-     * 2. LOCAL ARRAYS (i = arrCount to totalArrCount-1):
-     *    - methodArgArrayAddr[i] points to 'localArr' pointer
-     *    - During function: new memory allocated for 'localArr'
-     *    - After function: memory must be freed and pointer restored
+     * In this scenario:
+     * - 'arr' parameter points to 'myArray' memory
+     * - Modifications to 'arr' directly affect 'myArray'
+     * - No memory allocation/deallocation needed for 'arr'
+     * - Only pointer restoration required for proper stack management
      */
-    
-    /*
-     * Array Parameter Restoration Loop:
-     * For each array parameter (i = 0 to arrCount-1):
-     */
-    for(int i=0; i< arrCount; i++) {
-        
-        /*
-         * Step 2: Restore the calling context array to its stack-saved reference
-         * 
-         * WHAT HAPPENS:
-         * - methodCallingArrayPlaceHolderAddrs[i] points to argument array in calling context
-         * - arrayStackCurrent[i] contains the calling context's array reference from Phase 4
-         * 
-         * EXAMPLE:
-         * When processArray(15) returns to processArray(20):
-         * - methodCallingArrayPlaceHolderAddrs[0] points to 'arr' in processArray(20)
-         * - arrayStackCurrent[0] contains the array reference from processArray(20)
-         * - *methodCallingArrayPlaceHolderAddrs[0] = array_ref (restore outer 'arr')
-         * 
-         * This ensures proper array reference restoration across recursive calls.
+    for(int i = 0; i < arrCount; i++) {
+        /**
+         * FINAL ARRAY REFERENCE EXTRACTION:
+         * Extract the final array reference after function execution.
+         * In call-by-reference semantics, arrays may be reassigned to point
+         * to different memory locations during function execution.
          */
-        auto methodArgReturnVal = *methodCalledArrayPlaceHolderAddrs[i];
+        auto methodArgFinalArrayRef = *methodCalledArrayPlaceHolderAddrs[i];
+        
+        /**
+         * FUNCTION ARRAY PARAMETER RESTORATION:
+         * Restore the function's array parameter to its pre-call reference.
+         * Essential for recursive functions using the same array parameter variable.
+         */
         *methodCalledArrayPlaceHolderAddrs[i] = methodCalledArrayValue[i];
-        *methodCallingArrayPlaceHolderAddrs[i] = methodArgReturnVal;
+        
+        /**
+         * CALL-BY-REFERENCE ARRAY PROPAGATION:
+         * Propagate the final array reference back to calling context.
+         * This maintains proper array reference semantics across function calls.
+         * Note: Array contents are already modified in-place due to reference sharing.
+         */
+        *methodCallingArrayPlaceHolderAddrs[i] = methodArgFinalArrayRef;
     }
-    //delete[] methodCalledArrayValue;
-    
-
-
 
     // Function execution complete - calling context fully restored
 }
 
+/**
+ * Simplified field setup for built-in functions.
+ * 
+ * Built-in functions have a streamlined setup process since they don't require
+ * the complex parameter mapping and local variable management of user-defined functions.
+ * This method sets up direct access to arguments for efficient built-in function execution.
+ * 
+ * @param map Global map containing rule engine objects for argument resolution
+ */
 void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
     std::list<double *> methodArgVariableAddrList;
     std::list<ArrayValue **> methodArgArrayAddrList;
 
+    /**
+     * ARGUMENT CATEGORIZATION FOR BUILT-IN FUNCTIONS:
+     * Separate variable and array arguments to enable direct access patterns
+     * used by built-in function implementations.
+     */
     for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
         auto arg = map->at(functionCommandInfo->arguments[i]);
         if (dynamic_cast<ArrayRE *>(arg) != nullptr) {
@@ -453,27 +507,50 @@ void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineI
         }
     }
 
+    /**
+     * ALLOCATE DIRECT ACCESS ARRAYS:
+     * Create arrays for direct argument access (no complex mapping needed).
+     */
     methodArgVariableAddr = new double *[varCount];
     methodArgArrayAddr = new ArrayValue **[arrCount];
 
+    /**
+     * POPULATE DIRECT VARIABLE ACCESS:
+     * Store variable argument addresses for direct modification by built-in functions.
+     */
     for (int i = 0; i < varCount; i++) {
         methodArgVariableAddr[i] = methodArgVariableAddrList.front();
         methodArgVariableAddrList.pop_front();
     }
 
+    /**
+     * POPULATE DIRECT ARRAY ACCESS:
+     * Store array argument addresses for direct modification by built-in functions.
+     */
     for (int i = 0; i < arrCount; i++) {
         methodArgArrayAddr[i] = methodArgArrayAddrList.front();
         methodArgArrayAddrList.pop_front();
     }
 }
 
+/**
+ * NINF (Negative Infinity) Built-in Function Implementation.
+ * 
+ * Sets the target variable or all elements of an array to negative infinity.
+ * Supports both single variable and single array arguments.
+ * 
+ * Usage:
+ * - NINF(variable) → variable = -∞
+ * - NINF(array) → all array elements = -∞
+ */
 void NINF::process() {
+    // Handle single variable argument
     if(varCount == 1) {
         *methodArgVariableAddr[0] = -std::numeric_limits<double>::infinity();
     }
 
-    if(arrCount == 1)
-    {
+    // Handle single array argument
+    if(arrCount == 1) {
         ArrayValue** arrayValue = methodArgArrayAddr[0];
         for(int i = 0; i < (*arrayValue)->totalSize; i++) {
             (*arrayValue)->val[i] = -std::numeric_limits<double>::infinity();
@@ -481,13 +558,24 @@ void NINF::process() {
     }
 }
 
+/**
+ * PINF (Positive Infinity) Built-in Function Implementation.
+ * 
+ * Sets the target variable or all elements of an array to positive infinity.
+ * Supports both single variable and single array arguments.
+ * 
+ * Usage:
+ * - PINF(variable) → variable = +∞
+ * - PINF(array) → all array elements = +∞
+ */
 void PINF::process() {
+    // Handle single variable argument
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::numeric_limits<double>::infinity();
     }
 
-    if(arrCount == 1)
-    {
+    // Handle single array argument
+    if(arrCount == 1) {
         ArrayValue** arrayValue = methodArgArrayAddr[0];
         for(int i = 0; i < (*arrayValue)->totalSize; i++) {
             (*arrayValue)->val[i] = std::numeric_limits<double>::infinity();
@@ -495,17 +583,34 @@ void PINF::process() {
     }
 }
 
+// Static random number generation components for RAND function
 static std::random_device rd;  // Non-deterministic random seed
-static std::mt19937 gen(rd()); // Mersenne Twister engine
-static std::uniform_real_distribution<> dis(0.0, 1.0);
+static std::mt19937 gen(rd()); // Mersenne Twister generator engine
+static std::uniform_real_distribution<> dis(0.0, 1.0); // Uniform distribution [0.0, 1.0)
 
+/**
+ * RAND (Random Number Generation) Built-in Function Implementation.
+ * 
+ * Generates random numbers in the range [0.0, 1.0) using the Mersenne Twister algorithm.
+ * Supports both single variable and single array arguments.
+ * 
+ * Random Number Quality:
+ * - Uses std::random_device for non-deterministic seeding
+ * - Employs Mersenne Twister (MT19937) for high-quality pseudorandom generation
+ * - Uniform distribution ensures equal probability across the range
+ * 
+ * Usage:
+ * - RAND(variable) → variable = random value in [0.0, 1.0)
+ * - RAND(array) → all array elements = independent random values in [0.0, 1.0)
+ */
 void RAND::process() {
+    // Handle single variable argument
     if(varCount == 1) {
         *methodArgVariableAddr[0] = dis(gen);
     }
 
-    if(arrCount == 1)
-    {
+    // Handle single array argument
+    if(arrCount == 1) {
         ArrayValue** arrayValue = methodArgArrayAddr[0];
         for(int i = 0; i < (*arrayValue)->totalSize; i++) {
             (*arrayValue)->val[i] = dis(gen);
@@ -513,73 +618,257 @@ void RAND::process() {
     }
 }
 
-// All variable based built-in methods:
+// ==================== MATHEMATICAL BUILT-IN FUNCTIONS ====================
+
+/**
+ * ABS (Absolute Value) Built-in Function Implementation.
+ * 
+ * Computes the absolute value of the input, ensuring a non-negative result.
+ * Modifies the input variable in-place with its absolute value.
+ * 
+ * Mathematical Definition: |x| = x if x ≥ 0, -x if x < 0
+ * 
+ * Usage: ABS(variable) → variable = |variable|
+ * Example: ABS(-5.5) → variable becomes 5.5
+ */
 void ABS::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::abs(*methodArgVariableAddr[0]);
     }
 }
 
+// ==================== TRIGONOMETRIC BUILT-IN FUNCTIONS ====================
+
+/**
+ * SIN (Sine) Built-in Function Implementation.
+ * 
+ * Computes the sine of the input angle (in radians).
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: [-1, 1]
+ * - Period: 2π
+ * 
+ * Usage: SIN(variable) → variable = sin(variable)
+ * Example: SIN(π/2) → variable becomes 1.0
+ */
 void SIN::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::sin(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * COS (Cosine) Built-in Function Implementation.
+ * 
+ * Computes the cosine of the input angle (in radians).
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: [-1, 1]
+ * - Period: 2π
+ * 
+ * Usage: COS(variable) → variable = cos(variable)
+ * Example: COS(0) → variable becomes 1.0
+ */
 void COS::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::cos(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * TAN (Tangent) Built-in Function Implementation.
+ * 
+ * Computes the tangent of the input angle (in radians).
+ * 
+ * Mathematical Properties:
+ * - Domain: All real numbers except (π/2 + nπ) where n is any integer
+ * - Range: (-∞, ∞)
+ * - Period: π
+ * - Undefined at odd multiples of π/2
+ * 
+ * Usage: TAN(variable) → variable = tan(variable)
+ * Example: TAN(π/4) → variable becomes 1.0
+ */
 void TAN::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::tan(*methodArgVariableAddr[0]);
     }
 }
 
+// ==================== INVERSE TRIGONOMETRIC BUILT-IN FUNCTIONS ====================
+
+/**
+ * ASIN (Arcsine/Inverse Sine) Built-in Function Implementation.
+ * 
+ * Computes the arcsine (inverse sine) of the input value.
+ * Returns the angle whose sine equals the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: [-1, 1]
+ * - Range: [-π/2, π/2]
+ * - Input outside domain results in NaN
+ * 
+ * Usage: ASIN(variable) → variable = asin(variable)
+ * Example: ASIN(0.5) → variable becomes π/6 ≈ 0.5236
+ */
 void ASIN::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::asin(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * ACOS (Arccosine/Inverse Cosine) Built-in Function Implementation.
+ * 
+ * Computes the arccosine (inverse cosine) of the input value.
+ * Returns the angle whose cosine equals the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: [-1, 1]
+ * - Range: [0, π]
+ * - Input outside domain results in NaN
+ * 
+ * Usage: ACOS(variable) → variable = acos(variable)
+ * Example: ACOS(0.5) → variable becomes π/3 ≈ 1.0472
+ */
 void ACOS::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::acos(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * ATAN (Arctangent/Inverse Tangent) Built-in Function Implementation.
+ * 
+ * Computes the arctangent (inverse tangent) of the input value.
+ * Returns the angle whose tangent equals the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: (-π/2, π/2)
+ * - Well-defined for all finite real numbers
+ * 
+ * Usage: ATAN(variable) → variable = atan(variable)
+ * Example: ATAN(1.0) → variable becomes π/4 ≈ 0.7854
+ */
 void ATAN::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::atan(*methodArgVariableAddr[0]);
     }
 }
 
+// ==================== ROUNDING AND CEILING BUILT-IN FUNCTIONS ====================
+
+/**
+ * FLOOR (Floor Function) Built-in Function Implementation.
+ * 
+ * Computes the largest integer less than or equal to the input value.
+ * Always rounds towards negative infinity.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: All integers as floating-point numbers
+ * - floor(x) ≤ x < floor(x) + 1
+ * 
+ * Usage: FLOOR(variable) → variable = floor(variable)
+ * Examples:
+ * - FLOOR(3.7) → variable becomes 3.0
+ * - FLOOR(-2.3) → variable becomes -3.0
+ */
 void FLOOR::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::floor(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * CEIL (Ceiling Function) Built-in Function Implementation.
+ * 
+ * Computes the smallest integer greater than or equal to the input value.
+ * Always rounds towards positive infinity.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: All integers as floating-point numbers
+ * - ceil(x) - 1 < x ≤ ceil(x)
+ * 
+ * Usage: CEIL(variable) → variable = ceil(variable)
+ * Examples:
+ * - CEIL(3.2) → variable becomes 4.0
+ * - CEIL(-2.8) → variable becomes -2.0
+ */
 void CEIL::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::ceil(*methodArgVariableAddr[0]);
     }
 }
 
+// ==================== EXPONENTIAL AND POWER BUILT-IN FUNCTIONS ====================
+
+/**
+ * EXP (Exponential Function) Built-in Function Implementation.
+ * 
+ * Computes e raised to the power of the input value (e^x).
+ * Uses Euler's number e ≈ 2.71828 as the base.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: (0, ∞)
+ * - exp(0) = 1
+ * - exp(1) = e ≈ 2.71828
+ * - Inverse function of natural logarithm
+ * 
+ * Usage: EXP(variable) → variable = e^variable
+ * Example: EXP(1.0) → variable becomes e ≈ 2.71828
+ */
 void EXP::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::exp(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * SQRT (Square Root) Built-in Function Implementation.
+ * 
+ * Computes the positive square root of the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: [0, ∞) (non-negative real numbers)
+ * - Range: [0, ∞)
+ * - sqrt(x * x) = |x| for all real x
+ * - Negative inputs result in NaN
+ * 
+ * Usage: SQRT(variable) → variable = √variable
+ * Example: SQRT(9.0) → variable becomes 3.0
+ */
 void SQRT::process() {
     if(varCount == 1) {
         *methodArgVariableAddr[0] = std::sqrt(*methodArgVariableAddr[0]);
     }
 }
 
+/**
+ * POW (Power Function) Built-in Function Implementation.
+ * 
+ * Computes the first argument raised to the power of the second argument (base^exponent).
+ * Requires exactly two variable arguments and modifies the first with the result.
+ * 
+ * Mathematical Properties:
+ * - Domain: Depends on base and exponent values
+ * - For positive base: all real exponents allowed
+ * - For zero base: positive exponents allowed
+ * - For negative base: integer exponents recommended
+ * 
+ * Special Cases:
+ * - pow(x, 0) = 1 for any x ≠ 0
+ * - pow(0, y) = 0 for any y > 0
+ * - pow(1, y) = 1 for any finite y
+ * 
+ * Usage: POW(base, exponent) → base = base^exponent
+ * Example: POW(2.0, 3.0) → first variable becomes 8.0
+ */
 void POW::process() {
     if(varCount == 2) {
         *methodArgVariableAddr[0] = std::pow(*methodArgVariableAddr[0], *methodArgVariableAddr[1]);
