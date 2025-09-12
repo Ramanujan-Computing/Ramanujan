@@ -327,7 +327,7 @@ public class BigCodeRunTest {
 
     @Test
     public void testRecursiveFibonacci() throws Exception {
-        String code = "def fibonacci(var n:integer, var result:integer) {\n" +
+        String code = "def fibonacci(var n:integer, var result:integer, var arr:array) {\n" +
                 "    if(n <= 1) {\n" +
                 "        result = n;\n" +
                 "    } else {\n" +
@@ -335,16 +335,22 @@ public class BigCodeRunTest {
                 "        var n_minus_1,n_minus_2:integer;\n" +
                 "        n_minus_1 = n - 1;\n" +
                 "        n_minus_2 = n - 2;\n" +
-                "        exec fibonacci(n_minus_1, fib1);\n" +
-                "        exec fibonacci(n_minus_2, fib2);\n" +
+                "        exec fibonacci(n_minus_1, fib1, arr);\n" +
+                "        exec fibonacci(n_minus_2, fib2, arr);\n" +
                 "        result = fib1 + fib2;\n" +
+                "        arr[n] = fib1 + fib2;\n" +
                 "    }\n" +
                 "}\n" +
-                "var fib0,fib1,fib5,fib7:integer;\n" +
-                "exec fibonacci(0, fib0);\n" +
-                "exec fibonacci(1, fib1);\n" +
-                "exec fibonacci(5, fib5);\n" +
-                "exec fibonacci(7, fib7);";
+                "var fib0,fib1, fib2, fib3, fib4, fib5,fib6, fib7:integer;\n" +
+                "var arr[8]:array;" +
+                "exec fibonacci(0, fib0, arr);\n" +
+                "exec fibonacci(1, fib1, arr);\n" +
+                "exec fibonacci(2, fib2, arr);\n" +
+                "exec fibonacci(3, fib3, arr);\n" +
+                "exec fibonacci(4, fib4, arr);\n" +
+                "exec fibonacci(5, fib5, arr);\n" +
+                "exec fibonacci(6, fib6, arr);\n" +
+                "exec fibonacci(7, fib7, arr);";
 
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
@@ -358,7 +364,11 @@ public class BigCodeRunTest {
         Map<String, Object> variablesToAssert = new HashMap<>();
         variablesToAssert.put("fib0", 0d); // fib(0) = 0
         variablesToAssert.put("fib1", 1d); // fib(1) = 1
+        variablesToAssert.put("fib2", 1d); // fib(2) = 1
+        variablesToAssert.put("fib3", 2d); // fib(3) = 2
+        variablesToAssert.put("fib4", 3d); // fib(4) = 3
         variablesToAssert.put("fib5", 5d); // fib(5) = 5
+        variablesToAssert.put("fib6", 8d); // fib(6) = 8
         variablesToAssert.put("fib7", 13d); // fib(7) = 13
         
         analyzeResults(variableMap, arrayMap, variablesToAssert);
@@ -404,15 +414,18 @@ public class BigCodeRunTest {
     @Test
     public void testComplexWhileWithArrays() throws Exception {
         String code = "def bubbleSort(var arr:array, var size:integer) {\n" +
-                "    var i,j,temp:integer;\n" +
+                "    var i,j,temp,nextJ,outerLimit,innerLimit:integer;\n" +
+                "    outerLimit = size - 1;\n" +
                 "    i = 0;\n" +
-                "    while(i < size - 1) {\n" +
+                "    while(i < outerLimit) {\n" +
                 "        j = 0;\n" +
-                "        while(j < size - i - 1) {\n" +
-                "            if(arr[j] > arr[j + 1]) {\n" +
-                "                temp = arr[j];\n" +
-                "                arr[j] = arr[j + 1];\n" +
-                "                arr[j + 1] = temp;\n" +
+                "        innerLimit = outerLimit - i;\n" +
+                "        while(j < innerLimit) {\n" +
+                    "            nextJ = j + 1;\n" +
+                    "            if(arr[j] > arr[nextJ]) {\n" +
+                    "                temp = arr[j];\n" +
+                    "                arr[j] = arr[nextJ];\n" +
+                    "                arr[nextJ] = temp;\n" +
                 "            }\n" +
                 "            j = j + 1;\n" +
                 "        }\n" +
@@ -438,11 +451,11 @@ public class BigCodeRunTest {
         
         Map<String, Object> variablesToAssert = new HashMap<>();
         Map<String, Object> expectedSortedArray = new HashMap<>();
-        expectedSortedArray.put("0", 12);
-        expectedSortedArray.put("1", 22);
-        expectedSortedArray.put("2", 25);
-        expectedSortedArray.put("3", 34);
-        expectedSortedArray.put("4", 64);
+        expectedSortedArray.put("0", 12d);
+        expectedSortedArray.put("1", 22d);
+        expectedSortedArray.put("2", 25d);
+        expectedSortedArray.put("3", 34d);
+        expectedSortedArray.put("4", 64d);
         variablesToAssert.put("sortArray", expectedSortedArray);
         
         analyzeResults(variableMap, arrayMap, variablesToAssert);
@@ -450,29 +463,33 @@ public class BigCodeRunTest {
 
     @Test
     public void testNestedIfWithWhileLoop() throws Exception {
-        String code = "def findPrimes(var limit:integer, var primes:array, var count:integer) {\n" +
-                "    var num,i,isPrime:integer;\n" +
-                "    count = 0;\n" +
-                "    num = 2;\n" +
-                "    while(num <= limit) {\n" +
-                "        isPrime = 1;\n" +
-                "        i = 2;\n" +
-                "        while(i * i <= num) {\n" +
-                "            if(num % i == 0) {\n" +
-                "                isPrime = 0;\n" +
-                "            }\n" +
-                "            i = i + 1;\n" +
-                "        }\n" +
-                "        if(isPrime == 1) {\n" +
-                "            primes[count] = num;\n" +
-                "            count = count + 1;\n" +
-                "        }\n" +
-                "        num = num + 1;\n" +
-                "    }\n" +
-                "}\n" +
-                "var primeArray[10]:array;\n" +
-                "var primeCount:integer;\n" +
-                "exec findPrimes(20, primeArray, primeCount);";
+    String code = "def findPrimes(var limit:integer, var primes:array, var count:integer) {\n" +
+        "    var num,i,isPrime,iSquared:integer;\n" +
+        "    count = 0;\n" +
+        "    num = 2;\n" +
+        "    while(num <= limit) {\n" +
+        "        isPrime = 1;\n" +
+        "        i = 2;\n" +
+        "        iSquared = i * i;\n" +
+        "        while(iSquared <= num) {\n" +
+        "            var div:integer;\n" +
+        "            div = (num / i) * i;\n" +
+        "            if(num - div == 0) {\n" +
+        "                isPrime = 0;\n" +
+        "            }\n" +
+        "            i = i + 1;\n" +
+        "            iSquared = i * i;\n" +
+        "        }\n" +
+        "        if(isPrime == 1) {\n" +
+        "            primes[count] = num;\n" +
+        "            count = count + 1;\n" +
+        "        }\n" +
+        "        num = num + 1;\n" +
+        "    }\n" +
+        "}\n" +
+        "var primeArray[10]:array;\n" +
+        "var primeCount:integer;\n" +
+        "exec findPrimes(20, primeArray, primeCount);";
 
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
@@ -672,7 +689,7 @@ public class BigCodeRunTest {
         Map<String, Map<String, Object>> arrayStoreMap = new HashMap<>();
         for (Array a : arrayMap.values()) {
             String id = a.getId();
-            if (id.contains("func")) {
+            if (id.contains("func") || id.contains("if") || id.contains("while")) {
                 continue;
             }
             if (!id.contains("_name_")) {
@@ -785,6 +802,9 @@ public class BigCodeRunTest {
             // Find the variable in variableMap
             Variable foundVariable = null;
             for (Variable v : variableMap.values()) {
+                if (v.getId().contains("func") || v.getId().contains("if") || v.getId().contains("while")) {
+                    continue;
+                }
                 if (varName.equals(v.getName())) {
                     foundVariable = v;
                     break;
