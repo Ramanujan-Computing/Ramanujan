@@ -20,7 +20,7 @@ import java.util.Map;
 
 public class BigCodeRunTest {
     @Test
-    public void yetAnotherBigOne() throws Exception {
+    public void yetAnotherBigOneForCheckingTimeTakenChecks() throws Exception {
         String code = "def getSquared(var xPow:integer, var yPow:integer, var ans:integer) {\n" +
                 "    if(xPow < yPow) {\n" +
                 "        ans = yPow - xPow;\n" +
@@ -201,7 +201,7 @@ public class BigCodeRunTest {
         // variablesToAssert.put("ansX1", 0.0); // ansX1 should be 0.0
         
         // Analyze the results and perform assertions
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
         
         // Add some basic assertions to verify execution completed successfully
         assertNotNull("Variable map should not be null", variableMap);
@@ -240,7 +240,7 @@ public class BigCodeRunTest {
         Map<String, Object> variablesToAssert = new HashMap<>();
         variablesToAssert.put("testResult", 18d); // Expected: (0*0+0*1+0*2+0*3) + (1*0+1*1+1*2+1*3) + (2*0+2*1+2*2+2*3) = 0 + 6 + 12 = 18
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     @Test
@@ -287,7 +287,7 @@ public class BigCodeRunTest {
         variablesToAssert.put("result4", 4d); // x==0
         variablesToAssert.put("result5", 5d); // x<0
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     @Test
@@ -322,7 +322,7 @@ public class BigCodeRunTest {
         variablesToAssert.put("fact0", 1d);   // 0! = 1
         variablesToAssert.put("fact1", 1d);   // 1! = 1
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     @Test
@@ -371,7 +371,7 @@ public class BigCodeRunTest {
         variablesToAssert.put("fib6", 8d); // fib(6) = 8
         variablesToAssert.put("fib7", 13d); // fib(7) = 13
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     @Test
@@ -408,7 +408,7 @@ public class BigCodeRunTest {
         // Chain: 3 -> addOne(4) -> multiplyByTwo(8) -> square(64) -> addOne(65)
         variablesToAssert.put("finalResult", 65d);
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     @Test
@@ -450,15 +450,16 @@ public class BigCodeRunTest {
         resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
         
         Map<String, Object> variablesToAssert = new HashMap<>();
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
         Map<String, Object> expectedSortedArray = new HashMap<>();
         expectedSortedArray.put("0", 12d);
         expectedSortedArray.put("1", 22d);
         expectedSortedArray.put("2", 25d);
         expectedSortedArray.put("3", 34d);
         expectedSortedArray.put("4", 64d);
-        variablesToAssert.put("sortArray", expectedSortedArray);
+        arrayIndexToAssert.put("sortArray", expectedSortedArray);
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
 
     @Test
@@ -472,9 +473,15 @@ public class BigCodeRunTest {
         "        i = 2;\n" +
         "        iSquared = i * i;\n" +
         "        while(iSquared <= num) {\n" +
-        "            var div:integer;\n" +
-        "            div = (num / i) * i;\n" +
-        "            if(num - div == 0) {\n" +
+        "            var quotient:integer;\n" +
+        "            var tempNum:integer;\n" +
+        "            quotient = 0;\n" +
+        "            tempNum = num;\n" +
+        "            while(tempNum >= i) {\n" +
+        "                tempNum = tempNum - i;\n" +
+        "                quotient = quotient + 1;\n" +
+        "            }\n" +
+        "            if(tempNum == 0) {\n" +
         "                isPrime = 0;\n" +
         "            }\n" +
         "            i = i + 1;\n" +
@@ -501,19 +508,20 @@ public class BigCodeRunTest {
         resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
         
         Map<String, Object> variablesToAssert = new HashMap<>();
-        variablesToAssert.put("primeCount", 8); // Primes <= 20: 2,3,5,7,11,13,17,19
+        variablesToAssert.put("primeCount", 8d); // Primes <= 20: 2,3,5,7,11,13,17,19
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
         Map<String, Object> expectedPrimes = new HashMap<>();
-        expectedPrimes.put("0", 2);
-        expectedPrimes.put("1", 3);
-        expectedPrimes.put("2", 5);
-        expectedPrimes.put("3", 7);
-        expectedPrimes.put("4", 11);
-        expectedPrimes.put("5", 13);
-        expectedPrimes.put("6", 17);
-        expectedPrimes.put("7", 19);
-        variablesToAssert.put("primeArray", expectedPrimes);
+        expectedPrimes.put("0", 2d);
+        expectedPrimes.put("1", 3d);
+        expectedPrimes.put("2", 5d);
+        expectedPrimes.put("3", 7d);
+        expectedPrimes.put("4", 11d);
+        expectedPrimes.put("5", 13d);
+        expectedPrimes.put("6", 17d);
+        expectedPrimes.put("7", 19d);
+        arrayIndexToAssert.put("primeArray", expectedPrimes);
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
 
     @Test
@@ -550,7 +558,7 @@ public class BigCodeRunTest {
         Map<String, Object> variablesToAssert = new HashMap<>();
         variablesToAssert.put("totalSum", 150d); // 10+20+30+40+50 = 150
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     @Test
@@ -605,7 +613,7 @@ public class BigCodeRunTest {
         // Total: 7 + 12 + 3 = 22
         variablesToAssert.put("matrixResult", 22d);
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
     private RuleEngineInput getRuleEngineInputWithMaps(String code, Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws Exception {
@@ -674,8 +682,9 @@ public class BigCodeRunTest {
      * @param variableMap Map of all variables from execution
      * @param arrayMap Map of all arrays from execution  
      * @param variablesToAssert Map of variable names to expected values (null means analyze only, no assertion)
+     * @param arrayIndexToAssert Map of array names to expected index-value pairs for assertion
      */
-    private void analyzeResults(Map<String, Variable> variableMap, Map<String, Array> arrayMap, Map<String, Object> variablesToAssert) {
+    private void analyzeResults(Map<String, Variable> variableMap, Map<String, Array> arrayMap, Map<String, Object> variablesToAssert, Map<String, Object> arrayIndexToAssert) {
         System.out.println("\n=== VARIABLE ANALYSIS ===");
         
         // Print all variables
@@ -714,7 +723,7 @@ public class BigCodeRunTest {
             Map<String, Object> arrayValues = arrayEntry.getValue();
             
             System.out.println("\nArray: " + arrayName);
-            if (variablesToAssert.containsKey(arrayName)) {
+            if (arrayIndexToAssert.containsKey(arrayName)) {
                 System.out.println("*** ANALYZING " + arrayName.toUpperCase() + " (SPECIFIED FOR ANALYSIS) ***");
                 
                 // Print values in a structured way
@@ -747,7 +756,7 @@ public class BigCodeRunTest {
                 }
                 
                 // Perform assertion if expected value is provided
-                Object expectedValue = variablesToAssert.get(arrayName);
+                Object expectedValue = arrayIndexToAssert.get(arrayName);
                 if (expectedValue != null) {
                     System.out.println("  Expected: " + expectedValue);
                     // Add assertion logic here with JUnit assertions
