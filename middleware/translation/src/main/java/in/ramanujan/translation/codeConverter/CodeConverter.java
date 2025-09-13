@@ -102,16 +102,6 @@ public class CodeConverter {
                         .convertCode(codeChunk, ruleEngineInput, this, variableScope, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId);
 
                 codeConverterLogic.populateCommand(command, ruleEngineInputUnits);
-                if(functionFrameVariableMap != null && (ruleEngineInputUnits instanceof  Variable || ruleEngineInputUnits  instanceof Array)) {
-                    functionFrameVariableMap.put(frameVariableCounterId[0], ruleEngineInputUnits);
-                    if(ruleEngineInputUnits instanceof  Variable) {
-                        ((Variable) ruleEngineInputUnits).setFrameCount(frameVariableCounterId[0]);
-                    }
-                    if(ruleEngineInputUnits instanceof Array) {
-                        ((Array) ruleEngineInputUnits).setFrameCount(frameVariableCounterId[0]);
-                    }
-                    frameVariableCounterId[0]++;
-                }
             }
             if (previousCommand != null) {
                 previousCommand.setNextId(command.getId());
