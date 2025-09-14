@@ -178,24 +178,6 @@ private:
     ArrayValue*** methodCallingArrayPlaceHolderAddrs = nullptr;
 
     // ==================== Local Variable Management ====================
-    
-    /**
-     * Array to store current values of all variables in the function scope.
-     * Used for saving variable state before function execution and restoring after completion.
-     * Size: totalVarCount
-     * 
-     * Purpose:
-     * - Index 0 to varCount-1: Parameter variable values
-     * - Index varCount to totalVarCount-1: Local variable values
-     * 
-     * Usage Timeline:
-     * 1. Phase 1: Save current values before function execution
-     * 2. Phase 5: Restore saved values after function completion
-     * 
-     * Critical for recursive function support - prevents variable corruption
-     */
-    double* methodArgVariableCurrentVal = nullptr;
-    
     /**
      * Array of pointers to all variable addresses within the function.
      * Includes both parameters and local variables declared in the function.
@@ -212,24 +194,6 @@ private:
     double** methodArgVariableAddr = nullptr;
 
     // ==================== Local Array Management ====================
-    
-    /**
-     * Array to store current array pointers for all arrays in the function scope.
-     * Used for saving array state before function execution and restoring after completion.
-     * Size: totalArrCount
-     * 
-     * Purpose:
-     * - Index 0 to arrCount-1: Parameter array pointers
-     * - Index arrCount to totalArrCount-1: Local array pointers
-     * 
-     * Memory Management:
-     * - For parameters: saves existing array references
-     * - For local arrays: saves current pointers (often nullptr) before allocation
-     * 
-     * Critical for proper cleanup and preventing memory leaks
-     */
-    double** methodArgArrayCurrentVal = nullptr;
-    
     /**
      * Array of pointers to all array addresses within the function.
      * Points to the actual ArrayValue* pointers for both parameters and local arrays.
@@ -258,37 +222,6 @@ private:
      * - During Phase 6: Ensures proper memory management
      */
     int* methodArgArrayTotalSize = nullptr;
-
-    // ==================== Stack Management for Function Calls ====================
-    
-    /**
-     * Temporary storage for variable values during function call stack operations.
-     * Used to preserve calling context variable values across function execution.
-     * Size: varCount
-     * 
-     * Usage Timeline:
-     * 1. Phase 1: Save parameter values from called function context
-     * 2. Phase 4: Update with final values from called function
-     * 3. Phase 5: Use to restore calling context variables
-     * 
-     * Purpose: Ensures proper variable restoration in recursive calls
-     * Example: Prevents outer function variables from being corrupted by inner calls
-     */
-    double* variableStackCurrent = nullptr;
-    
-    /**
-     * Temporary storage for array references during function call stack operations.
-     * Used to preserve calling context array references across function execution.
-     * Size: arrCount
-     * 
-     * Usage Timeline:
-     * 1. Phase 2: Save array references from called function context
-     * 2. Phase 4: Update with final references from called function
-     * 3. Phase 6: Use to restore calling context arrays
-     * 
-     * Purpose: Maintains proper array reference semantics across function calls
-     */
-    ArrayValue** arrayStackCurrent = nullptr;
 
     // ==================== Name Mapping for Debugging ====================
     
