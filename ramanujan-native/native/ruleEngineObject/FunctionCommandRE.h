@@ -153,22 +153,32 @@ private:
     // ==================== Local Data Management ====================
     
     /**
-     * Array to store current DataContainerValue pointers for all data containers in the function scope.
-     * Used for saving data container state before function execution and restoring after completion.
-     * Size: totalVarCount + totalArrCount (all data containers in function)
+     * Array of pointers to array parameter addresses in the called function.
+     * Each element points to the ArrayValue** of array parameters in the function definition.
+     * Size: arrCount
      * 
-     * Purpose:
-     * - Index 0 to argSize-1: Parameter data container pointers (both variables and arrays)
-     * - Index argSize to total-1: Local data container pointers
+     * Usage:
+     * - During parameter setup: these array parameters receive references from calling arrays
+     * - During restoration: restored to original array references
      * 
-     * Usage Timeline:
-     * 1. Phase 1: Save current DataContainerValue pointers before function execution
-     * 2. Phase 5: Restore saved DataContainerValue pointers after function completion
-     * 
-     * Critical for recursive function support - prevents data container corruption
+     * Memory Structure: ArrayValue*** -> ArrayValue** -> ArrayValue* -> actual array data
      */
-    DataContainerValue** methodArgDataContainerCurrentVal = nullptr;
-    
+    ArrayValue*** methodCalledArrayPlaceHolderAddrs = nullptr;
+
+    /**
+     * Array of pointers to argument array addresses in the calling function.
+     * Each element points to the ArrayValue** of arrays being passed as arguments.
+     * Size: arrCount
+     * 
+     * Usage:
+     * - Source of array references during parameter setup
+     * - Target for array reference restoration during cleanup
+     * 
+     * Purpose: Enables array parameter passing by reference semantics
+     */
+    ArrayValue*** methodCallingArrayPlaceHolderAddrs = nullptr;
+
+    // ==================== Local Variable Management ====================
     /**
      * Array of pointers to all DataContainerValue addresses within the function.
      * Includes both parameters and local data containers declared in the function.
@@ -182,24 +192,37 @@ private:
      * - Allows direct access to any data container in function scope
      * - Used during restoration to reset data containers to saved values
      */
-    DataContainerValue** methodArgDataContainerAddr = nullptr;
+    double** methodArgVariableAddr = nullptr;
 
-    // ==================== Stack Management for Function Calls ====================
+    // ==================== Local Array Management ====================
+    /**
+     * Array of pointers to all array addresses within the function.
+     * Points to the actual ArrayValue* pointers for both parameters and local arrays.
+     * Size: totalArrCount
+     * 
+     * Memory Structure: double*** -> double** -> double* (actual array data)
+     * 
+     * Usage:
+     * - Direct access to array pointers in function scope
+     * - Memory allocation for local arrays (new double[size])
+     * - Memory deallocation during cleanup (delete[])
+     */
+    double*** methodArgArrayAddr = nullptr;
     
     /**
-     * Temporary storage for DataContainerValue pointers during function call stack operations.
-     * Used to preserve calling context data container values across function execution.
-     * Size: argSize (total number of arguments passed to function)
+     * Array storing the total size of each array in the function.
+     * Used for proper memory allocation of local arrays during function execution.
+     * Size: totalArrCount
      * 
-     * Usage Timeline:
-     * 1. Phase 1: Save parameter DataContainerValue pointers from called function context
-     * 2. Phase 4: Update with final DataContainerValue pointers from called function
-     * 3. Phase 5: Use to restore calling context data containers
+     * Purpose:
+     * - Index 0 to arrCount-1: Sizes of parameter arrays (for reference)
+     * - Index arrCount to totalArrCount-1: Sizes of local arrays (for allocation)
      * 
-     * Purpose: Ensures proper data container restoration in recursive calls
-     * Example: Prevents outer function data containers from being corrupted by inner calls
+     * Usage:
+     * - During Phase 2: new double[methodArgArrayTotalSize[i]] for local arrays
+     * - During Phase 6: Ensures proper memory management
      */
-    DataContainerValue** dataContainerStackCurrent = nullptr;
+    int* methodArgArrayTotalSize = nullptr;
 
     // ==================== Name Mapping for Debugging ====================
     

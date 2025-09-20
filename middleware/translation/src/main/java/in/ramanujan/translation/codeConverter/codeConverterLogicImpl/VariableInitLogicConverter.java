@@ -87,6 +87,8 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
                         redefineCmd.setNewDimensions(resolvedDims);
                         return redefineCmd;
                     }
+
+                    populateFrameVariableMap(functionFrameVariableMap, frameVariableCounterId, array);
                 }
                 return array;
             }
@@ -104,6 +106,8 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
                 variable.setDataType(dataType);
                 ruleEngineInput.getVariables().add(variable);
                 codeConverter.setVariable(variable, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
+
+                populateFrameVariableMap(functionFrameVariableMap, frameVariableCounterId, variable);
             }
             return variable;
         } catch (CompilationException e) {
@@ -111,6 +115,19 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
             throw e;
         } catch (Exception e) {
             throw new CompilationException(null, null, "Variable initialization has compilation issue: " + code);
+        }
+    }
+
+    private static void populateFrameVariableMap(Map<Integer, RuleEngineInputUnits> functionFrameVariableMap, Integer[] frameVariableCounterId, RuleEngineInputUnits ruleEngineInputUnits) {
+        if(functionFrameVariableMap != null) {
+            functionFrameVariableMap.put(frameVariableCounterId[0], ruleEngineInputUnits);
+            if(ruleEngineInputUnits instanceof  Variable) {
+                ((Variable) ruleEngineInputUnits).setFrameCount(frameVariableCounterId[0]);
+            }
+            if(ruleEngineInputUnits instanceof Array) {
+                ((Array) ruleEngineInputUnits).setFrameCount(frameVariableCounterId[0]);
+            }
+            frameVariableCounterId[0]++;
         }
     }
 

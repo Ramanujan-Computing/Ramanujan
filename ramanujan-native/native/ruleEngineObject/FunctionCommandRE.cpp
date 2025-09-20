@@ -12,52 +12,73 @@
 #include <limits>
 #include <random>
 
-/*
-         * PARAMETER PASSING: Copy argument value to function parameter (CALL-BY-REFERENCE)
-         * 
-         * Example: increment_recursive(level 2) call
-         * - methodCallingOriginalPlaceHolderAddrs[0] contains value 7 (from level 1)
-         * - methodCallingOriginalPlaceHolderAddrs[1] contains value 1 (from level 1's tmpVar)
-         * - methodCalledOriginalPlaceHolderAddrs[0] is level 2's parameter n
-         * - methodCalledOriginalPlaceHolderAddrs[1] is level 2's parameter depth
-         * - After this: level 2's n = 7, depth = 1
-         * 
-         * CALL-BY-REFERENCE: Any modifications to n or depth in level 2 will be 
-         * visible to level 1 when control returns, because they point to the same memory.
-         */
+/**
+ * Constructor for FunctionCommandRE.
+ * Initializes a function call execution context by setting up the relationship
+ * between the function call information (caller side) and function definition (callee side).
+ * 
+ * @param functionCommand Information about the function call being made (caller context)
+ * @param functionInfo Rule engine representation of the function definition (callee context)
+ */
 FunctionCommandRE::FunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo) {
     this->functionCommandInfo = functionCommand;
     this->functionInfoRE = functionInfo;
 }
 
-/*
- * How will we process it?
- * 1. functionInfo has the information about the function. It has the arguments and the first command.
- * 2. it has the allVariablesInMethod.
- * 3. when the function has to be started, we would have to put the values to the arg variables only, and other as 0.0
- * 4. when the function is popped, we would have to transfer the value to calling method variables, and the de-set the args in the current function.
- *    This step is to be done with care, as in the case of recursive function, the value of the variable should not be lost.
+/**
+ * FUNCTION EXECUTION OVERVIEW:
+ * 
+ * The function execution process follows these key steps:
+ * 1. functionInfoRE contains the function definition with parameters and execution commands
+ * 2. functionCommandInfo contains the calling context with argument values
+ * 3. During function start: Parameter variables receive argument values, local variables are initialized
+ * 4. During function completion: Final parameter values are propagated back to calling context,
+ *    and all function variables are restored to their pre-call state
+ * 
+ * CRITICAL CONSIDERATION FOR RECURSIVE FUNCTIONS:
+ * The restoration process must carefully preserve variable states to handle recursive calls correctly.
+ * Each recursive call creates its own variable scope that must be properly isolated and restored.
+ * 
+ * CALL-BY-REFERENCE SEMANTICS:
+ * This system uses call-by-reference semantics where parameters are modified in-place.
+ * There are no explicit return statements - instead, parameter modifications are propagated
+ * back to the calling context as the mechanism for returning computed results.
  */
 
+/**
+ * Sets up field mappings and initializes data structures for function execution.
+ * This method performs comprehensive parameter mapping between calling and called functions,
+ * including separation of variables and arrays, address mapping setup, and local storage initialization.
+ * 
+ * @param map Global map containing all rule engine objects indexed by their IDs
+ */
 void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    // Initialize the function definition's fields first
     functionInfoRE->setFields(map);
 
+    // Set the total number of arguments for this function call
     argSize = functionCommandInfo->argumentsSize;
 
+    // Determine the first command to execute in the function body
     firstCommand = functionInfoRE->commmandRe;
     if (firstCommand == nullptr) {
         firstCommand = dynamic_cast<CommandRE *>(getFromMap(map, functionInfoRE->functionCall->firstCommandId));
     }
 
-
-    /*
-     * Set up parameter mapping using unified DataContainerValue approach.
-     * Use the valPtrPtr mechanism as designed for function parameter passing.
+    /**
+     * PARAMETER MAPPING PHASE:
+     * Categorize function parameters into variables and arrays, and establish
+     * address mappings between calling arguments and function parameters.
      */
 
     std::list<DataContainerValue*> methodCalledOriginalPlaceHolderAddrsList;
     std::list<DataContainerValue*> methodCallingOriginalPlaceHolderAddrsList;
 
+    /**
+     * ARGUMENT CATEGORIZATION LOOP:
+     * Iterate through all function parameters to separate variables from arrays
+     * and establish bidirectional address mappings between caller and callee contexts.
+     */
     for(int i = 0; i < functionInfoRE->argSize; i++) {
         AbstractDataContainer* calledArg = dynamic_cast<AbstractDataContainer*>(functionInfoRE->arguments[i]);
         AbstractDataContainer* callingArg = dynamic_cast<AbstractDataContainer*>(map->at(functionCommandInfo->arguments[i]));
@@ -67,18 +88,34 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         
         // Build name mapping for debugging (works for both variables and arrays)
         if(dynamic_cast<ArrayRE*>(functionInfoRE->arguments[i]) != nullptr) {
+            // Array parameter found
             arrCount++;
-            dataContainerNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
+            methodCalledArrayPlaceHolderAddrsList.push_back(((ArrayRE*)functionInfoRE->arguments[i])->getValPtr());
+            methodCallingArrayPlaceHolderAddrsList.push_back(((ArrayRE*)map->at(functionCommandInfo->arguments[i]))->getValPtr());
+            
+            // Build name mapping for debugging purposes
+            arrayNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
                                                 ((ArrayRE *) functionInfoRE->arguments[i])->name));
         } else {
+            // Variable parameter found
             varCount++;
         }
     }
 
-    methodCallingOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
-    methodCalledOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
+    /**
+     * MEMORY ALLOCATION FOR PARAMETER MAPPING ARRAYS:
+     * Allocate arrays to store address mappings for efficient parameter passing.
+     */
+    methodCallingOriginalPlaceHolderAddrs = new double*[varCount];
+    methodCallingArrayPlaceHolderAddrs = new ArrayValue**[arrCount];
+    methodCalledOriginalPlaceHolderAddrs = new double*[varCount];
+    methodCalledArrayPlaceHolderAddrs = new ArrayValue**[arrCount];
 
-    for(int i = 0; i < argSize; i++) {
+    /**
+     * POPULATE VARIABLE PARAMETER MAPPINGS:
+     * Transfer variable address mappings from lists to arrays for indexed access.
+     */
+    for(int i = 0; i < varCount; i++) {
         methodCalledOriginalPlaceHolderAddrs[i] = methodCalledOriginalPlaceHolderAddrsList.front();
         methodCalledOriginalPlaceHolderAddrsList.pop_front();
 
@@ -86,7 +123,25 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         methodCallingOriginalPlaceHolderAddrsList.pop_front();
     }
 
-    std::list<DataContainerValue*> methodArgDataContainerAddrList;
+    /**
+     * POPULATE ARRAY PARAMETER MAPPINGS:
+     * Transfer array address mappings from lists to arrays for indexed access.
+     */
+    for(int i = 0; i < arrCount; i++) {
+        methodCalledArrayPlaceHolderAddrs[i] = methodCalledArrayPlaceHolderAddrsList.front();
+        methodCalledArrayPlaceHolderAddrsList.pop_front();
+
+        methodCallingArrayPlaceHolderAddrs[i] = methodCallingArrayPlaceHolderAddrsList.front();
+        methodCallingArrayPlaceHolderAddrsList.pop_front();
+    }
+
+    /**
+     * LOCAL VARIABLE AND ARRAY ANALYSIS:
+     * Analyze all variables and arrays declared within the function scope
+     * (including both parameters and local declarations) to set up complete variable management.
+     */
+    std::list<double*> methodArgVariableAddrList;
+    std::list<ArrayValue**> methodArgArrayAddrList;
 
     for(int i = 0; i < functionInfoRE->functionCall->allVariablesInMethodSize; i++) {
         AbstractDataContainer* dataContainer = dynamic_cast<AbstractDataContainer*>(functionInfoRE->allVariablesInMethod[i]);
@@ -99,33 +154,48 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
         }
     }
 
-    int totalDataContainerCount = totalVarCount + totalArrCount;
-    methodArgDataContainerAddr = new DataContainerValue*[totalDataContainerCount];
-    methodArgDataContainerCurrentVal = new DataContainerValue*[totalDataContainerCount];
+    /**
+     * ALLOCATE COMPLETE VARIABLE AND ARRAY MANAGEMENT STRUCTURES:
+     * Set up arrays for managing all variables and arrays in function scope.
+     */
+    methodArgVariableAddr = new double*[totalVarCount];
+    methodArgArrayAddr = new double**[totalArrCount];
+    methodArgArrayTotalSize = new int[totalArrCount];
 
-    for(int i = 0; i < totalDataContainerCount; i++) {
-        methodArgDataContainerAddr[i] = methodArgDataContainerAddrList.front();
-        methodArgDataContainerAddrList.pop_front();
-        
-        // Create appropriate DataContainerValue copy for saving current state
-        if(dynamic_cast<DoublePtr*>(methodArgDataContainerAddr[i]) != nullptr) {
-            methodArgDataContainerCurrentVal[i] = new DoublePtr();
-        } else if(dynamic_cast<ArrayDataContainerValue*>(methodArgDataContainerAddr[i]) != nullptr) {
-            methodArgDataContainerCurrentVal[i] = new ArrayDataContainerValue();
-        }
+    /**
+     * POPULATE COMPLETE VARIABLE ADDRESS MAPPING:
+     * Store addresses of all variables in the function (parameters + locals).
+     */
+    for(int i = 0; i < totalVarCount; i++) {
+        methodArgVariableAddr[i] = methodArgVariableAddrList.front();
+        methodArgVariableAddrList.pop_front();
     }
     
-    dataContainerStackCurrent = new DataContainerValue*[argSize];
-    for(int i = 0; i < argSize; i++) {
-        // Create appropriate DataContainerValue copy for stack management
-        if(dynamic_cast<DoublePtr*>(methodCalledOriginalPlaceHolderAddrs[i]) != nullptr) {
-            dataContainerStackCurrent[i] = new DoublePtr();
-        } else if(dynamic_cast<ArrayDataContainerValue*>(methodCalledOriginalPlaceHolderAddrs[i]) != nullptr) {
-            dataContainerStackCurrent[i] = new ArrayDataContainerValue();
-        }
+    /**
+     * POPULATE COMPLETE ARRAY ADDRESS MAPPING:
+     * Store addresses and sizes of all arrays in the function (parameters + locals).
+     */
+    for(int i = 0; i < totalArrCount; i++) {
+        methodArgArrayAddr[i] = &(*methodArgArrayAddrList.front())->val;
+        methodArgArrayTotalSize[i] = (*methodArgArrayAddrList.front())->totalSize;
+        methodArgArrayAddrList.pop_front();
     }
 }
 
+/**
+ * Main execution method for function calls.
+ * 
+ * Orchestrates the complete function call lifecycle through 6 distinct phases:
+ * 1. Parameter setup and variable context saving
+ * 2. Array parameter setup and local array allocation
+ * 3. Function body execution
+ * 4. Context restoration preparation
+ * 5. Variable restoration and call-by-reference value propagation
+ * 6. Array restoration and memory cleanup
+ * 
+ * This method handles complex stack management required for proper function
+ * call semantics, including recursive calls and comprehensive memory management.
+ */
 void FunctionCommandRE::process() {
     /*
      * ==================== EXHAUSTIVE EXAMPLE: RECURSIVE FUNCTION EXECUTION ====================
@@ -194,76 +264,28 @@ void FunctionCommandRE::process() {
 #endif
 
     // ==================== PHASE 1: PARAMETER SETUP AND DATA CONTAINER CONTEXT SAVING ====================
-    
-    /*
-     * RECURSIVE EXAMPLE - PHASE 1 DETAILS:
+    /**
+     * VARIABLE PARAMETER SETUP:
+     * For each variable parameter passed to the function:
+     * 1. Save the current value of the function parameter variable (for restoration)
+     * 2. Save the current value of the calling argument variable (for restoration)
+     * 3. Copy the calling function's argument value to the function parameter
      * 
-     * For increment_recursive(x=6, depth=2) -> increment_recursive(n=6, depth=1) call:
-     * 
-     * BEFORE PHASE 1:
-     * - increment_recursive(level 1)'s parameter n = 6, depth = 2
-     * - About to call increment_recursive(level 2), so arguments are n=7, tmpVar=1
-     * 
-     * DURING PHASE 1:
-     * 1. dataContainerStackCurrent[0] saves current value of increment_recursive(level 2)'s parameter n (could be garbage)
-     * 2. dataContainerStackCurrent[1] saves current value of increment_recursive(level 2)'s parameter depth (could be garbage)
-     * 3. increment_recursive(level 2)'s parameter n gets copied value 7 from calling argument
-     * 4. increment_recursive(level 2)'s parameter depth gets copied value 1 from calling argument (tmpVar)
-     * 
-     * AFTER PHASE 1:
-     * - increment_recursive(level 2)'s parameters: n = 7, depth = 1 (ready for execution)
-     * - increment_recursive(level 1)'s context is preserved in calling arrays
-     * 
-     * MEMORY STATE:
-     * methodCalledOriginalPlaceHolderAddrs[0] -> increment_recursive(level 2)'s parameter n (now = 7)
-     * methodCalledOriginalPlaceHolderAddrs[1] -> increment_recursive(level 2)'s parameter depth (now = 1)
-     * methodCallingOriginalPlaceHolderAddrs[0] -> increment_recursive(level 1)'s argument value (7)
-     * methodCallingOriginalPlaceHolderAddrs[1] -> increment_recursive(level 1)'s argument value (1)
-     * dataContainerStackCurrent[0] -> backup of increment_recursive(level 2)'s original n value
-     * dataContainerStackCurrent[1] -> backup of increment_recursive(level 2)'s original depth value
+     * This establishes the parameter passing mechanism while preserving state for restoration.
      */
-    
-    /*
-     * For each parameter passed to the function:
-     * 1. Save the original DataContainerValue content that the parameter contains (for restoration)
-     * 2. Copy the calling argument's DataContainerValue content to the called function's parameter
-     * 3. Save the current state of all data containers for later restoration
-     */
-    for (int i = 0; i < argSize; i++) {
+    double   methodArgVariableCurrentVal[totalVarCount];
+    double methodCalledVariablValue[varCount];
+    for (int i = 0; i < varCount; i++) {
 #ifdef DEBUG_BUILD
-        // Record the current function data container value for debugging
-        if (i < varCount) {
-            DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(methodCallingOriginalPlaceHolderAddrs[i]);
-            if (doublePtr) {
-                debugPoint->addCurrentFuncVal(*(doublePtr->value));
-            }
-        }
+        // Record the argument value being passed for debugging
+        debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
-        /*
-         * RECURSIVE SAFETY: Save the called function's parameter current value
-         * 
-         * Example: increment_recursive(level 2) call
-         * - dataContainerStackCurrent[0] saves whatever value n had before (garbage)
-         * - dataContainerStackCurrent[1] saves whatever value depth had before (garbage)
-         * - This is crucial for nested calls: level 1 -> level 2 -> level 3 -> level 4
-         * - Each level must restore its parameter state when unwinding
-         */
-        dataContainerStackCurrent[i]->copyDataContainerValue(methodCalledOriginalPlaceHolderAddrs[i]);
-        
-        /*
-         * PARAMETER PASSING: Copy argument value to function parameter (CALL-BY-REFERENCE)
-         * 
-         * Example: increment_recursive(level 2) call
-         * - methodCallingOriginalPlaceHolderAddrs[0] contains value 7 (from level 1)
-         * - methodCallingOriginalPlaceHolderAddrs[1] contains value 1 (from level 1)
-         * - methodCalledOriginalPlaceHolderAddrs[0] is level 2's parameter n
-         * - methodCalledOriginalPlaceHolderAddrs[1] is level 2's parameter depth
-         * - After this: level 2's n = 7, depth = 1
-         * 
-         * CALL-BY-REFERENCE: Any modifications to n or depth in level 2 will be 
-         * visible to level 1 when control returns, because they point to the same memory.
-         */
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCallingOriginalPlaceHolderAddrs[i]);
+        // Save the current value of ALL function variables (for complete restoration)
+        methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
+        // Save the current value of the function parameter (before receiving new value)
+        methodCalledVariablValue[i] = *methodCalledOriginalPlaceHolderAddrs[i];
+        // Transfer argument value from calling context to function parameter
+        *methodCalledOriginalPlaceHolderAddrs[i] = (*methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
 #ifdef DEBUG_BUILD
@@ -275,65 +297,63 @@ void FunctionCommandRE::process() {
     debugger->commitDebugPoint();
 #endif
 
-    /*
-     * LOCAL VARIABLE BACKUP:
-     * 
-     * For all data containers in the function (both parameters and locals):
-     * Save their current DataContainerValue content so they can be restored after function execution.
-     * 
-     * RECURSIVE EXAMPLE:
-     * increment_recursive(level 2) has:
-     * - methodArgDataContainerAddr[0] = parameter 'n' (now = 7)
-     * - methodArgDataContainerAddr[1] = parameter 'depth' (now = 1)
-     * - methodArgDataContainerAddr[2] = local variable 'tmpVar' (could be garbage)
-     * 
-     * We save all values in methodArgDataContainerCurrentVal[0], [1], and [2]
-     * so when level 2 returns, level 1 can continue with clean state
+    /**
+     * LOCAL VARIABLE STATE PRESERVATION:
+     * Save current values of all local variables (non-parameters) so they can be
+     * restored after function execution. Local variables are indexed from varCount onwards.
      */
-    int totalDataContainerCount = totalVarCount + totalArrCount;
-    for(int i = 0; i < totalDataContainerCount; i++) {
-        methodArgDataContainerCurrentVal[i]->copyDataContainerValue(methodArgDataContainerAddr[i]);
+    for(int i = varCount; i < totalVarCount; i++) {
+        methodArgVariableCurrentVal[i] = *methodArgVariableAddr[i];
     }
 
-    // ==================== PHASE 2: FUNCTION BODY EXECUTION ====================
+
+    // ==================== PHASE 2: ARRAY PARAMETER SETUP AND LOCAL ARRAY ALLOCATION ====================
     
-    /*
-     * RECURSIVE EXECUTION DETAILS (STANDALONE FUNCTION CALLS):
-     * 
-     * increment_recursive(level 2) execution:
-     * 1. Checks: if depth <= 0 (false, since depth = 1)
-     * 2. Executes: n = n + 1 (n becomes 8)
-     * 3. Executes: tmpVar = depth - 1 (tmpVar becomes 0)
-     * 4. Prepares arguments for next call: n=8, tmpVar=0
-     * 5. Executes: increment_recursive(n, tmpVar) as STANDALONE FUNCTION CALL
-     * 6. This creates ANOTHER FunctionCommandRE::process() call for level 3
-     * 7. level 3 goes through its own complete PHASE 1-4 cycle
-     * 8. level 3 hits base case (depth=0) and returns without modification
-     * 9. level 2 continues after the function call (no return value to handle)
-     * 10. level 2 execution completes
-     * 
-     * CRITICAL CALL-BY-REFERENCE SEMANTICS:
-     * - When level 2 modifies n from 7 to 8, this change is visible to level 1
-     * - When level 3 executes with n=8, depth=0, it hits base case and doesn't modify n
-     * - So level 1 sees n=8 when level 2 returns
-     * 
-     * STANDALONE FUNCTION CALL CONSTRAINT:
-     * - increment_recursive() cannot be part of an expression like: result = increment_recursive(x, y)
-     * - It must be called as a standalone statement: increment_recursive(x, y);
-     * - Operations cannot be directly used as function arguments: increment_recursive(n, depth-1) is INVALID
-     * - Operations must be computed first: tmpVar = depth - 1; increment_recursive(n, tmpVar); is VALID
-     * - No return value is expected or processed
-     * 
-     * CRITICAL: Each recursive call has its own process() stack frame with:
-     * - Its own dataContainerStackCurrent array
-     * - Its own methodArgDataContainerCurrentVal backup
-     * - Complete isolation from other call levels
+    /**
+     * ARRAY PARAMETER AND LOCAL ARRAY SETUP:
+     * Handle both array parameters (passed by reference) and local arrays (dynamically allocated).
+     * Array parameters point to calling arrays, while local arrays get fresh memory allocation.
      */
+    double* methodArgArrayCurrentVal[totalArrCount];
+    ArrayValue* methodCalledArrayValue[arrCount];
     
-    /*
-     * Execute the function body by traversing the command chain.
-     * Each command returns the next command to execute, forming a linked execution chain.
-     * Execution continues until there are no more commands (nullptr).
+    /**
+     * ARRAY PARAMETER SETUP LOOP:
+     * For each array parameter (i = 0 to arrCount-1):
+     * Set up pass-by-reference semantics for array parameters.
+     */
+    for(int i = 0; i < arrCount; i++) {
+        // Save the current array pointer for complete restoration after function execution
+        methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
+
+        // Save the current array reference in the function parameter (before receiving new reference)
+        methodCalledArrayValue[i] = *methodCalledArrayPlaceHolderAddrs[i];
+        
+        // Establish pass-by-reference: function parameter array now points to calling array
+        *methodCalledArrayPlaceHolderAddrs[i] = *methodCallingArrayPlaceHolderAddrs[i];
+    }
+
+    /**
+     * LOCAL ARRAY ALLOCATION LOOP:
+     * For local arrays (non-parameters) (i = arrCount to totalArrCount-1):
+     * Allocate fresh memory for arrays declared within the function.
+     */
+    for(int i = arrCount; i < totalArrCount; i++) {
+        // Save current array pointer (likely nullptr for local arrays)
+        methodArgArrayCurrentVal[i] = *methodArgArrayAddr[i];
+        // Allocate new memory for local array with its specified size
+        *methodArgArrayAddr[i] = new double[methodArgArrayTotalSize[i]];
+    }
+
+    // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
+    
+    /**
+     * COMMAND CHAIN EXECUTION:
+     * Execute the function body by traversing the linked command chain.
+     * Each command's get() method executes the command and returns the next command to execute.
+     * Execution continues until there are no more commands (nullptr is returned).
+     * 
+     * This forms the core execution loop that processes all statements in the function body.
      */
     CommandRE* command = firstCommand;
     while(command != nullptr) {
@@ -436,58 +456,202 @@ void FunctionCommandRE::process() {
      * - Stack frame is completely clean for next operation
      */
     
-    /*
-     * CRITICAL: We must restore the calling context regardless of function execution outcome.
+    /**
+     * CRITICAL RESTORATION PHASE:
+     * We must restore the calling context regardless of how function execution completed.
      * This is essential for recursive functions and proper stack management.
+     *
+     * RECURSIVE FUNCTION EXAMPLE:
+     * ```
+     * func fibonacci(n) {
+     *     if (n <= 1) return n;
+     *     temp1 = n - 1;
+     *     temp2 = n - 2;
+     *     return fibonacci(temp1) + fibonacci(temp2);  // Multiple recursive calls
+     * }
+     * ```
      * 
-     * Restore the original DataContainerValue content that was overwritten during parameter setup.
-     * This happens AFTER non-parameter restoration so that call-by-reference semantics are preserved.
+     * Without proper restoration, variables like 'temp1' and 'temp2' would retain
+     * values from inner recursive calls, corrupting the outer call's execution.
      */
-    for(int i = 0; i < argSize; i++) {
-        /*
-         * RECURSIVE STACK UNWINDING WITH CALL-BY-REFERENCE:
-         * 
-         * Example: increment_recursive(level 3) returning to increment_recursive(level 2)
-         * - level 3's parameter n was set to 8 in Phase 1
-         * - level 3 hit base case and didn't modify n (still 8)
-         * - dataContainerStackCurrent[0] contains the original value n had before Phase 1 (garbage)
-         * - We restore n to that original value, effectively "undoing" the parameter setup
-         * - level 2 sees that its argument n is still 8 (the call-by-reference effect)
-         * 
-         * This ensures each recursive level is properly isolated and restored,
-         * while preserving call-by-reference semantics for parameter modifications.
-         * 
-         * Restore the original DataContainerValue content that the parameter contained
-         */
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(dataContainerStackCurrent[i]);
-    }
 
-    /*
-     * RECURSIVE EXECUTION COMPLETE:
+    // ==================== PHASE 5: VARIABLE RESTORATION AND CALL-BY-REFERENCE VALUE PROPAGATION ====================
+
+    /**
+     * LOCAL VARIABLE RESTORATION:
+     * Restore all local variables (non-parameters) to their pre-function-call state.
+     * This ensures that each function call has isolated local variable scope.
      * 
-     * At this point, the current function call is completely unwound:
-     * 1. All parameters are restored to pre-call state
-     * 2. All local variables are restored to pre-execution state  
-     * 3. All temporary memory is cleaned up
-     * 4. Control returns to the calling function (or main)
-     * 
-     * For our increment_recursive(x=5, depth=3) example:
-     * - increment_recursive(level 4) hits base case, returns to level 3
-     * - increment_recursive(level 3) incremented n from 7 to 8, returns to level 2  
-     * - increment_recursive(level 2) incremented n from 6 to 7, returns to level 1
-     * - increment_recursive(level 1) incremented n from 5 to 6, returns to main
-     * - Final result: x = 8 (original 5 + 3 increments through recursion)
-     * 
-     * Each level maintains perfect isolation through this process while preserving
-     * call-by-reference semantics for parameter modifications.
+     * Index Range: i = varCount to totalVarCount-1 (local variables only)
      */
+    for(int i = varCount; i < totalVarCount; i++) {
+        *methodArgVariableAddr[i] = methodArgVariableCurrentVal[i];
+    }
+    
+    /**
+     * VARIABLE PARAMETER RESTORATION AND CALL-BY-REFERENCE HANDLING:
+     * 
+     * This critical phase handles both parameter restoration and call-by-reference semantics.
+     * The order of operations is carefully designed to handle recursive function calls correctly.
+     * 
+     * IMPORTANT: This system uses CALL-BY-REFERENCE semantics, NOT return values.
+     * All function parameters are passed by reference and their final values are propagated
+     * back to the calling context. There is no explicit "return" statement - instead,
+     * parameter modifications are the mechanism for passing results back.
+     * 
+     * EXECUTION FLOW EXAMPLE (factorial function):
+     * ```
+     * func factorial(n) {
+     *     if (n <= 1) {
+     *         n = 1;  // Set parameter to result value
+     *     } else {
+     *         temp = n - 1;
+     *         factorial(temp);  // Recursive call modifies temp
+     *         n = n * temp;     // Set parameter to computed result
+     *     }
+     * }
+     * 
+     * main() {
+     *     x = 5;
+     *     factorial(x);  // x will be modified to contain the factorial result
+     * }
+     * ```
+     * 
+     * STEP-BY-STEP VARIABLE HANDLING:
+     * 1. BEFORE factorial(5): x = 5, n = undefined
+     * 2. PARAMETER SETUP: n = 5 (copied from x by reference)
+     * 3. DURING EXECUTION: n is modified to contain the factorial result
+     * 4. RESTORATION: n's final value (120) is propagated back to x
+     */
+    
+    for(int i = 0; i < varCount; i++) {
+        /**
+         * FINAL VALUE EXTRACTION:
+         * Extract the final value of the function parameter after execution.
+         * This captures the computed result that was stored in the parameter
+         * during function execution (call-by-reference semantics).
+         */
+        double methodArgFinalValue = *methodCalledOriginalPlaceHolderAddrs[i];
+        
+        /**
+         * FUNCTION PARAMETER RESTORATION:
+         * Restore the function parameter to its pre-call state.
+         * This is crucial for recursive functions where the same parameter
+         * variable is used across multiple call levels.
+         */
+        *methodCalledOriginalPlaceHolderAddrs[i] = methodCalledVariablValue[i];
+        
+        /**
+         * CALL-BY-REFERENCE VALUE PROPAGATION:
+         * Propagate the final computed value back to the calling context variable.
+         * This implements the call-by-reference mechanism where parameter modifications
+         * are reflected in the calling context.
+         * 
+         * RECURSIVE FUNCTION CONSIDERATION:
+         * In recursive calls, methodCallingOriginalPlaceHolderAddrs[i] might point
+         * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
+         * The careful ordering of operations above prevents corruption in such cases.
+         */
+        *methodCallingOriginalPlaceHolderAddrs[i] = methodArgFinalValue;
+    }
+    // ==================== PHASE 6: ARRAY RESTORATION AND MEMORY CLEANUP ====================
+
+    /**
+     * LOCAL ARRAY CLEANUP AND RESTORATION:
+     * Handle memory deallocation for local arrays and pointer restoration.
+     * This phase is critical for preventing memory leaks and maintaining proper array state.
+     * 
+     * Index Range: i = arrCount to totalArrCount-1 (local arrays only)
+     */
+    for(int i = arrCount; i < totalArrCount; i++) {
+        /**
+         * MEMORY DEALLOCATION:
+         * Free the dynamically allocated memory for local arrays.
+         * This prevents memory leaks that would accumulate with each function call.
+         * 
+         * Memory allocated in Phase 2 with: new double[methodArgArrayTotalSize[i]]
+         * Now freed with: delete[] to match the allocation method.
+         */
+        delete[] *methodArgArrayAddr[i];
+
+        /**
+         * POINTER RESTORATION:
+         * Restore the array pointer to its pre-function-call value.
+         * This ensures clean state for subsequent function calls and recursive safety.
+         */
+        *methodArgArrayAddr[i] = methodArgArrayCurrentVal[i];
+    }
+    
+    /**
+     * ARRAY PARAMETER RESTORATION:
+     * Restore array parameter references to maintain proper calling context.
+     * Unlike local arrays, parameter arrays are not deallocated since they reference
+     * memory owned by the calling context.
+     * 
+     * ARRAY PARAMETER FLOW EXAMPLE:
+     * ```
+     * func processArray(arr) {
+     *     arr[0] = arr[0] + 1;  // Modify the array
+     *     processArray(arr);    // Recursive call with same array
+     * }
+     * 
+     * main() {
+     *     myArray[5] = {1, 2, 3, 4, 5};
+     *     processArray(myArray);  // Pass array by reference
+     * }
+     * ```
+     * 
+     * In this scenario:
+     * - 'arr' parameter points to 'myArray' memory
+     * - Modifications to 'arr' directly affect 'myArray'
+     * - No memory allocation/deallocation needed for 'arr'
+     * - Only pointer restoration required for proper stack management
+     */
+    for(int i = 0; i < arrCount; i++) {
+        /**
+         * FINAL ARRAY REFERENCE EXTRACTION:
+         * Extract the final array reference after function execution.
+         * In call-by-reference semantics, arrays may be reassigned to point
+         * to different memory locations during function execution.
+         */
+        auto methodArgFinalArrayRef = *methodCalledArrayPlaceHolderAddrs[i];
+        
+        /**
+         * FUNCTION ARRAY PARAMETER RESTORATION:
+         * Restore the function's array parameter to its pre-call reference.
+         * Essential for recursive functions using the same array parameter variable.
+         */
+        *methodCalledArrayPlaceHolderAddrs[i] = methodCalledArrayValue[i];
+        
+        /**
+         * CALL-BY-REFERENCE ARRAY PROPAGATION:
+         * Propagate the final array reference back to calling context.
+         * This maintains proper array reference semantics across function calls.
+         * Note: Array contents are already modified in-place due to reference sharing.
+         */
+        *methodCallingArrayPlaceHolderAddrs[i] = methodArgFinalArrayRef;
+    }
 
     // Function execution complete - calling context fully restored
 }
 
+/**
+ * Simplified field setup for built-in functions.
+ * 
+ * Built-in functions have a streamlined setup process since they don't require
+ * the complex parameter mapping and local variable management of user-defined functions.
+ * This method sets up direct access to arguments for efficient built-in function execution.
+ * 
+ * @param map Global map containing rule engine objects for argument resolution
+ */
 void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
     std::list<DataContainerValue*> methodArgDataContainerAddrList;
 
+    /**
+     * ARGUMENT CATEGORIZATION FOR BUILT-IN FUNCTIONS:
+     * Separate variable and array arguments to enable direct access patterns
+     * used by built-in function implementations.
+     */
     for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
         AbstractDataContainer* arg = dynamic_cast<AbstractDataContainer*>(map->at(functionCommandInfo->arguments[i]));
         methodArgDataContainerAddrList.push_back(arg->valPtr);
@@ -499,21 +663,53 @@ void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineI
         }
     }
 
-    methodArgDataContainerAddr = new DataContainerValue*[functionCommandInfo->argumentsSize];
+    /**
+     * ALLOCATE DIRECT ACCESS ARRAYS:
+     * Create arrays for direct argument access (no complex mapping needed).
+     */
+    methodArgVariableAddr = new double *[varCount];
+    methodArgArrayAddr = new ArrayValue **[arrCount];
 
-    for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
-        methodArgDataContainerAddr[i] = methodArgDataContainerAddrList.front();
-        methodArgDataContainerAddrList.pop_front();
+    /**
+     * POPULATE DIRECT VARIABLE ACCESS:
+     * Store variable argument addresses for direct modification by built-in functions.
+     */
+    for (int i = 0; i < varCount; i++) {
+        methodArgVariableAddr[i] = methodArgVariableAddrList.front();
+        methodArgVariableAddrList.pop_front();
+    }
+
+    /**
+     * POPULATE DIRECT ARRAY ACCESS:
+     * Store array argument addresses for direct modification by built-in functions.
+     */
+    for (int i = 0; i < arrCount; i++) {
+        methodArgArrayAddr[i] = methodArgArrayAddrList.front();
+        methodArgArrayAddrList.pop_front();
     }
 }
 
+/**
+ * NINF (Negative Infinity) Built-in Function Implementation.
+ * 
+ * Sets the target variable or all elements of an array to negative infinity.
+ * Supports both single variable and single array arguments.
+ * 
+ * Usage:
+ * - NINF(variable) → variable = -∞
+ * - NINF(array) → all array elements = -∞
+ */
 void NINF::process() {
-    if(arrCount > 0) {
-        // This is an array (ArrayDataContainerValue)
-        ArrayDataContainerValue* arrayPtr = static_cast<ArrayDataContainerValue*>(methodArgDataContainerAddr[0]);
-        ArrayValue* arrayValue = arrayPtr->arrayValue;
-        for(int j = 0; j < arrayValue->totalSize; j++) {
-            arrayValue->val[j] = -std::numeric_limits<double>::infinity();
+    // Handle single variable argument
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = -std::numeric_limits<double>::infinity();
+    }
+
+    // Handle single array argument
+    if(arrCount == 1) {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = -std::numeric_limits<double>::infinity();
         }
     } else {
         // This is a variable (DoublePtr)
@@ -522,13 +718,27 @@ void NINF::process() {
     }
 }
 
+/**
+ * PINF (Positive Infinity) Built-in Function Implementation.
+ * 
+ * Sets the target variable or all elements of an array to positive infinity.
+ * Supports both single variable and single array arguments.
+ * 
+ * Usage:
+ * - PINF(variable) → variable = +∞
+ * - PINF(array) → all array elements = +∞
+ */
 void PINF::process() {
-    if(arrCount > 0) {
-        // This is an array (ArrayDataContainerValue)
-        ArrayDataContainerValue* arrayPtr = static_cast<ArrayDataContainerValue*>(methodArgDataContainerAddr[0]);
-        ArrayValue* arrayValue = arrayPtr->arrayValue;
-        for(int j = 0; j < arrayValue->totalSize; j++) {
-            arrayValue->val[j] = std::numeric_limits<double>::infinity();
+    // Handle single variable argument
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = std::numeric_limits<double>::infinity();
+    }
+
+    // Handle single array argument
+    if(arrCount == 1) {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = std::numeric_limits<double>::infinity();
         }
     } else {
         // This is a variable (DoublePtr)
@@ -537,17 +747,37 @@ void PINF::process() {
     }
 }
 
+// Static random number generation components for RAND function
 static std::random_device rd;  // Non-deterministic random seed
-static std::mt19937 gen(rd()); // Mersenne Twister engine
-static std::uniform_real_distribution<> dis(0.0, 1.0);
+static std::mt19937 gen(rd()); // Mersenne Twister generator engine
+static std::uniform_real_distribution<> dis(0.0, 1.0); // Uniform distribution [0.0, 1.0)
 
+/**
+ * RAND (Random Number Generation) Built-in Function Implementation.
+ * 
+ * Generates random numbers in the range [0.0, 1.0) using the Mersenne Twister algorithm.
+ * Supports both single variable and single array arguments.
+ * 
+ * Random Number Quality:
+ * - Uses std::random_device for non-deterministic seeding
+ * - Employs Mersenne Twister (MT19937) for high-quality pseudorandom generation
+ * - Uniform distribution ensures equal probability across the range
+ * 
+ * Usage:
+ * - RAND(variable) → variable = random value in [0.0, 1.0)
+ * - RAND(array) → all array elements = independent random values in [0.0, 1.0)
+ */
 void RAND::process() {
-    if(arrCount > 0) {
-        // This is an array (ArrayDataContainerValue)
-        ArrayDataContainerValue* arrayPtr = static_cast<ArrayDataContainerValue*>(methodArgDataContainerAddr[0]);
-        ArrayValue* arrayValue = arrayPtr->arrayValue;
-        for(int j = 0; j < arrayValue->totalSize; j++) {
-            arrayValue->val[j] = dis(gen);
+    // Handle single variable argument
+    if(varCount == 1) {
+        *methodArgVariableAddr[0] = dis(gen);
+    }
+
+    // Handle single array argument
+    if(arrCount == 1) {
+        ArrayValue** arrayValue = methodArgArrayAddr[0];
+        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
+            (*arrayValue)->val[i] = dis(gen);
         }
     } else {
         // This is a variable (DoublePtr)
@@ -556,7 +786,19 @@ void RAND::process() {
     }
 }
 
-// All variable based built-in methods:
+// ==================== MATHEMATICAL BUILT-IN FUNCTIONS ====================
+
+/**
+ * ABS (Absolute Value) Built-in Function Implementation.
+ * 
+ * Computes the absolute value of the input, ensuring a non-negative result.
+ * Modifies the input variable in-place with its absolute value.
+ * 
+ * Mathematical Definition: |x| = x if x ≥ 0, -x if x < 0
+ * 
+ * Usage: ABS(variable) → variable = |variable|
+ * Example: ABS(-5.5) → variable becomes 5.5
+ */
 void ABS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -564,6 +806,21 @@ void ABS::process() {
     }
 }
 
+// ==================== TRIGONOMETRIC BUILT-IN FUNCTIONS ====================
+
+/**
+ * SIN (Sine) Built-in Function Implementation.
+ * 
+ * Computes the sine of the input angle (in radians).
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: [-1, 1]
+ * - Period: 2π
+ * 
+ * Usage: SIN(variable) → variable = sin(variable)
+ * Example: SIN(π/2) → variable becomes 1.0
+ */
 void SIN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -571,6 +828,19 @@ void SIN::process() {
     }
 }
 
+/**
+ * COS (Cosine) Built-in Function Implementation.
+ * 
+ * Computes the cosine of the input angle (in radians).
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: [-1, 1]
+ * - Period: 2π
+ * 
+ * Usage: COS(variable) → variable = cos(variable)
+ * Example: COS(0) → variable becomes 1.0
+ */
 void COS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -578,6 +848,20 @@ void COS::process() {
     }
 }
 
+/**
+ * TAN (Tangent) Built-in Function Implementation.
+ * 
+ * Computes the tangent of the input angle (in radians).
+ * 
+ * Mathematical Properties:
+ * - Domain: All real numbers except (π/2 + nπ) where n is any integer
+ * - Range: (-∞, ∞)
+ * - Period: π
+ * - Undefined at odd multiples of π/2
+ * 
+ * Usage: TAN(variable) → variable = tan(variable)
+ * Example: TAN(π/4) → variable becomes 1.0
+ */
 void TAN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -585,6 +869,22 @@ void TAN::process() {
     }
 }
 
+// ==================== INVERSE TRIGONOMETRIC BUILT-IN FUNCTIONS ====================
+
+/**
+ * ASIN (Arcsine/Inverse Sine) Built-in Function Implementation.
+ * 
+ * Computes the arcsine (inverse sine) of the input value.
+ * Returns the angle whose sine equals the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: [-1, 1]
+ * - Range: [-π/2, π/2]
+ * - Input outside domain results in NaN
+ * 
+ * Usage: ASIN(variable) → variable = asin(variable)
+ * Example: ASIN(0.5) → variable becomes π/6 ≈ 0.5236
+ */
 void ASIN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -592,6 +892,20 @@ void ASIN::process() {
     }
 }
 
+/**
+ * ACOS (Arccosine/Inverse Cosine) Built-in Function Implementation.
+ * 
+ * Computes the arccosine (inverse cosine) of the input value.
+ * Returns the angle whose cosine equals the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: [-1, 1]
+ * - Range: [0, π]
+ * - Input outside domain results in NaN
+ * 
+ * Usage: ACOS(variable) → variable = acos(variable)
+ * Example: ACOS(0.5) → variable becomes π/3 ≈ 1.0472
+ */
 void ACOS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -599,6 +913,20 @@ void ACOS::process() {
     }
 }
 
+/**
+ * ATAN (Arctangent/Inverse Tangent) Built-in Function Implementation.
+ * 
+ * Computes the arctangent (inverse tangent) of the input value.
+ * Returns the angle whose tangent equals the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: (-π/2, π/2)
+ * - Well-defined for all finite real numbers
+ * 
+ * Usage: ATAN(variable) → variable = atan(variable)
+ * Example: ATAN(1.0) → variable becomes π/4 ≈ 0.7854
+ */
 void ATAN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -606,6 +934,24 @@ void ATAN::process() {
     }
 }
 
+// ==================== ROUNDING AND CEILING BUILT-IN FUNCTIONS ====================
+
+/**
+ * FLOOR (Floor Function) Built-in Function Implementation.
+ * 
+ * Computes the largest integer less than or equal to the input value.
+ * Always rounds towards negative infinity.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: All integers as floating-point numbers
+ * - floor(x) ≤ x < floor(x) + 1
+ * 
+ * Usage: FLOOR(variable) → variable = floor(variable)
+ * Examples:
+ * - FLOOR(3.7) → variable becomes 3.0
+ * - FLOOR(-2.3) → variable becomes -3.0
+ */
 void FLOOR::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -613,6 +959,22 @@ void FLOOR::process() {
     }
 }
 
+/**
+ * CEIL (Ceiling Function) Built-in Function Implementation.
+ * 
+ * Computes the smallest integer greater than or equal to the input value.
+ * Always rounds towards positive infinity.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: All integers as floating-point numbers
+ * - ceil(x) - 1 < x ≤ ceil(x)
+ * 
+ * Usage: CEIL(variable) → variable = ceil(variable)
+ * Examples:
+ * - CEIL(3.2) → variable becomes 4.0
+ * - CEIL(-2.8) → variable becomes -2.0
+ */
 void CEIL::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -620,6 +982,24 @@ void CEIL::process() {
     }
 }
 
+// ==================== EXPONENTIAL AND POWER BUILT-IN FUNCTIONS ====================
+
+/**
+ * EXP (Exponential Function) Built-in Function Implementation.
+ * 
+ * Computes e raised to the power of the input value (e^x).
+ * Uses Euler's number e ≈ 2.71828 as the base.
+ * 
+ * Mathematical Properties:
+ * - Domain: (-∞, ∞)
+ * - Range: (0, ∞)
+ * - exp(0) = 1
+ * - exp(1) = e ≈ 2.71828
+ * - Inverse function of natural logarithm
+ * 
+ * Usage: EXP(variable) → variable = e^variable
+ * Example: EXP(1.0) → variable becomes e ≈ 2.71828
+ */
 void EXP::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -627,6 +1007,20 @@ void EXP::process() {
     }
 }
 
+/**
+ * SQRT (Square Root) Built-in Function Implementation.
+ * 
+ * Computes the positive square root of the input value.
+ * 
+ * Mathematical Properties:
+ * - Domain: [0, ∞) (non-negative real numbers)
+ * - Range: [0, ∞)
+ * - sqrt(x * x) = |x| for all real x
+ * - Negative inputs result in NaN
+ * 
+ * Usage: SQRT(variable) → variable = √variable
+ * Example: SQRT(9.0) → variable becomes 3.0
+ */
 void SQRT::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
@@ -634,6 +1028,26 @@ void SQRT::process() {
     }
 }
 
+/**
+ * POW (Power Function) Built-in Function Implementation.
+ * 
+ * Computes the first argument raised to the power of the second argument (base^exponent).
+ * Requires exactly two variable arguments and modifies the first with the result.
+ * 
+ * Mathematical Properties:
+ * - Domain: Depends on base and exponent values
+ * - For positive base: all real exponents allowed
+ * - For zero base: positive exponents allowed
+ * - For negative base: integer exponents recommended
+ * 
+ * Special Cases:
+ * - pow(x, 0) = 1 for any x ≠ 0
+ * - pow(0, y) = 0 for any y > 0
+ * - pow(1, y) = 1 for any finite y
+ * 
+ * Usage: POW(base, exponent) → base = base^exponent
+ * Example: POW(2.0, 3.0) → first variable becomes 8.0
+ */
 void POW::process() {
     if(functionCommandInfo->argumentsSize >= 2) {
         DoublePtr* doublePtr1 = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
