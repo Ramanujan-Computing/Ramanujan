@@ -163,7 +163,7 @@ private:
      * 
      * Memory Structure: ArrayValue*** -> ArrayValue** -> ArrayValue* -> actual array data
      */
-    ArrayValue*** methodCalledArrayPlaceHolderAddrs = nullptr;
+   // ArrayValue*** methodCalledArrayPlaceHolderAddrs = nullptr;
 
     /**
      * Array of pointers to argument array addresses in the calling function.
@@ -176,7 +176,7 @@ private:
      * 
      * Purpose: Enables array parameter passing by reference semantics
      */
-    ArrayValue*** methodCallingArrayPlaceHolderAddrs = nullptr;
+//    ArrayValue*** methodCallingArrayPlaceHolderAddrs = nullptr;
 
     // ==================== Local Variable Management ====================
     /**
@@ -223,6 +223,8 @@ private:
      * - During Phase 6: Ensures proper memory management
      */
     int* methodArgArrayTotalSize = nullptr;
+
+    DataContainerValue** methodArgDataContainerAddr = nullptr;
 
     // ==================== Name Mapping for Debugging ====================
     

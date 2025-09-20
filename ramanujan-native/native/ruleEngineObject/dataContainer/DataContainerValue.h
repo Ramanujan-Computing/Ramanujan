@@ -8,5 +8,6 @@ class DataContainerValue {
 public:
     virtual ~DataContainerValue() = default;
     virtual void copyDataContainerValue(DataContainerValue* toBeCopied) = 0;
+    virtual DataContainerValue* clone() = 0;
 };
 #endif //NATIVE_DATACONTAINERVALUE_H

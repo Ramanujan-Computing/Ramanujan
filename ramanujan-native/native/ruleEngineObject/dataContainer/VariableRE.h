@@ -21,7 +21,16 @@ public:
 
     void copyDataContainerValue(DataContainerValue* toBeCopied)
     {
+        delete value;
         value = ((DoublePtr*)toBeCopied)->value;
+    }
+
+    DataContainerValue* clone() override {
+        return new DoublePtr(*value);
+    }
+
+    ~DoublePtr() override{
+        delete value;
     }
 };
 

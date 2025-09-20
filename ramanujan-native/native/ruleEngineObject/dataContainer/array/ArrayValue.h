@@ -32,12 +32,15 @@ public:
     int* sizeAtIndex;
     ArrayValue(Array* array , std::string originalArrayId);
 
-    ArrayValue(ArrayValue* toBeCopied) {
+    ArrayValue(ArrayValue* toBeCopied, bool shallowCopy = false) {
         this->array = toBeCopied->array;
         this->dimensionSize = toBeCopied->dimensionSize;
         this->dimensions = toBeCopied->dimensions;
         this->sizeAtIndex = toBeCopied->sizeAtIndex;
-        this->val = new double[toBeCopied->totalSize]();
+        if (!shallowCopy)
+            this->val = new double[toBeCopied->totalSize]();
+        else
+            this->val = toBeCopied->val;
         this->totalSize = toBeCopied->totalSize;
 
     }
@@ -137,7 +140,17 @@ public:
 
     void copyDataContainerValue(DataContainerValue* toBeCopied) override
     {
+        delete arrayValue;
         arrayValue = ((ArrayDataContainerValue*) toBeCopied)->arrayValue;
+    }
+
+    DataContainerValue* clone() override {
+        return new ArrayDataContainerValue(new ArrayValue(arrayValue, true));
+    }
+
+    ~ArrayDataContainerValue() override{
+        if(arrayValue)
+            delete arrayValue;
     }
 };
 
