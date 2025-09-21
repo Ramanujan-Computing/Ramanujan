@@ -124,12 +124,14 @@ class ArrayDataContainerValue : public DataContainerValue
 {
 public:
     ArrayValue * arrayValue;
+    bool isClone = false;
 
     ArrayDataContainerValue() = default;
 
-    ArrayDataContainerValue(ArrayValue* arrayValueIn)
+    ArrayDataContainerValue(ArrayValue* arrayValueIn, bool isClone = false)
     {
         arrayValue = arrayValueIn;
+        this->isClone = isClone;
     }
 
     void setArrayValue(ArrayValue* arrayValueIn) {
@@ -140,7 +142,8 @@ public:
 
     void copyDataContainerValue(DataContainerValue* toBeCopied) override
     {
-        delete arrayValue;
+        //delete arrayValue;
+        //TODO: pranav: check if this is causing memory leak
         arrayValue = ((ArrayDataContainerValue*) toBeCopied)->arrayValue;
     }
 
@@ -149,8 +152,8 @@ public:
     }
 
     ~ArrayDataContainerValue() override{
-        if(arrayValue)
-            delete arrayValue;
+        //if(!isClone && arrayValue)
+            //delete arrayValue;
     }
 };
 

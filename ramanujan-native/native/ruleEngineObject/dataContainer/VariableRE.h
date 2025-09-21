@@ -15,13 +15,16 @@
 
 class DoublePtr : public DataContainerValue{
 public:
-    double* value;
+    double* value = nullptr;
 
     DoublePtr(double  val = 0.0) : value(new double(val)) {}
 
     void copyDataContainerValue(DataContainerValue* toBeCopied)
     {
-        delete value;
+        if(value != nullptr) {
+            //delete value;
+            //TODO: pranav: check if this is causing memory leak
+        }
         value = ((DoublePtr*)toBeCopied)->value;
     }
 
@@ -30,7 +33,7 @@ public:
     }
 
     ~DoublePtr() override{
-        delete value;
+        //delete value;
     }
 };
 

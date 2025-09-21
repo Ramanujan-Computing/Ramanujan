@@ -110,7 +110,7 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
      * POPULATE VARIABLE PARAMETER MAPPINGS:
      * Transfer variable address mappings from lists to arrays for indexed access.
      */
-    for(int i = 0; i < varCount; i++) {
+    for(int i = 0; i < argSize; i++) {
         methodCalledOriginalPlaceHolderAddrs[i] = methodCalledOriginalPlaceHolderAddrsList.front();
         methodCalledOriginalPlaceHolderAddrsList.pop_front();
 
@@ -273,10 +273,15 @@ void FunctionCommandRE::process() {
     /**
      * LOCAL VARIABLE STATE PRESERVATION:
      * Save current values of all local variables (non-parameters) so they can be
-     * restored after function execution. Local variables are indexed from varCount onwards.
+     * restored after function execution. Local variables are indexed from argSize onwards.
+     * 
+     * CRITICAL MEMORY SAFETY NOTE:
+     * The copyDataContainerValue() method in DoublePtr and ArrayDataContainerValue
+     * transfers ownership rather than copying values. This means we must be very
+     * careful about the order of operations to prevent double-deletion issues.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodCalledDataContainerValue[i] = methodArgDataContainerAddr[i]->clone();
+        methodArgDataContainerCurrentVal[i] = methodArgDataContainerAddr[i]->clone();
     }
 
 
@@ -339,7 +344,9 @@ void FunctionCommandRE::process() {
      * Restore all local variables (non-parameters) to their pre-function-call state.
      * This ensures that each function call has isolated local variable scope.
      *
-     * Index Range: i = varCount to totalVarCount-1 (local variables only)
+     * MEMORY SAFETY: We use copyDataContainerValue which transfers ownership.
+     * The original values in methodArgDataContainerCurrentVal will have their 
+     * ownership transferred, so we should not delete them afterward.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
         methodArgDataContainerAddr[i]->copyDataContainerValue(methodArgDataContainerCurrentVal[i]);
@@ -395,6 +402,10 @@ void FunctionCommandRE::process() {
          * Restore the function parameter to its pre-call state.
          * This is crucial for recursive functions where the same parameter
          * variable is used across multiple call levels.
+         * 
+         * MEMORY SAFETY: copyDataContainerValue transfers ownership from
+         * methodCalledDataContainerValue[i] to the target, so we should not
+         * delete methodCalledDataContainerValue[i] afterward.
          */
         methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCalledDataContainerValue[i]);
 
@@ -408,8 +419,50 @@ void FunctionCommandRE::process() {
          * In recursive calls, methodCallingOriginalPlaceHolderAddrs[i] might point
          * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
          * The careful ordering of operations above prevents corruption in such cases.
+         * 
+         * MEMORY SAFETY: copyDataContainerValue transfers ownership from
+         * methodArgContainerFinalValue to the target.
          */
         methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodArgContainerFinalValue);
+        
+        /**
+         * CLEANUP FINAL VALUE CLONE:
+         * Since copyDataContainerValue transferred ownership, we only need to
+         * delete the container object, not its contents.
+         */
+        delete methodArgContainerFinalValue;
+    }
+    
+    // ==================== PHASE 6: MEMORY CLEANUP ====================
+    
+    /**
+     * CLEANUP SAVED DATA CONTAINER VALUES:
+     * 
+     * CRITICAL MEMORY SAFETY NOTE:
+     * Due to the ownership transfer behavior of copyDataContainerValue() in DoublePtr 
+     * and ArrayDataContainerValue, we should NOT delete the cloned objects that were
+     * used in copyDataContainerValue operations, as their ownership was transferred.
+     */
+    
+    /**
+     * CLEANUP PARAMETER DATA CONTAINERS:
+     * Clean up the saved parameter values and their corresponding current values.
+     * Both types had ownership transfers, so we handle them appropriately.
+     */
+    for(int i = 0; i < argSize; i++) {
+        // These containers transferred ownership during parameter restoration - only delete the container
+        delete methodCalledDataContainerValue[i];
+        // These containers still own their data since they were not used in copyDataContainerValue - safe to delete normally
+        delete methodArgDataContainerCurrentVal[i];
+    }
+    
+    /**
+     * CLEANUP LOCAL VARIABLE DATA CONTAINERS:
+     * Clean up the saved local variable values that had their ownership transferred during restoration.
+     */
+    for(int i = argSize; i < totalDataContainerCount; i++) {
+        // These containers transferred ownership during local variable restoration - only delete the container
+        delete methodArgDataContainerCurrentVal[i];
     }
 }
 
@@ -427,8 +480,8 @@ void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineI
 
     /**
      * ARGUMENT CATEGORIZATION FOR BUILT-IN FUNCTIONS:
-     * Separate variable and array arguments to enable direct access patterns
-     * used by built-in function implementations.
+     * Collect all argument data container addresses for unified access.
+     * Also count variable and array arguments for potential specialized handling.
      */
     for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
         AbstractDataContainer* arg = dynamic_cast<AbstractDataContainer*>(map->at(functionCommandInfo->arguments[i]));
@@ -442,28 +495,18 @@ void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineI
     }
 
     /**
-     * ALLOCATE DIRECT ACCESS ARRAYS:
-     * Create arrays for direct argument access (no complex mapping needed).
+     * ALLOCATE UNIFIED DATA CONTAINER ACCESS ARRAY:
+     * Create array for direct argument access using the unified DataContainerValue approach.
      */
-    methodArgVariableAddr = new double *[varCount];
-    methodArgArrayAddr = new ArrayValue **[arrCount];
+    methodArgDataContainerAddr = new DataContainerValue*[functionCommandInfo->argumentsSize];
 
     /**
-     * POPULATE DIRECT VARIABLE ACCESS:
-     * Store variable argument addresses for direct modification by built-in functions.
+     * POPULATE UNIFIED DATA CONTAINER ACCESS:
+     * Store all argument data container addresses for direct access by built-in functions.
      */
-    for (int i = 0; i < varCount; i++) {
-        methodArgVariableAddr[i] = methodArgVariableAddrList.front();
-        methodArgVariableAddrList.pop_front();
-    }
-
-    /**
-     * POPULATE DIRECT ARRAY ACCESS:
-     * Store array argument addresses for direct modification by built-in functions.
-     */
-    for (int i = 0; i < arrCount; i++) {
-        methodArgArrayAddr[i] = methodArgArrayAddrList.front();
-        methodArgArrayAddrList.pop_front();
+    for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
+        methodArgDataContainerAddr[i] = methodArgDataContainerAddrList.front();
+        methodArgDataContainerAddrList.pop_front();
     }
 }
 
@@ -478,21 +521,19 @@ void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineI
  * - NINF(array) → all array elements = -∞
  */
 void NINF::process() {
-    // Handle single variable argument
-    if(varCount == 1) {
-        *methodArgVariableAddr[0] = -std::numeric_limits<double>::infinity();
-    }
-
-    // Handle single array argument
-    if(arrCount == 1) {
-        ArrayValue** arrayValue = methodArgArrayAddr[0];
-        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
-            (*arrayValue)->val[i] = -std::numeric_limits<double>::infinity();
+    if(functionCommandInfo->argumentsSize >= 1) {
+        DataContainerValue* dataContainerValue = methodArgDataContainerAddr[0];
+        
+        // Check if this is a variable (DoublePtr)
+        if(DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(dataContainerValue)) {
+            *(doublePtr->value) = -std::numeric_limits<double>::infinity();
         }
-    } else {
-        // This is a variable (DoublePtr)
-        DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = -std::numeric_limits<double>::infinity();
+        // Check if this is an array (ArrayValue)
+        else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
+            for(int i = 0; i < arrayValue->totalSize; i++) {
+                arrayValue->val[i] = -std::numeric_limits<double>::infinity();
+            }
+        }
     }
 }
 
@@ -507,21 +548,19 @@ void NINF::process() {
  * - PINF(array) → all array elements = +∞
  */
 void PINF::process() {
-    // Handle single variable argument
-    if(varCount == 1) {
-        *methodArgVariableAddr[0] = std::numeric_limits<double>::infinity();
-    }
-
-    // Handle single array argument
-    if(arrCount == 1) {
-        ArrayValue** arrayValue = methodArgArrayAddr[0];
-        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
-            (*arrayValue)->val[i] = std::numeric_limits<double>::infinity();
+    if(functionCommandInfo->argumentsSize >= 1) {
+        DataContainerValue* dataContainerValue = methodArgDataContainerAddr[0];
+        
+        // Check if this is a variable (DoublePtr)
+        if(DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(dataContainerValue)) {
+            *(doublePtr->value) = std::numeric_limits<double>::infinity();
         }
-    } else {
-        // This is a variable (DoublePtr)
-        DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::numeric_limits<double>::infinity();
+        // Check if this is an array (ArrayValue)
+        else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
+            for(int i = 0; i < arrayValue->totalSize; i++) {
+                arrayValue->val[i] = std::numeric_limits<double>::infinity();
+            }
+        }
     }
 }
 
@@ -546,21 +585,19 @@ static std::uniform_real_distribution<> dis(0.0, 1.0); // Uniform distribution [
  * - RAND(array) → all array elements = independent random values in [0.0, 1.0)
  */
 void RAND::process() {
-    // Handle single variable argument
-    if(varCount == 1) {
-        *methodArgVariableAddr[0] = dis(gen);
-    }
-
-    // Handle single array argument
-    if(arrCount == 1) {
-        ArrayValue** arrayValue = methodArgArrayAddr[0];
-        for(int i = 0; i < (*arrayValue)->totalSize; i++) {
-            (*arrayValue)->val[i] = dis(gen);
+    if(functionCommandInfo->argumentsSize >= 1) {
+        DataContainerValue* dataContainerValue = methodArgDataContainerAddr[0];
+        
+        // Check if this is a variable (DoublePtr)
+        if(DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(dataContainerValue)) {
+            *(doublePtr->value) = dis(gen);
         }
-    } else {
-        // This is a variable (DoublePtr)
-        DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = dis(gen);
+        // Check if this is an array (ArrayValue)
+        else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
+            for(int i = 0; i < arrayValue->totalSize; i++) {
+                arrayValue->val[i] = dis(gen);
+            }
+        }
     }
 }
 

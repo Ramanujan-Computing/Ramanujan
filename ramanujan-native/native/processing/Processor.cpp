@@ -67,7 +67,7 @@ std::unordered_map<std::string, double>* Processor::varChangeMap() {
     for(RuleEngineInputUnits *variableRE1 : variableREs) {
         VariableRE* variableRE = (VariableRE*)variableRE1;
         double* valPtr = variableRE->getValPtrPtr();
-        double originalVal = dataFieldOriginalData.at(valPtr);
+        //double originalVal = dataFieldOriginalData.at(valPtr);
         double newVal = *valPtr;
 //        if (originalVal != newVal) {
             varChangeMap->insert(std::make_pair(variableRE->id, newVal));
