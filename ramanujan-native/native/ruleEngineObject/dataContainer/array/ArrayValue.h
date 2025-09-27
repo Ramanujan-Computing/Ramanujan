@@ -144,7 +144,7 @@ public:
     {
         //delete arrayValue;
         //TODO: pranav: check if this is causing memory leak
-        arrayValue = ((ArrayDataContainerValue*) toBeCopied)->arrayValue;
+        arrayValue = new ArrayValue(((ArrayDataContainerValue*) toBeCopied)->arrayValue, true);
     }
 
     DataContainerValue* clone() override {
