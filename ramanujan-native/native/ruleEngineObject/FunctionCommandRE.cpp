@@ -249,7 +249,6 @@ void FunctionCommandRE::process() {
      int totalDataContainerCount = totalVarCount + totalArrCount;
      DataContainerValueFunctionCommandRE methodArgDataContainerCurrentVal[totalDataContainerCount];
      DataContainerValueFunctionCommandRE methodCalledDataContainerValue[argSize];
-    DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
     for (int i = 0; i < argSize; i++) {
 #ifdef DEBUG_BUILD
         // Record the argument value being passed for debugging

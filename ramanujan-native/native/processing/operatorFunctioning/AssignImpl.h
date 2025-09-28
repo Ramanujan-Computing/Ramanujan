@@ -38,8 +38,7 @@ public:
     void set() override {
         DEBUG_PRE();
         DEBUG_ADD_DATA_OP_SET_BEFORE(op1);
-        double val = op2->get();
-        op1->set(val);
+        op1->set(op2->get());
         DEBUG_ADD_DATA_DOUBLE_SET_AFTER(val);
     }
 };
@@ -64,8 +63,7 @@ public:
     void set() override {
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
-        double val = op2->get();
-        *v1->value = val;
+        *v1->value = op2->get();
         DEBUG_ADD_DATA_DOUBLE_SET_AFTER(val);
     }
 

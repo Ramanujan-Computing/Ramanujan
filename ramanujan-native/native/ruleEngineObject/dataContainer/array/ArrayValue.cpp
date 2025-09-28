@@ -5,6 +5,7 @@
 #include "ArrayValue.h"
 #include "../DataContainerValueFunctionCommandRE.h"
 
+
 ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     this->array = array;
 

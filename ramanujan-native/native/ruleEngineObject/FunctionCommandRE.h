@@ -13,6 +13,7 @@
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/DataContainerValue.h"
 #include "FunctionCallRE.h"
+#include "dataContainer/DataContainerValueFunctionCommandRE.h"
 #include<unordered_map>
 #include <list>
 
@@ -121,6 +122,8 @@ private:
      * Calculated during setFields() by examining functionInfoRE->allVariablesInMethod.
      */
     int totalArrCount = 0;
+
+    DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
 
     // ==================== Parameter Mapping - DataContainer Arguments ====================
     

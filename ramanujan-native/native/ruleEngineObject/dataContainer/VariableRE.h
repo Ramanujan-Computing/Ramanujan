@@ -28,11 +28,7 @@ public:
 
     void copyDataContainerValue(DataContainerValue* toBeCopied) override
     {
-        if(value != nullptr) {
-            //delete value;
-            //TODO: pranav: check if this is causing memory leak
-        }
-        *value = *(((DoublePtr*)toBeCopied)->value);
+        value = ((DoublePtr*)toBeCopied)->value;
     }
 
     void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) override;

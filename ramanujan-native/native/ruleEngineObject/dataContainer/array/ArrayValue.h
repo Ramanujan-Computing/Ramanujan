@@ -17,6 +17,7 @@
 class AbstractDataContainer;
 class DataContainerValueFunctionCommandRE;
 
+
 class ArrayValue {
 private:
     Array* array = nullptr;
