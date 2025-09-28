@@ -3,6 +3,7 @@
 //
 
 #include "ArrayValue.h"
+#include "../DataContainerValueFunctionCommandRE.h"
 
 ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     this->array = array;
@@ -35,4 +36,10 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
 void ArrayValue::add(int* index, double value) {
     int indexInt = translateIndex(index);
     val[indexInt] = (value);
+}
+
+void ArrayDataContainerValue::copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) {
+    //delete arrayValue;
+    //TODO: pranav: check if this is causing memory leak
+    arrayValue = new ArrayValue(toBeCopied.arrayValue, true);
 }

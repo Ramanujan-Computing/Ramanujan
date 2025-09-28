@@ -6,9 +6,11 @@
 #define NATIVE_VARIABLERE_CPP
 
 #include "VariableRE.h"
+#include "DataContainerValueFunctionCommandRE.h"
 
-
-
+void DoublePtr::copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) {
+    *value = *(toBeCopied.value);
+}
 
 #endif
 

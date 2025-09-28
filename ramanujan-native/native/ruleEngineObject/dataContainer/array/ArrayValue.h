@@ -13,9 +13,9 @@
 #include "../DataContainerValue.h"
 #include "../AbstractDataContainer.h"
 
-
-
+// Forward declarations
 class AbstractDataContainer;
+class DataContainerValueFunctionCommandRE;
 
 class ArrayValue {
 private:
@@ -123,10 +123,11 @@ public:
 class ArrayDataContainerValue : public DataContainerValue
 {
 public:
-    ArrayValue * arrayValue;
+    ArrayValue * arrayValue = nullptr;
     bool isClone = false;
 
     ArrayDataContainerValue() = default;
+    ~ArrayDataContainerValue() = default;
 
     ArrayDataContainerValue(ArrayValue* arrayValueIn, bool isClone = false)
     {
@@ -147,14 +148,20 @@ public:
         arrayValue = new ArrayValue(((ArrayDataContainerValue*) toBeCopied)->arrayValue, true);
     }
 
+    void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) override;
+
+    DataContainerValueType getType() const override {
+        return DataContainerValueType::ARRAY_DATA_CONTAINER_VALUE;
+    }
+
     DataContainerValue* clone() override {
         return new ArrayDataContainerValue(new ArrayValue(arrayValue, true));
     }
 
-    ~ArrayDataContainerValue() override{
-        //if(!isClone && arrayValue)
-            //delete arrayValue;
-    }
+//    ~ArrayDataContainerValue() override{
+//        //if(!isClone && arrayValue)
+//            //delete arrayValue;
+//    }
 };
 
 

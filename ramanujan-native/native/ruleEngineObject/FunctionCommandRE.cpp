@@ -7,6 +7,7 @@
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/array/ArrayValue.h"
 #include "DebugPoint.h"
+#include "dataContainer/DataContainerValueFunctionCommandRE.h"
 #include <list>
 
 #include <limits>
@@ -246,17 +247,18 @@ void FunctionCommandRE::process() {
      */
      // IMPORTANT: delete these pointer at end of stack!!!!
      int totalDataContainerCount = totalVarCount + totalArrCount;
-     DataContainerValue* methodArgDataContainerCurrentVal[totalDataContainerCount];
-     DataContainerValue* methodCalledDataContainerValue[argSize];
+     DataContainerValueFunctionCommandRE methodArgDataContainerCurrentVal[totalDataContainerCount];
+     DataContainerValueFunctionCommandRE methodCalledDataContainerValue[argSize];
+    DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
     for (int i = 0; i < argSize; i++) {
 #ifdef DEBUG_BUILD
         // Record the argument value being passed for debugging
         debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
         // Save the current value of ALL function variables (for complete restoration)
-        methodArgDataContainerCurrentVal[i] = methodArgDataContainerAddr[i]->clone();
+        methodArgDataContainerCurrentVal[i].copyDataContainerValue(methodArgDataContainerAddr[i]);
         // Save the current value of the function parameter (before receiving new value)
-        methodCalledDataContainerValue[i] = methodCalledOriginalPlaceHolderAddrs[i]->clone();
+        methodCalledDataContainerValue[i].copyDataContainerValue(methodCalledOriginalPlaceHolderAddrs[i]);
         // Transfer argument value from calling context to function parameter
         methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCallingOriginalPlaceHolderAddrs[i]);
     }
@@ -281,11 +283,8 @@ void FunctionCommandRE::process() {
      * careful about the order of operations to prevent double-deletion issues.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerCurrentVal[i] = methodArgDataContainerAddr[i]->clone();
+        methodArgDataContainerCurrentVal[i].copyDataContainerValue(methodArgDataContainerAddr[i]);
     }
-
-
-
 
     // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
     
@@ -395,7 +394,7 @@ void FunctionCommandRE::process() {
          * This captures the computed result that was stored in the parameter
          * during function execution (call-by-reference semantics).
          */
-         DataContainerValue* methodArgContainerFinalValue = methodCalledOriginalPlaceHolderAddrs[i]->clone();
+         methodArgContainerFinalValue.copyDataContainerValue(methodCalledOriginalPlaceHolderAddrs[i]);
 
         /**
          * FUNCTION PARAMETER RESTORATION:
@@ -430,7 +429,6 @@ void FunctionCommandRE::process() {
          * Since copyDataContainerValue transferred ownership, we only need to
          * delete the container object, not its contents.
          */
-        delete methodArgContainerFinalValue;
     }
     
     // ==================== PHASE 6: MEMORY CLEANUP ====================
@@ -449,21 +447,21 @@ void FunctionCommandRE::process() {
      * Clean up the saved parameter values and their corresponding current values.
      * Both types had ownership transfers, so we handle them appropriately.
      */
-    for(int i = 0; i < argSize; i++) {
-        // These containers transferred ownership during parameter restoration - only delete the container
-        delete methodCalledDataContainerValue[i];
-        // These containers still own their data since they were not used in copyDataContainerValue - safe to delete normally
-        delete methodArgDataContainerCurrentVal[i];
-    }
+//    for(int i = 0; i < argSize; i++) {
+//        // These containers transferred ownership during parameter restoration - only delete the container
+//        delete methodCalledDataContainerValue[i];
+//        // These containers still own their data since they were not used in copyDataContainerValue - safe to delete normally
+//        delete methodArgDataContainerCurrentVal[i];
+//    }
     
     /**
      * CLEANUP LOCAL VARIABLE DATA CONTAINERS:
      * Clean up the saved local variable values that had their ownership transferred during restoration.
      */
-    for(int i = argSize; i < totalDataContainerCount; i++) {
-        // These containers transferred ownership during local variable restoration - only delete the container
-        delete methodArgDataContainerCurrentVal[i];
-    }
+//    for(int i = argSize; i < totalDataContainerCount; i++) {
+//        // These containers transferred ownership during local variable restoration - only delete the container
+//        delete methodArgDataContainerCurrentVal[i];
+//    }
 }
 
 /**

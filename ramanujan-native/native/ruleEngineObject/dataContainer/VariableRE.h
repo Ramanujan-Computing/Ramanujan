@@ -13,13 +13,20 @@
 #include <stack>
 #include <cmath>
 
+// Forward declaration
+class DataContainerValueFunctionCommandRE;
+
 class DoublePtr : public DataContainerValue{
 public:
     double* value = nullptr;
 
-    DoublePtr(double  val = 0.0) : value(new double(val)) {}
+    DoublePtr() = default;
 
-    void copyDataContainerValue(DataContainerValue* toBeCopied)
+    ~DoublePtr() = default;
+
+    DoublePtr(double  val) : value(new double(val)) {}
+
+    void copyDataContainerValue(DataContainerValue* toBeCopied) override
     {
         if(value != nullptr) {
             //delete value;
@@ -28,13 +35,17 @@ public:
         *value = *(((DoublePtr*)toBeCopied)->value);
     }
 
+    void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) override;
+
+    DataContainerValueType getType() const override {
+        return DataContainerValueType::DOUBLE_PTR;
+    }
+
     DataContainerValue* clone() override {
         return new DoublePtr(*value);
     }
 
-    ~DoublePtr() override{
-        //delete value;
-    }
+
 };
 
 
