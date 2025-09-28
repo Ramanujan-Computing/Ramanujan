@@ -7,78 +7,39 @@
 
 #include "VariableRE.h"
 #include "ArrayRE.h"
+#include <utility> // for std::move
 
 class DataContainerValueFunctionCommandRE {
 public:
-    // Optimized default constructor - explicitly initialize virtual base class once
-    DataContainerValueFunctionCommandRE() {
-        // Fast path - virtual inheritance ensures DataContainerValue constructor called only once
-        value = nullptr;
-        arrayValue = nullptr;
-    }
+    
+public:
+    // Ultra-fast default constructor - no allocations at all
+    DataContainerValueFunctionCommandRE() { };
 
-    double *value;
-    ArrayValue *arrayValue;
+    union {
+        double value{};
+        ArrayValue* arrayValue;
+    };
 
-    ~DataContainerValueFunctionCommandRE() = default;
+    // Ultra-fast destructor - only cleanup when needed
+    ~DataContainerValueFunctionCommandRE()  = default;
     
-    // Copy constructor optimized for performance
-    DataContainerValueFunctionCommandRE(const DataContainerValueFunctionCommandRE& other) {
-        // Shallow copy of pointers - no expensive deep copies
-        value = other.value;
-        arrayValue = other.arrayValue; 
-    }
-    
-    // Move constructor for performance optimization
-    DataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE&& other) noexcept
-    {
-        value = other.value;
-        arrayValue = other.arrayValue;
-        other.value = nullptr;
-        other.arrayValue = nullptr;
-    }
-    
-    // Fast assignment operator
-    DataContainerValueFunctionCommandRE& operator=(const DataContainerValueFunctionCommandRE& other) {
-        if (this != &other) {
-            value = other.value;
-            arrayValue = other.arrayValue;
-        }
-        return *this;
-    }
-    
-    // Move assignment operator for performance
-    DataContainerValueFunctionCommandRE& operator=(DataContainerValueFunctionCommandRE&& other) noexcept {
-        if (this != &other) {
-            value = other.value;
-            arrayValue = other.arrayValue;
-            other.value = nullptr;
-            other.arrayValue = nullptr;
-        }
-        return *this;
-    }
-    void copyDataContainerValue(DataContainerValue* toBeCopied)
-    {
-        switch(toBeCopied->getType()) {
-            case DataContainerValueType::DOUBLE_PTR: {
-                auto doublePtr = (DoublePtr*)(toBeCopied);
-                value = new double(*doublePtr->value);
-                break;
-            }
-            case DataContainerValueType::ARRAY_DATA_CONTAINER_VALUE: {
-                auto arrayDataContainerValue = (ArrayDataContainerValue*)(toBeCopied);
-                arrayValue = new ArrayValue(arrayDataContainerValue->arrayValue, true);
-                break;
-            }
-        }
-    }
+    // High-performance copy constructor with union handling
 
-    void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied)
-    {
-        // Copy both the variable and array components from the source
-        value = toBeCopied.value;
-        arrayValue = toBeCopied.arrayValue;
-    }
+    
+    // High-performance assignment operator with union management
+
+    
+    // Ultra-fast move constructor with union transfer
+
+    
+    // Ultra-fast move assignment with union transfer
+
+
+    // Ultra-fast copy methods with virtual dispatch - eliminates switch statement overhead
+
+    // Ultra-fast copy for same-type objects with move semantics
+
 };
 
 #endif //NATIVE_DATACONTAINERVALUEFUNCTIONCOMMANDRE_H

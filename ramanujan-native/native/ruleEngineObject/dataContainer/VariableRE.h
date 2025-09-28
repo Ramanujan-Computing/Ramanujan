@@ -45,6 +45,8 @@ public:
         return new DoublePtr(*value);
     }
 
+    // Ultra-fast direct value setting - eliminates switch statement overhead
+    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
 
 };
 

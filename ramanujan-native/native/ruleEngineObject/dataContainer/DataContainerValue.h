@@ -22,5 +22,8 @@ public:
     virtual void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) = 0;
     virtual DataContainerValue* clone() = 0;
     virtual DataContainerValueType getType() const = 0;
+    
+    // New virtual method for direct value setting - eliminates switch statement overhead
+    virtual void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) = 0;
 };
 #endif //NATIVE_DATACONTAINERVALUE_H

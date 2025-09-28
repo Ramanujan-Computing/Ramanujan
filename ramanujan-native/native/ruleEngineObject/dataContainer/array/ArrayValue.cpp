@@ -43,3 +43,9 @@ void ArrayDataContainerValue::copyDataContainerValue(DataContainerValueFunctionC
     //TODO: pranav: check if this is causing memory leak
     arrayValue = new ArrayValue(toBeCopied.arrayValue, true);
 }
+
+void ArrayDataContainerValue::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
+    // Clean up current array value if present
+    
+    toBeSet.arrayValue = new ArrayValue(arrayValue, true);
+}

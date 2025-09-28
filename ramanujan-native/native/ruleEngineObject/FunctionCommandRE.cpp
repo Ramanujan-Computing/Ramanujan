@@ -256,11 +256,13 @@ void FunctionCommandRE::process() {
         debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
         // Save the current value of ALL function variables (for complete restoration)
-        methodArgDataContainerCurrentVal[i].copyDataContainerValue(methodArgDataContainerAddr[i]);
+        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
         // Save the current value of the function parameter (before receiving new value)
-        methodCalledDataContainerValue[i].copyDataContainerValue(methodCalledOriginalPlaceHolderAddrs[i]);
+        methodCalledOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(methodCalledDataContainerValue[i]);
         // Transfer argument value from calling context to function parameter
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCallingOriginalPlaceHolderAddrs[i]);
+        DataContainerValueFunctionCommandRE tempValue;
+        methodCallingOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(tempValue);
+        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(tempValue);
     }
 
 #ifdef DEBUG_BUILD
@@ -283,7 +285,7 @@ void FunctionCommandRE::process() {
      * careful about the order of operations to prevent double-deletion issues.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerCurrentVal[i].copyDataContainerValue(methodArgDataContainerAddr[i]);
+        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
     }
 
     // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
@@ -394,7 +396,7 @@ void FunctionCommandRE::process() {
          * This captures the computed result that was stored in the parameter
          * during function execution (call-by-reference semantics).
          */
-         methodArgContainerFinalValue.copyDataContainerValue(methodCalledOriginalPlaceHolderAddrs[i]);
+         methodCalledOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(methodArgContainerFinalValue);
 
         /**
          * FUNCTION PARAMETER RESTORATION:
