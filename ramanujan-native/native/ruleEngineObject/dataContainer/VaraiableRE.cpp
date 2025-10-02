@@ -9,11 +9,11 @@
 #include "DataContainerValueFunctionCommandRE.h"
 
 void DoublePtr::copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) {
-    *value = (toBeCopied.value);
+    value = (toBeCopied.value);
 }
 
 void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
-    toBeSet.value = *value;
+    toBeSet.value = value;
 }
 
 #endif

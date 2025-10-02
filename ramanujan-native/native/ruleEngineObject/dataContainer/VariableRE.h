@@ -18,13 +18,13 @@ class DataContainerValueFunctionCommandRE;
 
 class DoublePtr : public DataContainerValue{
 public:
-    double* value = nullptr;
+    double value = 0.0;
 
     DoublePtr() = default;
 
     ~DoublePtr() = default;
 
-    DoublePtr(double  val) : value(new double(val)) {}
+    DoublePtr(double  val) : value(val) {}
 
     void copyDataContainerValue(DataContainerValue* toBeCopied) override
     {
@@ -38,7 +38,7 @@ public:
     }
 
     DataContainerValue* clone() override {
-        return new DoublePtr(*value);
+        return new DoublePtr(value);
     }
 
     // Ultra-fast direct value setting - eliminates switch statement overhead
@@ -69,7 +69,7 @@ public:
     }
 
     double* getValPtrPtr() {
-        return doublePtr.value;
+        return &doublePtr.value;
     }
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {

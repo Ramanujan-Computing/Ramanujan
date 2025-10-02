@@ -259,9 +259,9 @@ void FunctionCommandRE::process() {
         // Save the current value of the function parameter (before receiving new value)
         methodCalledOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(methodCalledDataContainerValue[i]);
         // Transfer argument value from calling context to function parameter
-        DataContainerValueFunctionCommandRE tempValue;
-        methodCallingOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(tempValue);
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(tempValue);
+//        DataContainerValueFunctionCommandRE tempValue;
+//        methodCallingOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(tempValue);
+        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
 #ifdef DEBUG_BUILD
@@ -525,7 +525,7 @@ void NINF::process() {
         
         // Check if this is a variable (DoublePtr)
         if(DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(dataContainerValue)) {
-            *(doublePtr->value) = -std::numeric_limits<double>::infinity();
+            doublePtr->value = -std::numeric_limits<double>::infinity();
         }
         // Check if this is an array (ArrayValue)
         else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
@@ -552,7 +552,7 @@ void PINF::process() {
         
         // Check if this is a variable (DoublePtr)
         if(DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(dataContainerValue)) {
-            *(doublePtr->value) = std::numeric_limits<double>::infinity();
+            doublePtr->value = std::numeric_limits<double>::infinity();
         }
         // Check if this is an array (ArrayValue)
         else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
@@ -589,7 +589,7 @@ void RAND::process() {
         
         // Check if this is a variable (DoublePtr)
         if(DoublePtr* doublePtr = dynamic_cast<DoublePtr*>(dataContainerValue)) {
-            *(doublePtr->value) = dis(gen);
+            doublePtr->value = dis(gen);
         }
         // Check if this is an array (ArrayValue)
         else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
@@ -616,7 +616,7 @@ void RAND::process() {
 void ABS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::abs(*(doublePtr->value));
+        doublePtr->value = std::abs(doublePtr->value);
     }
 }
 
@@ -638,7 +638,7 @@ void ABS::process() {
 void SIN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::sin(*(doublePtr->value));
+        doublePtr->value = std::sin(doublePtr->value);
     }
 }
 
@@ -658,7 +658,7 @@ void SIN::process() {
 void COS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::cos(*(doublePtr->value));
+        doublePtr->value = std::cos(doublePtr->value);
     }
 }
 
@@ -679,7 +679,7 @@ void COS::process() {
 void TAN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::tan(*(doublePtr->value));
+        doublePtr->value = std::tan(doublePtr->value);
     }
 }
 
@@ -702,7 +702,7 @@ void TAN::process() {
 void ASIN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::asin(*(doublePtr->value));
+        doublePtr->value = std::asin(doublePtr->value);
     }
 }
 
@@ -723,7 +723,7 @@ void ASIN::process() {
 void ACOS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::acos(*(doublePtr->value));
+        doublePtr->value = std::acos(doublePtr->value);
     }
 }
 
@@ -744,7 +744,7 @@ void ACOS::process() {
 void ATAN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::atan(*(doublePtr->value));
+        doublePtr->value = std::atan(doublePtr->value);
     }
 }
 
@@ -769,7 +769,7 @@ void ATAN::process() {
 void FLOOR::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::floor(*(doublePtr->value));
+        doublePtr->value = std::floor(doublePtr->value);
     }
 }
 
@@ -792,7 +792,7 @@ void FLOOR::process() {
 void CEIL::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::ceil(*(doublePtr->value));
+        doublePtr->value = std::ceil(doublePtr->value);
     }
 }
 
@@ -817,7 +817,7 @@ void CEIL::process() {
 void EXP::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::exp(*(doublePtr->value));
+        doublePtr->value = std::exp(doublePtr->value);
     }
 }
 
@@ -838,7 +838,7 @@ void EXP::process() {
 void SQRT::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
-        *(doublePtr->value) = std::sqrt(*(doublePtr->value));
+        doublePtr->value = std::sqrt(doublePtr->value);
     }
 }
 
@@ -866,6 +866,6 @@ void POW::process() {
     if(functionCommandInfo->argumentsSize >= 2) {
         DoublePtr* doublePtr1 = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         DoublePtr* doublePtr2 = static_cast<DoublePtr*>(methodArgDataContainerAddr[1]);
-        *(doublePtr1->value) = std::pow(*(doublePtr1->value), *(doublePtr2->value));
+        doublePtr1->value = std::pow(doublePtr1->value, doublePtr2->value);
     }
 }

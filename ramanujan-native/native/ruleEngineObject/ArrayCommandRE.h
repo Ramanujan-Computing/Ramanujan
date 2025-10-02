@@ -38,10 +38,10 @@ private:
         //indexes can be only variables.
         for (int i = 0; i < (dimensionSize - 1); i++) {
 
-            int indexVal = *valPtrArr[i]->value;//(int) dataContainers[i]->get();
+            int indexVal = valPtrArr[i]->value;//(int) dataContainers[i]->get();
             translatedIndex += sizeAtIndex[i] * indexVal;
         }
-        translatedIndex += *valPtrArr[dimensionSize - 1]->value;//(int) dataContainers[dimensionSize - 1]->get();
+        translatedIndex += valPtrArr[dimensionSize - 1]->value;//(int) dataContainers[dimensionSize - 1]->get();
         return arrayVal->val + translatedIndex;
     }
 

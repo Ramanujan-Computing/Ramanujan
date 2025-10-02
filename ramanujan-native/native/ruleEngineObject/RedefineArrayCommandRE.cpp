@@ -11,7 +11,7 @@ void RedefineArrayCommandRE::process() {
     // 1. Compute new dimensions using the class field dims
     for (int i = 0; i < dimsCount; ++i) {
         if (isVariableDimension[i] && dimensionVariableREs[i]) {
-            dims[i] = static_cast<int>(*((DoublePtr*)dimensionVariableREs[i]->getVal())->value);
+            dims[i] = static_cast<int>(((DoublePtr*)dimensionVariableREs[i]->getVal())->value);
         } else if (!isVariableDimension[i]) {
             dims[i] = staticDimensions[i];
         } else {

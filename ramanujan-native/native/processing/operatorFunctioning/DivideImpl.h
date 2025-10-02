@@ -39,7 +39,7 @@ public:
     double get() override {
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
-        return *v1->value / op2->get();
+        return v1->value / op2->get();
     }
 };
 
@@ -54,7 +54,7 @@ public:
     }
 
     double get() override {
-        double val = op1->get() / *v2->value;
+        double val = op1->get() / v2->value;
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(v2->value);
         return val;
@@ -75,7 +75,7 @@ public:
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
         DEBUG_ADD_DOUBLE_PTR_BEFORE(v2->value);
-        return *v1->value / *v2->value;
+        return v1->value / v2->value;
     }
 };
 

@@ -35,7 +35,7 @@ public:
     bool operate() override {
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWhatValue->value);
-        return *compareWhatValue->value >= compareWithOp->get();
+        return compareWhatValue->value >= compareWithOp->get();
     }
 };
 
@@ -49,7 +49,7 @@ public:
     }
 
     bool operate() override {
-        bool val = compareWhatOp->get() >= *compareWithValue->value;
+        bool val = compareWhatOp->get() >= compareWithValue->value;
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue->value);
         return val;
@@ -70,7 +70,7 @@ public:
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWhatValue->value);
         DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue->value);
-        return *compareWhatValue->value >= *compareWithValue->value;
+        return compareWhatValue->value >= compareWithValue->value;
     }
 };
 
