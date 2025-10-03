@@ -42,8 +42,7 @@ public:
 #ifdef DEBUG_BUILD
         std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
 #endif
-        bool result = conditionFunctioning->operate();
-        if(result) {
+        if(conditionFunctioning->operate()) {
             commandRE = ifCommandRE;
         } else {
             commandRE = elseCommandRE;

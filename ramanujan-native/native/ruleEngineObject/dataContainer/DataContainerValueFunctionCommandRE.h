@@ -5,7 +5,6 @@
 #ifndef NATIVE_DATACONTAINERVALUEFUNCTIONCOMMANDRE_H
 #define NATIVE_DATACONTAINERVALUEFUNCTIONCOMMANDRE_H
 
-#include "VariableRE.h"
 #include "ArrayRE.h"
 #include <utility> // for std::move
 
@@ -16,10 +15,10 @@ public:
     // Ultra-fast default constructor - no allocations at all
     DataContainerValueFunctionCommandRE() = default;
 
-//    union {
-        double value = 0;
-        ArrayValue* arrayValue = nullptr;
-//    };
+    union {
+        double value;
+        ArrayValue* arrayValue;
+    };
 
     // Ultra-fast destructor - only cleanup when needed
     ~DataContainerValueFunctionCommandRE()  = default;
@@ -41,5 +40,7 @@ public:
     // Ultra-fast copy for same-type objects with move semantics
 
 };
+
+// Include inline implementations after both classes are fully defined
 
 #endif //NATIVE_DATACONTAINERVALUEFUNCTIONCOMMANDRE_H

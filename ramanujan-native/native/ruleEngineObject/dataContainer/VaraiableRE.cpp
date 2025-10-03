@@ -8,13 +8,7 @@
 #include "VariableRE.h"
 #include "DataContainerValueFunctionCommandRE.h"
 
-void DoublePtr::copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) {
-    value = (toBeCopied.value);
-}
-
-void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
-    toBeSet.value = value;
-}
+// Moved to header for inlining - these are now inline methods in VariableRE.h
 
 #endif
 
