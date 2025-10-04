@@ -39,14 +39,13 @@ void ArrayValue::add(int* index, double value) {
     val[indexInt] = (value);
 }
 
-void ArrayDataContainerValue::copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) {
+void ArrayDataContainerValue::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) {
     //delete arrayValue;
     //TODO: pranav: check if this is causing memory leak
-    arrayValue = new ArrayValue(toBeCopied.arrayValue, true);
+    arrayValue->val = toBeCopied.arrayValuePtr;
 }
 
 void ArrayDataContainerValue::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
     // Clean up current array value if present
-    
-    toBeSet.arrayValue = new ArrayValue(arrayValue, true);
+    toBeSet.arrayValuePtr = arrayValue->val;
 }

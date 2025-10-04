@@ -122,6 +122,7 @@ private:
      * Calculated during setFields() by examining functionInfoRE->allVariablesInMethod.
      */
     int totalArrCount = 0;
+    int totalDataContainerCount = 0;
 
     DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
 

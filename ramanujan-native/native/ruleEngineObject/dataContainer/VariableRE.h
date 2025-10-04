@@ -32,7 +32,7 @@ public:
     }
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
-    inline void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) override;
+    inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
 
     DataContainerValueType getType() const override {
         return DataContainerValueType::DOUBLE_PTR;
@@ -107,7 +107,7 @@ public:
 // These methods are performance-critical (showing up as ~11% in flamegraph)
 // Inlining eliminates virtual function call overhead while maintaining polymorphism
 
-inline void DoublePtr::copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) {
+inline void DoublePtr::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) {
     value = toBeCopied.value;
 }
 

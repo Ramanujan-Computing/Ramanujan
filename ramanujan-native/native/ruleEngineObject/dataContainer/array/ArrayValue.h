@@ -238,7 +238,7 @@ public:
         arrayValue = new ArrayValue(((ArrayDataContainerValue*) toBeCopied)->arrayValue, true);
     }
 
-    void copyDataContainerValue(DataContainerValueFunctionCommandRE& toBeCopied) override;
+    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
 
     DataContainerValueType getType() const override {
         return DataContainerValueType::ARRAY_DATA_CONTAINER_VALUE;

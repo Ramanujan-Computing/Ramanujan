@@ -141,7 +141,7 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
      * ALLOCATE COMPLETE VARIABLE AND ARRAY MANAGEMENT STRUCTURES:
      * Set up arrays for managing all variables and arrays in function scope.
      */
-    int totalDataContainerCount = totalVarCount + totalArrCount;
+    totalDataContainerCount = totalVarCount + totalArrCount;
     methodArgDataContainerAddr = new DataContainerValue*[totalDataContainerCount];
 
     /**
@@ -246,7 +246,6 @@ void FunctionCommandRE::process() {
      * This establishes the parameter passing mechanism while preserving state for restoration.
      */
      // IMPORTANT: delete these pointer at end of stack!!!!
-     int totalDataContainerCount = totalVarCount + totalArrCount;
      DataContainerValueFunctionCommandRE methodArgDataContainerCurrentVal[totalDataContainerCount];
      DataContainerValueFunctionCommandRE methodCalledDataContainerValue[argSize];
     for (int i = 0; i < argSize; i++) {
@@ -279,7 +278,7 @@ void FunctionCommandRE::process() {
      * restored after function execution. Local variables are indexed from argSize onwards.
      * 
      * CRITICAL MEMORY SAFETY NOTE:
-     * The copyDataContainerValue() method in DoublePtr and ArrayDataContainerValue
+     * The copyDataContainerValueFunctionCommandRE() method in DoublePtr and ArrayDataContainerValue
      * transfers ownership rather than copying values. This means we must be very
      * careful about the order of operations to prevent double-deletion issues.
      */
@@ -344,12 +343,12 @@ void FunctionCommandRE::process() {
      * Restore all local variables (non-parameters) to their pre-function-call state.
      * This ensures that each function call has isolated local variable scope.
      *
-     * MEMORY SAFETY: We use copyDataContainerValue which transfers ownership.
+     * MEMORY SAFETY: We use copyDataContainerValueFunctionCommandRE which transfers ownership.
      * The original values in methodArgDataContainerCurrentVal will have their 
      * ownership transferred, so we should not delete them afterward.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerAddr[i]->copyDataContainerValue(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->copyDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
     }
 
     /**
@@ -403,11 +402,12 @@ void FunctionCommandRE::process() {
          * This is crucial for recursive functions where the same parameter
          * variable is used across multiple call levels.
          * 
-         * MEMORY SAFETY: copyDataContainerValue transfers ownership from
+         * MEMORY SAFETY: copyDataContainerValueFunctionCommandRE transfers ownership from
          * methodCalledDataContainerValue[i] to the target, so we should not
          * delete methodCalledDataContainerValue[i] afterward.
          */
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCalledDataContainerValue[i]);
+        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(
+                methodCalledDataContainerValue[i]);
 
         /**
          * CALL-BY-REFERENCE VALUE PROPAGATION:
@@ -420,14 +420,14 @@ void FunctionCommandRE::process() {
          * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
          * The careful ordering of operations above prevents corruption in such cases.
          * 
-         * MEMORY SAFETY: copyDataContainerValue transfers ownership from
+         * MEMORY SAFETY: copyDataContainerValueFunctionCommandRE transfers ownership from
          * methodArgContainerFinalValue to the target.
          */
-        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodArgContainerFinalValue);
+        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(methodArgContainerFinalValue);
         
         /**
          * CLEANUP FINAL VALUE CLONE:
-         * Since copyDataContainerValue transferred ownership, we only need to
+         * Since copyDataContainerValueFunctionCommandRE transferred ownership, we only need to
          * delete the container object, not its contents.
          */
     }
@@ -438,9 +438,9 @@ void FunctionCommandRE::process() {
      * CLEANUP SAVED DATA CONTAINER VALUES:
      * 
      * CRITICAL MEMORY SAFETY NOTE:
-     * Due to the ownership transfer behavior of copyDataContainerValue() in DoublePtr 
+     * Due to the ownership transfer behavior of copyDataContainerValueFunctionCommandRE() in DoublePtr
      * and ArrayDataContainerValue, we should NOT delete the cloned objects that were
-     * used in copyDataContainerValue operations, as their ownership was transferred.
+     * used in copyDataContainerValueFunctionCommandRE operations, as their ownership was transferred.
      */
     
     /**
@@ -451,7 +451,7 @@ void FunctionCommandRE::process() {
 //    for(int i = 0; i < argSize; i++) {
 //        // These containers transferred ownership during parameter restoration - only delete the container
 //        delete methodCalledDataContainerValue[i];
-//        // These containers still own their data since they were not used in copyDataContainerValue - safe to delete normally
+//        // These containers still own their data since they were not used in copyDataContainerValueFunctionCommandRE - safe to delete normally
 //        delete methodArgDataContainerCurrentVal[i];
 //    }
     
