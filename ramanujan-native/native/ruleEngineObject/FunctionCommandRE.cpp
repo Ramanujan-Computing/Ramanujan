@@ -255,12 +255,8 @@ void FunctionCommandRE::process() {
 #endif
         // Save the current value of ALL function variables (for complete restoration)
         methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
-        // Save the current value of the function parameter (before receiving new value)
-        methodCalledOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(methodCalledDataContainerValue[i]);
-        // Transfer argument value from calling context to function parameter
-//        DataContainerValueFunctionCommandRE tempValue;
-//        methodCallingOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(tempValue);
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValue(methodCallingOriginalPlaceHolderAddrs[i]);
+        // Save the current value of the function parameter and copy from calling argument in one operation
+        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndCopyFrom(methodCalledDataContainerValue[i], methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
 #ifdef DEBUG_BUILD
@@ -296,7 +292,7 @@ void FunctionCommandRE::process() {
      * 
      * This forms the core execution loop that processes all statements in the function body.
      */
-    CommandRE* command = firstCommand;
+    command = firstCommand;
     while(command != nullptr) {
         /*
          * RECURSIVE CALL HAPPENS HERE (STANDALONE):
@@ -389,25 +385,18 @@ void FunctionCommandRE::process() {
 
     for(int i = 0; i < argSize; i++) {
         /**
-         * FINAL VALUE EXTRACTION:
-         * Extract the final value of the function parameter after execution.
+         * FINAL VALUE EXTRACTION AND FUNCTION PARAMETER RESTORATION:
+         * Extract the final value of the function parameter after execution and restore
+         * the function parameter to its pre-call state in one operation.
          * This captures the computed result that was stored in the parameter
-         * during function execution (call-by-reference semantics).
-         */
-         methodCalledOriginalPlaceHolderAddrs[i]->setValueInDataContainerValueFunctionCommandRE(methodArgContainerFinalValue);
-
-        /**
-         * FUNCTION PARAMETER RESTORATION:
-         * Restore the function parameter to its pre-call state.
-         * This is crucial for recursive functions where the same parameter
-         * variable is used across multiple call levels.
+         * during function execution (call-by-reference semantics) and is crucial
+         * for recursive functions where the same parameter variable is used across multiple call levels.
          * 
          * MEMORY SAFETY: copyDataContainerValueFunctionCommandRE transfers ownership from
          * methodCalledDataContainerValue[i] to the target, so we should not
          * delete methodCalledDataContainerValue[i] afterward.
          */
-        methodCalledOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(
-                methodCalledDataContainerValue[i]);
+        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndRestoreFrom(methodArgContainerFinalValue, methodCalledDataContainerValue[i]);
 
         /**
          * CALL-BY-REFERENCE VALUE PROPAGATION:

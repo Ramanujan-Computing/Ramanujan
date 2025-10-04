@@ -44,6 +44,12 @@ public:
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     inline void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    
+    // Combined method to save value and copy from source in one call - eliminates extra pointer hop
+    inline void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    
+    // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
+    inline void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
 
 };
 
@@ -113,6 +119,16 @@ inline void DoublePtr::copyDataContainerValueFunctionCommandRE(DataContainerValu
 
 inline void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
     toBeSet.value = value;
+}
+
+inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) {
+    savedValue.value = value;
+    value = ((DoublePtr*)source)->value;
+}
+
+inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) {
+    savedValue.value = value;
+    value = restoreFrom.value;
 }
 
 #endif //NATIVE_VARIABLERE_H

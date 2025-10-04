@@ -250,6 +250,12 @@ public:
 
     // Ultra-fast direct array value setting - eliminates switch statement overhead
     void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    
+    // Combined method to save value and copy from source in one call - eliminates extra pointer hop
+    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    
+    // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
+    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
 
 //    ~ArrayDataContainerValue() override{
 //        //if(!isClone && arrayValue)

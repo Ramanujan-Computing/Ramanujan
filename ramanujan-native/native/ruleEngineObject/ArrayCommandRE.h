@@ -23,9 +23,8 @@ public:
 
 class ArrayCommandRE : public DataOperation {
 private:
-    ArrayRE* arrayRe;
     ArrayDataContainerValue* arrayDataContainerValue;
-    std::vector<std::string*>* index;
+    const int indexSize;
     DoublePtr** valPtrArr;
 
     int dimensionSize;
@@ -46,8 +45,8 @@ private:
     }
 
 public:
-    ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap) {
-        this->arrayRe = arrayRe;
+    ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap):
+    indexSize(index->size()) {
         arrayDataContainerValue = (ArrayDataContainerValue*) arrayRe->getVal();
         valPtrArr = new DoublePtr *[index->size()];
 

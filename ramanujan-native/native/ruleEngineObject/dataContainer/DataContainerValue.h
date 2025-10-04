@@ -25,5 +25,11 @@ public:
     
     // New virtual method for direct value setting - eliminates switch statement overhead
     virtual void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) = 0;
+    
+    // Combined method to save value and copy from source in one call - eliminates extra pointer hop
+    virtual void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) = 0;
+    
+    // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
+    virtual void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) = 0;
 };
 #endif //NATIVE_DATACONTAINERVALUE_H

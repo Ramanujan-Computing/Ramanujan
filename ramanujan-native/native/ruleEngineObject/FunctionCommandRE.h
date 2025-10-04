@@ -105,6 +105,8 @@ private:
      */
     CommandRE* firstCommand;
 
+    CommandRE* command = nullptr;
+
     // ==================== Total Variable/Array Counts ====================
     
     /**
