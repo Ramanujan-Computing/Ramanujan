@@ -15,8 +15,10 @@ class IfRE : public RuleEngineInputUnits {
 private:
     If* ifCommand;
     ConditionRE* conditionRe;
-    CommandRE* ifCommandRE;
-    CommandRE* elseCommandRE;
+    CommandRE* ifCommandRE = nullptr;
+    CommandRE* elseCommandRE = nullptr;
+
+
 public:
     IfRE(If* ifCommand) {
         this->ifCommand = ifCommand;
@@ -38,10 +40,10 @@ public:
     }
 
     void process() override {
-        CommandRE* commandRE = nullptr;
 #ifdef DEBUG_BUILD
         std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
 #endif
+        CommandRE* commandRE;
         if(conditionFunctioning->operate()) {
             commandRE = ifCommandRE;
         } else {

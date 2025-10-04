@@ -30,25 +30,28 @@ private:
     int dimensionSize;
     int* dimensionIndex;
 
+    double translatedIndex = 0;
+    int counter = 0;
+
     double * getArrayValueDataContainer() {
-        int translatedIndex = 0;
+        translatedIndex = 0;
         ArrayValue * arrayVal = arrayDataContainerValue->arrayValue;
         int *sizeAtIndex = arrayVal->sizeAtIndex;
         //indexes can be only variables.
-        for (int i = 0; i < (dimensionSize - 1); i++) {
+        for (counter = 0; counter < (dimensionSize - 1); counter++) {
 
             //int indexVal = valPtrArr[i]->value;//(int) dataContainers[i]->get();
-            translatedIndex += sizeAtIndex[i] * valPtrArr[i]->value;
+            translatedIndex += sizeAtIndex[counter] * valPtrArr[counter]->value;
         }
         translatedIndex += valPtrArr[dimensionSize - 1]->value;//(int) dataContainers[dimensionSize - 1]->get();
-        return arrayVal->val + translatedIndex;
+        return arrayVal->val + (int)translatedIndex;
     }
 
 public:
     ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap):
     indexSize(index->size()) {
         arrayDataContainerValue = (ArrayDataContainerValue*) arrayRe->getVal();
-        valPtrArr = new DoublePtr *[index->size()];
+        valPtrArr = new DoublePtr *[indexSize];
 
         dimensionSize = 0;
         for (auto i : *index) {
