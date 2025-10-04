@@ -126,8 +126,8 @@ set(SOURCE_FILES
 )
 
 # Normal build target
-add_executable(native ${SOURCE_FILES})
-#add_library(native SHARED ${SOURCE_FILES})
+#add_executable(native ${SOURCE_FILES})
+add_library(native SHARED ${SOURCE_FILES})
 target_link_libraries(native PRIVATE jsoncpp_static)
 
 # Debug build target

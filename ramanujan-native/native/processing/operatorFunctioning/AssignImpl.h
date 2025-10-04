@@ -11,12 +11,7 @@
 #include "OperationFunctioning.h"
 #include "../DebugPoint.h"
 
-class AssignImplCachedOperationFunctioningBase : public CachedOperationFunctioning {
-public:
-    virtual void set() = 0;
-};
-
-class AssignImplCachedOperationFunctioning : public AssignImplCachedOperationFunctioningBase {
+class AssignImplCachedOperationFunctioning : public CachedOperationFunctioning {
 public:
     DataOperation *op1;
     DataOperation *op2;
@@ -44,7 +39,7 @@ public:
 };
 
 //take ispiration from AddImpl and have the impl classes
-class AssignImplLeftVar : public AssignImplCachedOperationFunctioningBase {
+class AssignImplLeftVar : public CachedOperationFunctioning {
     DoublePtr *v1;
     DataOperation *op2;
 
@@ -69,7 +64,7 @@ public:
 
 };
 
-class AssignImplRightVar : public AssignImplCachedOperationFunctioningBase {
+class AssignImplRightVar : public CachedOperationFunctioning {
     DataOperation *op1;
     DoublePtr *v2;
 
@@ -94,7 +89,7 @@ public:
     }
 };
 
-class AssignImplBothVar : public AssignImplCachedOperationFunctioningBase {
+class AssignImplBothVar : public CachedOperationFunctioning {
     DoublePtr *v1;
     DoublePtr *v2;
 

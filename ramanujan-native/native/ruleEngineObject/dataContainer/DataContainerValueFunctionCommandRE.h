@@ -16,10 +16,10 @@ public:
     DataContainerValueFunctionCommandRE() = default;
 
     // can represent both double value or double ptr or arrayValue array.
-    //union {
+    union {
         double value;
         double *arrayValuePtr;
-    //};
+    };
 
     // Ultra-fast destructor - only cleanup when needed
     ~DataContainerValueFunctionCommandRE()  = default;

@@ -13,7 +13,8 @@
 
 
 void OperationRE::process() {
-    ((AssignImplCachedOperationFunctioningBase*)operationFunctioning) -> set();
+    // Only Assignment operations have the implementation. Its expected that an assign operation would be here.
+    operationFunctioning -> set();
 
 #ifdef DEBUG_BUILD
     debugger->commitDebugPoint();

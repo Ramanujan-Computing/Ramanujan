@@ -104,8 +104,8 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
      * MEMORY ALLOCATION FOR PARAMETER MAPPING ARRAYS:
      * Allocate arrays to store address mappings for efficient parameter passing.
      */
-    methodCallingOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
-    methodCalledOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
+//    methodCallingOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
+//    methodCalledOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
 
     /**
      * POPULATE VARIABLE PARAMETER MAPPINGS:
@@ -142,7 +142,7 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
      * Set up arrays for managing all variables and arrays in function scope.
      */
     totalDataContainerCount = totalVarCount + totalArrCount;
-    methodArgDataContainerAddr = new DataContainerValue*[totalDataContainerCount];
+    //methodArgDataContainerAddr = new DataContainerValue*[totalDataContainerCount];
 
     /**
      * POPULATE COMPLETE VARIABLE ADDRESS MAPPING:

@@ -25,18 +25,21 @@ class ArrayCommandRE : public DataOperation {
 private:
     ArrayDataContainerValue* arrayDataContainerValue;
     const int indexSize;
-    DoublePtr** valPtrArr;
+    static const int MAX_DIMENSIONS = 32;// inspired from numpy.
+    DoublePtr* valPtrArr[MAX_DIMENSIONS];
 
     int dimensionSize;
-    int* dimensionIndex;
+    int dimensionIndex[MAX_DIMENSIONS];
 
     double translatedIndex = 0;
     int counter = 0;
+    ArrayValue * arrayVal;
+    int* sizeAtIndex;
 
     double * getArrayValueDataContainer() {
         translatedIndex = 0;
-        ArrayValue * arrayVal = arrayDataContainerValue->arrayValue;
-        int *sizeAtIndex = arrayVal->sizeAtIndex;
+        arrayVal = arrayDataContainerValue->arrayValue;
+        sizeAtIndex = arrayVal->sizeAtIndex;
         //indexes can be only variables.
         for (counter = 0; counter < (dimensionSize - 1); counter++) {
 
@@ -51,7 +54,7 @@ public:
     ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap):
     indexSize(index->size()) {
         arrayDataContainerValue = (ArrayDataContainerValue*) arrayRe->getVal();
-        valPtrArr = new DoublePtr *[indexSize];
+        //valPtrArr = new DoublePtr *[indexSize];
 
         dimensionSize = 0;
         for (auto i : *index) {
@@ -70,15 +73,15 @@ public:
             dimensionSize++;
         }
 
-        dimensionIndex = new int[dimensionSize];
+        //dimensionIndex = new int[dimensionSize];
     }
 
-    ~ArrayCommandRE() {
-        if(valPtrArr)
-            delete[] valPtrArr;
-        if(dimensionIndex)
-            delete[] dimensionIndex;
-    }
+    ~ArrayCommandRE() = default;//{
+//        if(valPtrArr)
+//            delete[] valPtrArr;
+//        if(dimensionIndex)
+//            delete[] dimensionIndex;
+    //}
 
     void set(double value) override {
        double *ptr = getArrayValueDataContainer();

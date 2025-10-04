@@ -13,5 +13,10 @@ public:
     void set(double value) override {
 
     }
+
+    virtual void set()
+    {
+
+    }
 };
 #endif //NATIVE_CACHEDOPERATIONFUNCTIONING_H

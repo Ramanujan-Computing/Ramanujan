@@ -126,6 +126,8 @@ private:
     int totalArrCount = 0;
     int totalDataContainerCount = 0;
 
+    static const int maxArgSize = 255;
+
     DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
 
     // ==================== Parameter Mapping - DataContainer Arguments ====================
@@ -141,7 +143,7 @@ private:
      * 
      * Example: If function is func(a, b), methodCalledOriginalPlaceHolderAddrs[0] points to 'a's DataContainerValue*
      */
-    DataContainerValue** methodCalledOriginalPlaceHolderAddrs = nullptr;
+    DataContainerValue* methodCalledOriginalPlaceHolderAddrs[maxArgSize];
     
     /**
      * Array of pointers to argument DataContainerValue addresses in the calling function.
@@ -154,7 +156,7 @@ private:
      * 
      * Example: If called as func(x, y), methodCallingOriginalPlaceHolderAddrs[0] points to 'x's DataContainerValue*
      */
-    DataContainerValue** methodCallingOriginalPlaceHolderAddrs = nullptr;
+    DataContainerValue* methodCallingOriginalPlaceHolderAddrs[maxArgSize];
 
     // ==================== Local Data Management ====================
     
@@ -230,7 +232,7 @@ private:
      */
     int* methodArgArrayTotalSize = nullptr;
 
-    DataContainerValue** methodArgDataContainerAddr = nullptr;
+    DataContainerValue* methodArgDataContainerAddr[maxArgSize];
 
     // ==================== Name Mapping for Debugging ====================
     
