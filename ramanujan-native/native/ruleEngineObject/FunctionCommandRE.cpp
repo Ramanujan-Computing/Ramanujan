@@ -101,13 +101,6 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     }
 
     /**
-     * MEMORY ALLOCATION FOR PARAMETER MAPPING ARRAYS:
-     * Allocate arrays to store address mappings for efficient parameter passing.
-     */
-//    methodCallingOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
-//    methodCalledOriginalPlaceHolderAddrs = new DataContainerValue*[argSize];
-
-    /**
      * POPULATE VARIABLE PARAMETER MAPPINGS:
      * Transfer variable address mappings from lists to arrays for indexed access.
      */
@@ -169,65 +162,6 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
  * call semantics, including recursive calls and comprehensive memory management.
  */
 void FunctionCommandRE::process() {
-    /*
-     * ==================== EXHAUSTIVE EXAMPLE: RECURSIVE FUNCTION EXECUTION ====================
-     * 
-     * Let's trace through how this process() method would execute a recursive function similar to:
-     * 
-     * def increment_recursive(n, depth):
-     *     if depth <= 0:
-     *         return  # Base case - modify n in place
-     *     else:
-     *         n = n + 1  # Increment n (call-by-reference)
-     *         tmpVar = depth - 1  # Operations must be separate assignments
-     *         increment_recursive(n, tmpVar)  # Recursive call with variables only
-     * 
-     * # Usage (standalone function calls):
-     * x = 5
-     * increment_recursive(x, 3)  # x becomes 8 after execution
-     * 
-     * CALL STACK VISUALIZATION:
-     * 
-     * 1. increment_recursive(x=5, depth=3) called:
-     *    - Parameters: n = 5, depth = 3
-     *    - Local variables: tmpVar
-     *    - Executes: n = n + 1 (n becomes 6), tmpVar = depth - 1 (tmpVar becomes 2), then calls increment_recursive(n, tmpVar)
-     * 
-     * 2. increment_recursive(n=6, depth=2) called (RECURSIVE):
-     *    - Parameters: n = 6, depth = 2  
-     *    - Local variables: tmpVar
-     *    - Executes: n = n + 1 (n becomes 7), tmpVar = depth - 1 (tmpVar becomes 1), then calls increment_recursive(n, tmpVar)
-     * 
-     * 3. increment_recursive(n=7, depth=1) called (RECURSIVE):
-     *    - Parameters: n = 7, depth = 1
-     *    - Local variables: tmpVar
-     *    - Executes: n = n + 1 (n becomes 8), tmpVar = depth - 1 (tmpVar becomes 0), then calls increment_recursive(n, tmpVar)
-     * 
-     * 4. increment_recursive(n=8, depth=0) called (RECURSIVE):
-     *    - Parameters: n = 8, depth = 0
-     *    - Local variables: tmpVar
-     *    - Executes: if depth <= 0, return (base case reached)
-     * 
-     * IMPORTANT: NO RETURN VALUES - ALL MODIFICATION IS CALL-BY-REFERENCE
-     * Each function modifies its parameters directly, and these changes are visible
-     * to the calling function because arguments are passed by reference.
-     * 
-     * MEMORY LAYOUT DURING EXECUTION:
-     * 
-     * methodCalledOriginalPlaceHolderAddrs[0] -> points to function parameter 'n'
-     * methodCalledOriginalPlaceHolderAddrs[1] -> points to function parameter 'depth'
-     * methodCallingOriginalPlaceHolderAddrs[0] -> points to calling argument 'n'
-     * methodCallingOriginalPlaceHolderAddrs[1] -> points to calling argument 'depth'
-     * methodArgDataContainerAddr[0] -> parameter 'n' 
-     * methodArgDataContainerAddr[1] -> parameter 'depth'
-     * methodArgDataContainerAddr[2] -> local variable 'tmpVar'
-     * 
-     * CRITICAL STACK MANAGEMENT:
-     * Each recursive call creates its own process() execution with separate:
-     * - dataContainerStackCurrent[] arrays for parameter backup
-     * - methodArgDataContainerCurrentVal[] arrays for local variable backup
-     * - Proper restoration order to prevent data corruption
-     */
 
     // ==================== DEBUG SETUP ====================
 #ifdef DEBUG_BUILD
@@ -245,7 +179,6 @@ void FunctionCommandRE::process() {
      * 
      * This establishes the parameter passing mechanism while preserving state for restoration.
      */
-     // IMPORTANT: delete these pointer at end of stack!!!!
      DataContainerValueFunctionCommandRE methodArgDataContainerCurrentVal[totalDataContainerCount];
      DataContainerValueFunctionCommandRE methodCalledDataContainerValue[argSize];
     for (int i = 0; i < argSize; i++) {
@@ -272,17 +205,12 @@ void FunctionCommandRE::process() {
      * LOCAL VARIABLE STATE PRESERVATION:
      * Save current values of all local variables (non-parameters) so they can be
      * restored after function execution. Local variables are indexed from argSize onwards.
-     * 
-     * CRITICAL MEMORY SAFETY NOTE:
-     * The copyDataContainerValueFunctionCommandRE() method in DoublePtr and ArrayDataContainerValue
-     * transfers ownership rather than copying values. This means we must be very
-     * careful about the order of operations to prevent double-deletion issues.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
         methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
     }
 
-    // ==================== PHASE 3: FUNCTION BODY EXECUTION ====================
+    // ==================== PHASE 2: FUNCTION BODY EXECUTION ====================
     
     /**
      * COMMAND CHAIN EXECUTION:
@@ -294,24 +222,10 @@ void FunctionCommandRE::process() {
      */
     command = firstCommand;
     while(command != nullptr) {
-        /*
-         * RECURSIVE CALL HAPPENS HERE (STANDALONE):
-         * When command->get() encounters a function call like increment_recursive(n, tmpVar),
-         * it creates a NEW FunctionCommandRE object and calls ITS process() method.
-         * This creates a completely separate execution context while preserving
-         * the current one in our local variables.
-         * 
-         * IMPORTANT: The function call is executed as a standalone statement.
-         * No return value is expected or processed. All communication happens
-         * through call-by-reference parameter modification.
-         * 
-         * ARGUMENT CONSTRAINT: Only variables/arrays can be passed as arguments.
-         * Operations like (depth-1) must be computed in separate assignment statements first.
-         */
         command = command->get();  // Execute current command and get next command
     }
 
-    // ==================== PHASE 4: CONTEXT RESTORATION AND CLEANUP ====================
+    // ==================== PHASE 3: CONTEXT RESTORATION AND CLEANUP ====================
 
     /**
      * CRITICAL RESTORATION PHASE:
@@ -330,18 +244,10 @@ void FunctionCommandRE::process() {
      *
      * Without proper restoration, variables like 'temp1' and 'temp2' would retain
      * values from inner recursive calls, corrupting the outer call's execution.
-     */
-
-    // ==================== PHASE 5: VARIABLE RESTORATION AND CALL-BY-REFERENCE VALUE PROPAGATION ====================
-
-    /**
+     *
      * LOCAL VARIABLE RESTORATION:
      * Restore all local variables (non-parameters) to their pre-function-call state.
      * This ensures that each function call has isolated local variable scope.
-     *
-     * MEMORY SAFETY: We use copyDataContainerValueFunctionCommandRE which transfers ownership.
-     * The original values in methodArgDataContainerCurrentVal will have their 
-     * ownership transferred, so we should not delete them afterward.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
         methodArgDataContainerAddr[i]->copyDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
@@ -391,10 +297,6 @@ void FunctionCommandRE::process() {
          * This captures the computed result that was stored in the parameter
          * during function execution (call-by-reference semantics) and is crucial
          * for recursive functions where the same parameter variable is used across multiple call levels.
-         * 
-         * MEMORY SAFETY: copyDataContainerValueFunctionCommandRE transfers ownership from
-         * methodCalledDataContainerValue[i] to the target, so we should not
-         * delete methodCalledDataContainerValue[i] afterward.
          */
         methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndRestoreFrom(methodArgContainerFinalValue, methodCalledDataContainerValue[i]);
 
@@ -408,50 +310,9 @@ void FunctionCommandRE::process() {
          * In recursive calls, methodCallingOriginalPlaceHolderAddrs[i] might point
          * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
          * The careful ordering of operations above prevents corruption in such cases.
-         * 
-         * MEMORY SAFETY: copyDataContainerValueFunctionCommandRE transfers ownership from
-         * methodArgContainerFinalValue to the target.
          */
         methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(methodArgContainerFinalValue);
-        
-        /**
-         * CLEANUP FINAL VALUE CLONE:
-         * Since copyDataContainerValueFunctionCommandRE transferred ownership, we only need to
-         * delete the container object, not its contents.
-         */
     }
-    
-    // ==================== PHASE 6: MEMORY CLEANUP ====================
-    
-    /**
-     * CLEANUP SAVED DATA CONTAINER VALUES:
-     * 
-     * CRITICAL MEMORY SAFETY NOTE:
-     * Due to the ownership transfer behavior of copyDataContainerValueFunctionCommandRE() in DoublePtr
-     * and ArrayDataContainerValue, we should NOT delete the cloned objects that were
-     * used in copyDataContainerValueFunctionCommandRE operations, as their ownership was transferred.
-     */
-    
-    /**
-     * CLEANUP PARAMETER DATA CONTAINERS:
-     * Clean up the saved parameter values and their corresponding current values.
-     * Both types had ownership transfers, so we handle them appropriately.
-     */
-//    for(int i = 0; i < argSize; i++) {
-//        // These containers transferred ownership during parameter restoration - only delete the container
-//        delete methodCalledDataContainerValue[i];
-//        // These containers still own their data since they were not used in copyDataContainerValueFunctionCommandRE - safe to delete normally
-//        delete methodArgDataContainerCurrentVal[i];
-//    }
-    
-    /**
-     * CLEANUP LOCAL VARIABLE DATA CONTAINERS:
-     * Clean up the saved local variable values that had their ownership transferred during restoration.
-     */
-//    for(int i = argSize; i < totalDataContainerCount; i++) {
-//        // These containers transferred ownership during local variable restoration - only delete the container
-//        delete methodArgDataContainerCurrentVal[i];
-//    }
 }
 
 /**

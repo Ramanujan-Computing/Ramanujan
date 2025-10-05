@@ -124,10 +124,17 @@ private:
      * Calculated during setFields() by examining functionInfoRE->allVariablesInMethod.
      */
     int totalArrCount = 0;
+
+    /**
+     * Total number of data containers (variables + arrays) in the function.
+     * */
     int totalDataContainerCount = 0;
 
     static const int maxArgSize = 255;
 
+    /**
+     * Temporary storage for final value to propagate back to calling context.
+     * */
     DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
 
     // ==================== Parameter Mapping - DataContainer Arguments ====================
@@ -141,7 +148,7 @@ private:
      * - During parameter setup: saves original DataContainerValue* references from called function context
      * - During restoration: restored to original DataContainerValue* references for proper stack management
      * 
-     * Example: If function is func(a, b), methodCalledOriginalPlaceHolderAddrs[0] points to 'a's DataContainerValue*
+     * Example: If function is def func(a, b), methodCalledOriginalPlaceHolderAddrs[0] points to 'a's DataContainerValue*
      */
     DataContainerValue* methodCalledOriginalPlaceHolderAddrs[maxArgSize];
     
@@ -158,80 +165,20 @@ private:
      */
     DataContainerValue* methodCallingOriginalPlaceHolderAddrs[maxArgSize];
 
-    // ==================== Local Data Management ====================
-    
-    /**
-     * Array of pointers to array parameter addresses in the called function.
-     * Each element points to the ArrayValue** of array parameters in the function definition.
-     * Size: arrCount
-     * 
-     * Usage:
-     * - During parameter setup: these array parameters receive references from calling arrays
-     * - During restoration: restored to original array references
-     * 
-     * Memory Structure: ArrayValue*** -> ArrayValue** -> ArrayValue* -> actual array data
-     */
-   // ArrayValue*** methodCalledArrayPlaceHolderAddrs = nullptr;
-
-    /**
-     * Array of pointers to argument array addresses in the calling function.
-     * Each element points to the ArrayValue** of arrays being passed as arguments.
-     * Size: arrCount
-     * 
-     * Usage:
-     * - Source of array references during parameter setup
-     * - Target for array reference restoration during cleanup
-     * 
-     * Purpose: Enables array parameter passing by reference semantics
-     */
-//    ArrayValue*** methodCallingArrayPlaceHolderAddrs = nullptr;
-
     // ==================== Local Variable Management ====================
     /**
      * Array of pointers to all DataContainerValue addresses within the function.
      * Includes both parameters and local data containers declared in the function.
      * Size: totalVarCount + totalArrCount (all data containers in function)
-     * 
+     *
      * Structure:
      * - Index 0 to argSize-1: Function parameter data container addresses
      * - Index argSize to total-1: Local data container addresses
-     * 
+     *
      * Usage:
      * - Allows direct access to any data container in function scope
      * - Used during restoration to reset data containers to saved values
      */
-    double** methodArgVariableAddr = nullptr;
-
-    // ==================== Local Array Management ====================
-    /**
-     * Array of pointers to all array addresses within the function.
-     * Points to the actual ArrayValue* pointers for both parameters and local arrays.
-     * Size: totalArrCount
-     * 
-     * Memory Structure: double*** -> double** -> double* (actual array data)
-     * 
-     * Usage:
-     * - Direct access to array pointers in function scope
-     * - Memory allocation for local arrays (new double[size])
-     * - Memory deallocation during cleanup (delete[])
-     */
-    double*** methodArgArrayAddr = nullptr;
-    
-    /**
-     * Array storing the total size of each array in the function.
-     * Used for proper memory allocation of local arrays during function execution.
-     * Size: totalArrCount
-     * 
-     * Purpose:
-     * - Index 0 to arrCount-1: Sizes of parameter arrays (for reference)
-     * - Index arrCount to totalArrCount-1: Sizes of local arrays (for allocation)
-     * 
-     * Usage:
-     * - During Phase 2: new double[methodArgArrayTotalSize[i]] for local arrays
-     * - During Phase 6: Ensures proper memory management
-     */
-    int* methodArgArrayTotalSize = nullptr;
-
     DataContainerValue* methodArgDataContainerAddr[maxArgSize];
 
     // ==================== Name Mapping for Debugging ====================
