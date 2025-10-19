@@ -442,7 +442,8 @@ void RAND::process() {
             doublePtr->value = dis(gen);
         }
         // Check if this is an array (ArrayValue)
-        else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
+        else if(ArrayDataContainerValue* pArrayDataContainerValueValue = dynamic_cast<ArrayDataContainerValue*>(dataContainerValue)) {
+            ArrayValue* arrayValue = pArrayDataContainerValueValue->arrayValue;
             for(int i = 0; i < arrayValue->totalSize; i++) {
                 arrayValue->val[i] = dis(gen);
             }

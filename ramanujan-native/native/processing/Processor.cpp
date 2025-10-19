@@ -80,7 +80,8 @@ std::unordered_map<std::string, std::unordered_map<std::string, double>*>* Proce
     std::unordered_map<std::string, std::unordered_map<std::string, double>*> *arrChangeMap = new std::unordered_map<std::string, std::unordered_map<std::string, double>*>();
     for(RuleEngineInputUnits *arrayRE1 : arrayREs) {
         ArrayRE* arrayRE = (ArrayRE*)arrayRE1;
-        ArrayValue* arrayValue = (ArrayValue*)(arrayRE->getVal());
+        ArrayDataContainerValue* pArrayDataContainerValueValue = (ArrayDataContainerValue*)(arrayRE->getVal());
+        ArrayValue* arrayValue = pArrayDataContainerValueValue->arrayValue;
         int size = arrayValue->totalSize;
         std::unordered_map<std::string, double> *arrChangeMap1 = new std::unordered_map<std::string, double>();
         bool changed = false;
