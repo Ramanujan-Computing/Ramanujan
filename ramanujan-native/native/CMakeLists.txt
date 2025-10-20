@@ -121,9 +121,12 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/DataContainerValue.h
         processing/DebugPoint.h
         processing/DebugPoint.cpp
+        ruleEngineObject/dataContainer/DataContainerValueFunctionCommandRE.h
+        ruleEngineObject/dataContainer/ArrayRE.cpp
 )
 
 # Normal build target
+#add_executable(native ${SOURCE_FILES})
 add_library(native SHARED ${SOURCE_FILES})
 target_link_libraries(native PRIVATE jsoncpp_static)
 

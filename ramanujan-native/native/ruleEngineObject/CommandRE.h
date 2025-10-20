@@ -54,7 +54,7 @@ public:
     void process() override;
     CommandRE* get();
     DataOperation *getDataOperation();
-    double* getVar();
+    DoublePtr * getVar();
     bool evalCondition();
 
     void destroy() override {

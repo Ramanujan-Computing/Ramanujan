@@ -3,6 +3,8 @@
 //
 
 #include "ArrayValue.h"
+#include "../DataContainerValueFunctionCommandRE.h"
+
 
 ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     this->array = array;
@@ -35,4 +37,32 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
 void ArrayValue::add(int* index, double value) {
     int indexInt = translateIndex(index);
     val[indexInt] = (value);
+}
+
+void ArrayDataContainerValue::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) {
+    //delete arrayValue;
+    //TODO: pranav: check if this is causing memory leak
+    arrayValue->val = toBeCopied.arrayValuePtr;
+}
+
+void ArrayDataContainerValue::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
+    // Clean up current array value if present
+    toBeSet.arrayValuePtr = arrayValue->val;
+}
+
+void ArrayDataContainerValue::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) {
+    // Save current value
+    savedValue.arrayValuePtr = arrayValue->val;
+    auto oldValue = arrayValue;
+    // Copy from source
+    arrayValue = new ArrayValue(((ArrayDataContainerValue*) source)->arrayValue, true);
+    delete oldValue;
+}
+
+void ArrayDataContainerValue::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) {
+    // Save current value
+    savedValue.arrayValuePtr = arrayValue->val;
+    // Restore from saved value
+
+    arrayValue->val = restoreFrom.arrayValuePtr;
 }

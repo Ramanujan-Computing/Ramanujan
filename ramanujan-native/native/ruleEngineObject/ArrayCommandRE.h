@@ -23,31 +23,38 @@ public:
 
 class ArrayCommandRE : public DataOperation {
 private:
-    ArrayRE* arrayRe;
-    std::vector<std::string*>* index;
-    double** valPtrArr;
+    ArrayDataContainerValue* arrayDataContainerValue;
+    const int indexSize;
+    static const int MAX_DIMENSIONS = 32;// inspired from numpy.
+    DoublePtr* valPtrArr[MAX_DIMENSIONS];
 
     int dimensionSize;
-    int* dimensionIndex;
+    int dimensionIndex[MAX_DIMENSIONS];
+
+    double translatedIndex = 0;
+    int counter = 0;
+    ArrayValue * arrayVal;
+    int* sizeAtIndex;
 
     double * getArrayValueDataContainer() {
-        int translatedIndex = 0;
-        ArrayValue * arrayVal = arrayRe->arrayValue;
-        int *sizeAtIndex = arrayVal->sizeAtIndex;
+        translatedIndex = 0;
+        arrayVal = arrayDataContainerValue->arrayValue;
+        sizeAtIndex = arrayVal->sizeAtIndex;
         //indexes can be only variables.
-        for (int i = 0; i < (dimensionSize - 1); i++) {
+        for (counter = 0; counter < (dimensionSize - 1); counter++) {
 
-            int indexVal = *valPtrArr[i];//(int) dataContainers[i]->get();
-            translatedIndex += sizeAtIndex[i] * indexVal;
+            //int indexVal = valPtrArr[i]->value;//(int) dataContainers[i]->get();
+            translatedIndex += sizeAtIndex[counter] * valPtrArr[counter]->value;
         }
-        translatedIndex += *valPtrArr[dimensionSize - 1];//(int) dataContainers[dimensionSize - 1]->get();
-        return arrayVal->val + translatedIndex;
+        translatedIndex += valPtrArr[dimensionSize - 1]->value;//(int) dataContainers[dimensionSize - 1]->get();
+        return arrayVal->val + (int)translatedIndex;
     }
 
 public:
-    ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap) {
-        this->arrayRe = arrayRe;
-        valPtrArr = new double *[index->size()];
+    ArrayCommandRE(ArrayRE *arrayRe, std::vector<std::string*> *index, std::unordered_map<std::string, RuleEngineInputUnits *> *pMap):
+    indexSize(index->size()) {
+        arrayDataContainerValue = (ArrayDataContainerValue*) arrayRe->getVal();
+        //valPtrArr = new DoublePtr *[indexSize];
 
         dimensionSize = 0;
         for (auto i : *index) {
@@ -58,22 +65,28 @@ public:
             VariableRE* var = dynamic_cast<VariableRE*>(iterator->second);
 //            dataContainers[dimensionSize] = dataContainerRe;
             if(var != nullptr) {
-                valPtrArr[dimensionSize] = var->getValPtrPtr();
+                valPtrArr[dimensionSize] = (DoublePtr*)var->getVal();
             } else {
                 ConstantRE* constant = dynamic_cast<ConstantRE*>(iterator->second);
-                valPtrArr[dimensionSize] = constant->getValPtrPtr();
+                valPtrArr[dimensionSize] = (DoublePtr*)constant->getVal();
             }
             dimensionSize++;
         }
 
-        dimensionIndex = new int[dimensionSize];
+        //dimensionIndex = new int[dimensionSize];
     }
 
     ~ArrayCommandRE() {
-        if(valPtrArr)
-            delete[] valPtrArr;
-        if(dimensionIndex)
-            delete[] dimensionIndex;
+        if(valPtrArr) {
+            for (int i = 0; i < dimensionSize; i++) {
+                delete valPtrArr[i];
+                valPtrArr[i] = nullptr;
+            }
+        }
+        if(arrayDataContainerValue) {
+            delete arrayDataContainerValue;
+            arrayDataContainerValue = nullptr;
+        }
     }
 
     void set(double value) override {

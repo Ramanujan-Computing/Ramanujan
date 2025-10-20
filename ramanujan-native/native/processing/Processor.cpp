@@ -44,7 +44,7 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
 
     for(RuleEngineInputUnits* array : arrayREs) {
         ArrayRE* arrayRE = (ArrayRE*)(array);
-        ArrayValue* arrayValue = (ArrayValue*)(arrayRE->getVal());
+        ArrayValue* arrayValue = ((ArrayDataContainerValue*)(arrayRE->getVal()))->arrayValue;
         int size = arrayValue->totalSize;
         for(int i = 0; i < size; i++) {
             dataFieldOriginalData.insert(std::make_pair(&arrayValue->val[i],arrayValue->val[i]));
@@ -67,7 +67,7 @@ std::unordered_map<std::string, double>* Processor::varChangeMap() {
     for(RuleEngineInputUnits *variableRE1 : variableREs) {
         VariableRE* variableRE = (VariableRE*)variableRE1;
         double* valPtr = variableRE->getValPtrPtr();
-        double originalVal = dataFieldOriginalData.at(valPtr);
+        //double originalVal = dataFieldOriginalData.at(valPtr);
         double newVal = *valPtr;
 //        if (originalVal != newVal) {
             varChangeMap->insert(std::make_pair(variableRE->id, newVal));
@@ -80,7 +80,8 @@ std::unordered_map<std::string, std::unordered_map<std::string, double>*>* Proce
     std::unordered_map<std::string, std::unordered_map<std::string, double>*> *arrChangeMap = new std::unordered_map<std::string, std::unordered_map<std::string, double>*>();
     for(RuleEngineInputUnits *arrayRE1 : arrayREs) {
         ArrayRE* arrayRE = (ArrayRE*)arrayRE1;
-        ArrayValue* arrayValue = (ArrayValue*)(arrayRE->getVal());
+        ArrayDataContainerValue* pArrayDataContainerValueValue = (ArrayDataContainerValue*)(arrayRE->getVal());
+        ArrayValue* arrayValue = pArrayDataContainerValueValue->arrayValue;
         int size = arrayValue->totalSize;
         std::unordered_map<std::string, double> *arrChangeMap1 = new std::unordered_map<std::string, double>();
         bool changed = false;

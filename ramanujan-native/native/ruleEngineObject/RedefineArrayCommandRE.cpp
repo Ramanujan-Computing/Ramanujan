@@ -8,13 +8,10 @@
 #include <json/json.h>
 
 void RedefineArrayCommandRE::process() {
-    if (!arrayValuePtr) {
-        return;
-    }
     // 1. Compute new dimensions using the class field dims
     for (int i = 0; i < dimsCount; ++i) {
         if (isVariableDimension[i] && dimensionVariableREs[i]) {
-            dims[i] = static_cast<int>(*dimensionVariableREs[i]->getValPtrPtr());
+            dims[i] = static_cast<int>(((DoublePtr*)dimensionVariableREs[i]->getVal())->value);
         } else if (!isVariableDimension[i]) {
             dims[i] = staticDimensions[i];
         } else {
@@ -33,11 +30,11 @@ void RedefineArrayCommandRE::process() {
     // Optionally, copy dataType, name, etc. if needed
 
     // 3. Create a new ArrayValue with the new Array
-    ArrayValue* oldArrayValue = *arrayValuePtr;
+    ArrayValue* oldArrayValue = arrayValuePtr->arrayValue;
     ArrayValue* newArrayValue = new ArrayValue(newArray, arrayId);
 
     // 4. Update the pointer and delete the old ArrayValue
-    *arrayValuePtr = newArrayValue;
+    arrayValuePtr->arrayValue = newArrayValue;
     if (oldArrayValue) {
         oldArrayValue->destroy();
         delete oldArrayValue;

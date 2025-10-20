@@ -18,16 +18,15 @@ private:
     std::string dataType;
 
 public:
-    ArrayValue* arrayValue;
+    ArrayDataContainerValue arrayValue;
     std::string name, frameCount;
 
-    ArrayRE(Array *array) {
+    ArrayRE(Array *array) : arrayValue(new ArrayValue(array, array->id)){
         this->array = array;
 
         this->id = array->id;
         this->name = array->name;;
-        this->arrayValue = new ArrayValue(array, this->id);
-        this->valPtr = reinterpret_cast<DataContainerValue **>(&arrayValue);
+        this->valPtr = &arrayValue;
         this->frameCount = array->frameCount;
     }
 
@@ -40,24 +39,6 @@ public:
     }
 
     void destroy() {
-        if(arrayValue != nullptr)
-        delete arrayValue;
-    }
-
-    std::string getId() override {
-        return std::string();
-    }
-
-    virtual DataContainerValue* getVal() {
-        return arrayValue;
-    }
-
-    ArrayValue** getValPtr() {
-        return &arrayValue;
-    }
-
-    virtual void setVal(DataContainerValue *val) {
-        arrayValue = (ArrayValue*)(val);
     }
 };
 #endif //NATIVE_ARRAYRE_H

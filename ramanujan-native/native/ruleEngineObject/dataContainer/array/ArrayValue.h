@@ -13,11 +13,12 @@
 #include "../DataContainerValue.h"
 #include "../AbstractDataContainer.h"
 
-
-
+// Forward declarations
 class AbstractDataContainer;
+class DataContainerValueFunctionCommandRE;
 
-class ArrayValue : public DataContainerValue {
+
+class ArrayValue {
 private:
     Array* array = nullptr;
 
@@ -29,15 +30,107 @@ private:
 public:
     double* val = nullptr;
     int totalSize = 0;
-    int* sizeAtIndex;
+    int* sizeAtIndex = nullptr;
+    
+    // Optimized default constructor - no allocations
+    ArrayValue() : array(nullptr), dimensions(nullptr), dimensionSize(0), 
+                   val(nullptr), totalSize(0), sizeAtIndex(nullptr) {
+        // Fast initialization - no memory allocations or expensive operations
+    }
+
+    ArrayValue(const ArrayValue& other)
+    {
+        this->array = other.array;
+        this->dimensionSize = other.dimensionSize;
+        this->dimensions = other.dimensions;
+        this->sizeAtIndex = other.sizeAtIndex;
+        this->val = other.val;
+        this->totalSize = other.totalSize;
+    }
+    
+    // Move constructor for better performance
+    ArrayValue(ArrayValue&& other) noexcept
+        : array(other.array), dimensions(other.dimensions), dimensionSize(other.dimensionSize),
+          val(other.val), totalSize(other.totalSize), sizeAtIndex(other.sizeAtIndex) {
+        // Reset moved-from object to prevent double deletion
+        other.array = nullptr;
+        other.dimensions = nullptr;
+        other.dimensionSize = 0;
+        other.val = nullptr;
+        other.totalSize = 0;
+        other.sizeAtIndex = nullptr;
+    }
+    
+    // Move assignment operator
+    ArrayValue& operator=(ArrayValue&& other) noexcept {
+        if (this != &other) {
+            // Clean up current resources if needed
+            if (dimensions != nullptr && dimensions != other.dimensions) {
+                delete[] dimensions;
+            }
+            if (val != nullptr && val != other.val) {
+                delete[] val;
+            }
+            if (sizeAtIndex != nullptr && sizeAtIndex != other.sizeAtIndex) {
+                delete[] sizeAtIndex;
+            }
+            
+            // Transfer ownership
+            array = other.array;
+            dimensions = other.dimensions;
+            dimensionSize = other.dimensionSize;
+            val = other.val;
+            totalSize = other.totalSize;
+            sizeAtIndex = other.sizeAtIndex;
+            
+            // Reset moved-from object
+            other.array = nullptr;
+            other.dimensions = nullptr;
+            other.dimensionSize = 0;
+            other.val = nullptr;
+            other.totalSize = 0;
+            other.sizeAtIndex = nullptr;
+        }
+        return *this;
+    }
+    
+    // Optimized copy assignment operator
+    ArrayValue& operator=(const ArrayValue& other) {
+        if (this != &other) {
+            array = other.array;
+            dimensionSize = other.dimensionSize;
+            dimensions = other.dimensions;
+            sizeAtIndex = other.sizeAtIndex;
+            val = other.val;
+            totalSize = other.totalSize;
+        }
+        return *this;
+    }
+
     ArrayValue(Array* array , std::string originalArrayId);
 
-    ArrayValue(ArrayValue* toBeCopied) {
+    ArrayValue(ArrayValue& toBeCopied, bool shallowCopy = false)
+    {
+        this->array = toBeCopied.array;
+        this->dimensionSize = toBeCopied.dimensionSize;
+        this->dimensions = toBeCopied.dimensions;
+        this->sizeAtIndex = toBeCopied.sizeAtIndex;
+        if (!shallowCopy)
+            this->val = new double[toBeCopied.totalSize]();
+        else
+            this->val = toBeCopied.val;
+        this->totalSize = toBeCopied.totalSize;
+    }
+
+    ArrayValue(ArrayValue* toBeCopied, bool shallowCopy = false) {
         this->array = toBeCopied->array;
         this->dimensionSize = toBeCopied->dimensionSize;
         this->dimensions = toBeCopied->dimensions;
         this->sizeAtIndex = toBeCopied->sizeAtIndex;
-        this->val = new double[toBeCopied->totalSize]();
+        if (!shallowCopy)
+            this->val = new double[toBeCopied->totalSize]();
+        else
+            this->val = toBeCopied->val;
         this->totalSize = toBeCopied->totalSize;
 
     }
@@ -114,6 +207,50 @@ public:
             sizeAtIndex[index - 1] = result;
         }
         return result;
+    }
+};
+
+class ArrayDataContainerValue : public DataContainerValue
+{
+public:
+    ArrayValue * arrayValue = nullptr;
+    bool isClone = false;
+
+    ArrayDataContainerValue() = default;
+
+    ArrayDataContainerValue(ArrayValue* arrayValueIn, bool isClone = false)
+    {
+        arrayValue = arrayValueIn;
+        this->isClone = isClone;
+    }
+
+    void setArrayValue(ArrayValue* arrayValueIn) {
+        if(arrayValue)
+            delete arrayValue;
+        arrayValue = arrayValueIn;
+    }
+
+    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
+
+    DataContainerValueType getType() const override {
+        return DataContainerValueType::ARRAY_DATA_CONTAINER_VALUE;
+    }
+
+    // Ultra-fast direct array value setting - eliminates switch statement overhead
+    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    
+    // Combined method to save value and copy from source in one call - eliminates extra pointer hop
+    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    
+    // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
+    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
+
+    ~ArrayDataContainerValue() override{
+        if (arrayValue) {
+            arrayValue->destroy();
+            delete arrayValue;
+            arrayValue = nullptr;
+        }
     }
 };
 
