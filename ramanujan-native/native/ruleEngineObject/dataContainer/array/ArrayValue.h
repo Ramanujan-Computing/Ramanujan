@@ -231,21 +231,10 @@ public:
         arrayValue = arrayValueIn;
     }
 
-    void copyDataContainerValue(DataContainerValue* toBeCopied) override
-    {
-        //delete arrayValue;
-        //TODO: pranav: check if this is causing memory leak
-        arrayValue = new ArrayValue(((ArrayDataContainerValue*) toBeCopied)->arrayValue, true);
-    }
-
     void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
 
     DataContainerValueType getType() const override {
         return DataContainerValueType::ARRAY_DATA_CONTAINER_VALUE;
-    }
-
-    DataContainerValue* clone() override {
-        return new ArrayDataContainerValue(new ArrayValue(arrayValue, true));
     }
 
     // Ultra-fast direct array value setting - eliminates switch statement overhead

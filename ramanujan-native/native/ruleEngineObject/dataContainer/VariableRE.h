@@ -26,20 +26,11 @@ public:
 
     DoublePtr(double  val) : value(val) {}
 
-    void copyDataContainerValue(DataContainerValue* toBeCopied) override
-    {
-        value = ((DoublePtr*)toBeCopied)->value;
-    }
-
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
 
     DataContainerValueType getType() const override {
         return DataContainerValueType::DOUBLE_PTR;
-    }
-
-    DataContainerValue* clone() override {
-        return new DoublePtr(value);
     }
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)

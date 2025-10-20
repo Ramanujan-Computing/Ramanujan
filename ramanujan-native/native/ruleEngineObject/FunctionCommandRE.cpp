@@ -378,7 +378,8 @@ void NINF::process() {
             doublePtr->value = -std::numeric_limits<double>::infinity();
         }
         // Check if this is an array (ArrayValue)
-        else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
+        else if(ArrayDataContainerValue* arrayDataContainerValue = dynamic_cast<ArrayDataContainerValue*>(dataContainerValue)) {
+            auto arrayValue = arrayDataContainerValue->arrayValue;
             for(int i = 0; i < arrayValue->totalSize; i++) {
                 arrayValue->val[i] = -std::numeric_limits<double>::infinity();
             }
@@ -405,7 +406,8 @@ void PINF::process() {
             doublePtr->value = std::numeric_limits<double>::infinity();
         }
         // Check if this is an array (ArrayValue)
-        else if(ArrayValue* arrayValue = dynamic_cast<ArrayValue*>(dataContainerValue)) {
+        else if(ArrayDataContainerValue* arrayDataContainerValue = dynamic_cast<ArrayDataContainerValue*>(dataContainerValue)) {
+            auto arrayValue = arrayDataContainerValue->arrayValue;
             for(int i = 0; i < arrayValue->totalSize; i++) {
                 arrayValue->val[i] = std::numeric_limits<double>::infinity();
             }
