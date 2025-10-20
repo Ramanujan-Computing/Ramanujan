@@ -217,7 +217,6 @@ public:
     bool isClone = false;
 
     ArrayDataContainerValue() = default;
-    ~ArrayDataContainerValue() = default;
 
     ArrayDataContainerValue(ArrayValue* arrayValueIn, bool isClone = false)
     {
@@ -246,10 +245,13 @@ public:
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
     void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
 
-//    ~ArrayDataContainerValue() override{
-//        //if(!isClone && arrayValue)
-//            //delete arrayValue;
-//    }
+    ~ArrayDataContainerValue() override{
+        if (arrayValue) {
+            arrayValue->destroy();
+            delete arrayValue;
+            arrayValue = nullptr;
+        }
+    }
 };
 
 

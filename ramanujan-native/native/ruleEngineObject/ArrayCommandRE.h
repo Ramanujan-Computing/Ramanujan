@@ -76,12 +76,18 @@ public:
         //dimensionIndex = new int[dimensionSize];
     }
 
-    ~ArrayCommandRE() = default;//{
-//        if(valPtrArr)
-//            delete[] valPtrArr;
-//        if(dimensionIndex)
-//            delete[] dimensionIndex;
-    //}
+    ~ArrayCommandRE() {
+        if(valPtrArr) {
+            for (int i = 0; i < dimensionSize; i++) {
+                delete valPtrArr[i];
+                valPtrArr[i] = nullptr;
+            }
+        }
+        if(arrayDataContainerValue) {
+            delete arrayDataContainerValue;
+            arrayDataContainerValue = nullptr;
+        }
+    }
 
     void set(double value) override {
        double *ptr = getArrayValueDataContainer();
