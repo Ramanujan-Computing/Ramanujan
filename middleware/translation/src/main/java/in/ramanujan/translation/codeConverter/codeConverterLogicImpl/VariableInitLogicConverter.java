@@ -1,6 +1,7 @@
 package in.ramanujan.translation.codeConverter.codeConverterLogicImpl;
 
 import in.ramanujan.enums.DataType;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogic;
 import in.ramanujan.pojo.RuleEngineInput;
@@ -28,7 +29,10 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
     }
 
     @Override
-    public RuleEngineInputUnits convertCode(String code, RuleEngineInput ruleEngineInput, CodeConverter codeConverter, List<String> variableScope, DebugLevelCodeCreator debugLevelCodeCreator, Map<Integer, RuleEngineInputUnits> functionFrameVariableMap, Integer[] frameVariableCounterId) throws CompilationException {
+    public RuleEngineInputUnits convertCode(String code, RuleEngineInput ruleEngineInput, CodeConverter codeConverter,
+                                            List<String> variableScope, DebugLevelCodeCreator debugLevelCodeCreator,
+                                            Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
+                                            Integer[] frameVariableCounterId) throws CompilationException {
         try {
             code = code.substring(code.indexOf("var") + "var ".length());
             String[] variableNames = code.split(":")[0].split(",");

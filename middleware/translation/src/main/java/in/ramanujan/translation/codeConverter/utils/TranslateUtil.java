@@ -4,6 +4,7 @@ import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.translation.codeConverter.CodeConverter;
@@ -396,12 +397,24 @@ public class TranslateUtil {
         Map<Integer, RuleEngineInputUnits> variableFrameMap = new HashMap<>();
         int counter = 0;
         for(String argumentCode : arguments) {
-            RuleEngineInputUnits ruleEngineInputs = variableInitLogicConverter.convertCode(argumentCode, ruleEngineInput, codeConverter, variableScope, new NoConcatImpl(), null, null);
-            if(ruleEngineInputs instanceof Variable) {
-                ((Variable) ruleEngineInputs).setFrameCount(counter);
+            RuleEngineInputUnits ruleEngineInputs;
+            if(!argumentCode.contains("var"))
+            {
+                MethodDataTypeAgnosticArg methodDataTypeAgnosticArg = new MethodDataTypeAgnosticArg();
+                methodDataTypeAgnosticArg.setId(UUID.randomUUID().toString());
+                methodDataTypeAgnosticArg.setName(code.trim());
+                methodDataTypeAgnosticArg.setFrameCount(counter);
+                ruleEngineInputs = methodDataTypeAgnosticArg;
+                codeConverter.setMethodDataTypeAgnosticArgMap(methodDataTypeAgnosticArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
             }
-            if(ruleEngineInputs instanceof Array) {
-                ((Array) ruleEngineInputs).setFrameCount(counter);
+            else {
+                ruleEngineInputs = variableInitLogicConverter.convertCode(argumentCode, ruleEngineInput, codeConverter, variableScope, new NoConcatImpl(), null, null);
+                if (ruleEngineInputs instanceof Variable) {
+                    ((Variable) ruleEngineInputs).setFrameCount(counter);
+                }
+                if (ruleEngineInputs instanceof Array) {
+                    ((Array) ruleEngineInputs).setFrameCount(counter);
+                }
             }
             variableFrameMap.put(counter, ruleEngineInputs);
             counter++;

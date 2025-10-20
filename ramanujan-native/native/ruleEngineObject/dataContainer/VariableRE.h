@@ -100,6 +100,16 @@ public:
     }
 };
 
+class MethodAgnosticVariableInternal : 
+
+class MethodAgnosticVariableRE : public RuleEngineInputUnits, public AbstractDataContainer {
+    MethodAgnosticVariable *variable;
+
+    DoublePtr doublePtr;
+
+    bool added = false;
+};
+
 // ==================== INLINE METHOD IMPLEMENTATIONS ====================
 // These methods are performance-critical (showing up as ~11% in flamegraph)
 // Inlining eliminates virtual function call overhead while maintaining polymorphism

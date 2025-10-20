@@ -4,6 +4,7 @@ package in.ramanujan.translation.codeConverter.utils;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Constant;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.ArrayCommand;
@@ -13,8 +14,16 @@ import java.util.*;
 
 public class CodeConversionUtils {
     public static String useVariable(RuleEngineInput ruleEngineInput, String codeChunk, Command command,
-                                     Map<String, Variable> variableMap, Map<String, Array> arrayMap, List<String> variableScope)
+                                     Map<String, Variable> variableMap, Map<String, Array> arrayMap,
+                                     Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap,
+                                     List<String> variableScope)
             throws CompilationException {
+        MethodDataTypeAgnosticArg dataTypeAgnosticArg = getMethodDataTypeAgnosticArg(
+                methodDataTypeAgnosticArgMap, codeChunk.trim(), variableScope);
+        if (dataTypeAgnosticArg != null) {
+            //if codeChunk.contains("\[") // update the ruleEngine to have this object as arrayRE
+            // else variableRE
+        }
         Variable variable = getVariable(variableMap, codeChunk.trim(), variableScope);
         if (variable != null) {
             command.setVariableId(variable.getId());
@@ -55,6 +64,19 @@ public class CodeConversionUtils {
             }
         }
         return false;
+    }
+
+    public static MethodDataTypeAgnosticArg getMethodDataTypeAgnosticArg(Map<String, MethodDataTypeAgnosticArg> mDataTypeAgnosticArgMap,
+                                                                 String mDataTypeAgnosticArgName,
+                                                                 List<String> variableScope) {
+        MethodDataTypeAgnosticArg mDataTypeAgnosticArg;
+        for(String scope : variableScope) {
+            mDataTypeAgnosticArg = mDataTypeAgnosticArgMap.get(scope + mDataTypeAgnosticArgName);
+            if(mDataTypeAgnosticArg != null) {
+                return mDataTypeAgnosticArg;
+            }
+        }
+        return null;
     }
 
     public static Variable getVariable(Map<String, Variable> variableMap, String variableName, List<String> variableScope) {

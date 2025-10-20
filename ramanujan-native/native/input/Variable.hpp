@@ -17,6 +17,16 @@ class Variable : public RuleEngineInputUnit {
     RuleEngineInputUnits *getInternalAnalogy();
 };
 
+class MethodAgnosticVariable : public RuleEngineInputUnit {
+public:
+    MethodAgnosticVariable(Json::Value *pValue);
+
+    std::string name, dataType, frameCount;
+    double value;
+
+    RuleEngineInputUnits *getInternalAnalogy();
+};
+
 
 #endif
 

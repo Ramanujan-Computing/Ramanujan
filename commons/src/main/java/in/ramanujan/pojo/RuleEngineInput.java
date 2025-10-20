@@ -19,6 +19,7 @@ public class RuleEngineInput {
     private List<Condition> conditions;
     private List<Constant> constants;
     private List<Array> arrays;
+    private List<MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgs;
     private List<FunctionCall> functionCalls;
     private List<While> whileBlocks;
     private List<RedefineArrayCommand> redefineArrayCommands = new ArrayList<>();
@@ -32,6 +33,7 @@ public class RuleEngineInput {
         constants = new ArrayList<>();
         arrays = new ArrayList<>();
         whileBlocks = new ArrayList<>();
+        methodDataTypeAgnosticArgs = new ArrayList<>();
         functionCalls = new ArrayList<>();
     }
 
