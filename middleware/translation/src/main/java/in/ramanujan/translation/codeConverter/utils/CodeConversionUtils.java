@@ -21,8 +21,22 @@ public class CodeConversionUtils {
         MethodDataTypeAgnosticArg dataTypeAgnosticArg = getMethodDataTypeAgnosticArg(
                 methodDataTypeAgnosticArgMap, codeChunk.trim(), variableScope);
         if (dataTypeAgnosticArg != null) {
-            //if codeChunk.contains("\[") // update the ruleEngine to have this object as arrayRE
-            // else variableRE
+            if (codeChunk.contains("\\[")) // update the ruleEngine to have this object as arrayRE
+            {
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
+                Array arrayRE = new Array();
+                arrayRE.setId(dataTypeAgnosticArg.getId());
+                arrayRE.setName(dataTypeAgnosticArg.getName());
+
+                ruleEngineInput.getArrays().add(arrayRE);
+            } else {
+                // else variableRE
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
+                Variable variableRE = new Variable();
+                variableRE.setId(dataTypeAgnosticArg.getId());
+                variableRE.setName(dataTypeAgnosticArg.getName());
+                ruleEngineInput.getVariables().add(variableRE);
+            }
         }
         Variable variable = getVariable(variableMap, codeChunk.trim(), variableScope);
         if (variable != null) {
@@ -34,7 +48,7 @@ public class CodeConversionUtils {
             if (array != null) {
                 ArrayCommand arrayCommand = new ArrayCommand();
                 arrayCommand.setArrayId(array.getId());
-                arrayCommand.setIndex(getIndexesOfArray(codeChunk, ruleEngineInput, command, variableMap, arrayMap, variableScope));
+                arrayCommand.setIndex(getIndexesOfArray(codeChunk, ruleEngineInput, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
                 command.setArrayCommand(arrayCommand);
                 addArrayInRuleEngineInput(ruleEngineInput, array);
                 return array.getId();
@@ -107,6 +121,7 @@ public class CodeConversionUtils {
 
     private static List<String> getIndexesOfArray(String arrayCodeChunk, RuleEngineInput ruleEngineInput, Command command,
                                                   Map<String, Variable> variableMap, Map<String, Array> arrayMap,
+                                                  Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap,
                                                   List<String> variableScope) throws CompilationException{
         List<String> indexStringList = new ArrayList<>();
         int len = arrayCodeChunk.length();
@@ -128,7 +143,7 @@ public class CodeConversionUtils {
         }
         List<String> indexIdList = new ArrayList<>();
         for (String indexString : indexStringList) {
-            indexIdList.add(useVariable(ruleEngineInput, indexString, command, variableMap, arrayMap, variableScope));
+            indexIdList.add(useVariable(ruleEngineInput, indexString, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
         }
         return indexIdList;
     }

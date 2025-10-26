@@ -77,6 +77,10 @@ public class CodeConverter {
         return arrayMap;
     }
 
+    public Map<String, MethodDataTypeAgnosticArg> getMethodDataTypeAgnosticArgMap() {
+        return methodDataTypeAgnosticArgMap;
+    }
+
     public void setVariableMap(Map<String, Variable> map) {
         this.variableMap = map;
     }
@@ -101,7 +105,7 @@ public class CodeConverter {
             CodeConverterLogic codeConverterLogic = CodeConverterLogicFactory.getCodeConverterLogicImpl(chunkType, codeChunk);
             RuleEngineInputUnits ruleEngineInputUnits = null;
             if(codeConverterLogic == null) {
-                CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, variableScope);
+                CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope);
             } else {
                 command.setCodeStrPtr(debugLevelCodeCreator.getLine());
                 ruleEngineInputUnits = codeConverterLogic

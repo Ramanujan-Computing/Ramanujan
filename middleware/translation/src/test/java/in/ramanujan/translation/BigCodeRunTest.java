@@ -2050,6 +2050,45 @@ public class BigCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
+    //test of method whose arguement doesnt take datatype, like def func(a,b). The argument should be used in method as
+    // variable and array.
+    @Test
+    public void testMethodWithUntypedArguments() throws Exception {
+        String code = "def func(a, b) {\n" +
+                "    var i: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < 5) {\n" +
+                "        a[i] = i * 2;\n" +
+                "        b = b + a[i];\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var myArray[5]: array;\n" +
+                "var mySum: integer;\n" +
+                "mySum = 0;\n" +
+                "exec func(myArray, mySum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // myArray = [0,2,4,6,8], mySum = 0+2+4+6+8 = 20
+        variablesToAssert.put("mySum", 20d);
+
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArray = new HashMap<>();
+        expectedArray.put("0", 0d);
+        expectedArray.put("1", 2d);
+        expectedArray.put("2", 4d);
+        expectedArray.put("3", 6d);
+        expectedArray.put("4", 8d);
+        arrayIndexToAssert.put("myArray", expectedArray);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
+
     private void InterpretAndGetVariableArrayMap(String code, Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws Exception {
         RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
 

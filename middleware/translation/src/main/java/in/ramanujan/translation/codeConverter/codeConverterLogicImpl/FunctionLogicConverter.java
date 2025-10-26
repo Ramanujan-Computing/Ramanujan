@@ -39,7 +39,7 @@ public class FunctionLogicConverter implements CodeConverterLogic {
             for (String argument : arguments) {
 
                 String arguementConversionId = CodeConversionUtils.useVariable(ruleEngineInput, argument, new Command(),
-                        codeConverter.getVariableMap(), codeConverter.getArrayMap(), variableScope);
+                        codeConverter.getVariableMap(), codeConverter.getArrayMap(), codeConverter.getMethodDataTypeAgnosticArgMap(), variableScope);
 
                 argumentIds.add(arguementConversionId);
 

@@ -29,7 +29,7 @@ public class RuleEngineUtils {
 //            }
 //            arguments.add(ruleEngineInputUnits.getId());
             arguments.add(CodeConversionUtils.useVariable(ruleEngineInput, variableName, new Command(),
-                    codeConverter.getVariableMap(), codeConverter.getArrayMap(), variableScope));
+                    codeConverter.getVariableMap(), codeConverter.getArrayMap(), codeConverter.getMethodDataTypeAgnosticArgMap(), variableScope));
         }
         FunctionCall functionCall = new FunctionCall();
         functionCall.setId(functionName);
