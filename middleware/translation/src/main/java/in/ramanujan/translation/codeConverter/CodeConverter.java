@@ -5,6 +5,7 @@ import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.translation.codeConverter.constants.CodeToken;
@@ -21,6 +22,7 @@ public class CodeConverter {
 
     private Map<String, Variable> variableMap ;
     private Map<String, Array> arrayMap;
+    private Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap;
     private Map<String, String> csvDataMap;
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
@@ -39,6 +41,9 @@ public class CodeConverter {
         arrayMap.put(variableScope + array.getName(), array);
     }
 
+    public void setMethodDataTypeAgnosticArgMap(MethodDataTypeAgnosticArg methodDataTypeAgnosticArg, String variableScope) {
+        methodDataTypeAgnosticArgMap.put(variableScope + methodDataTypeAgnosticArg.getName(), methodDataTypeAgnosticArg);
+    }
 
     public String getCsvData(String fileName) {
         if(csvDataMap == null) {
@@ -61,6 +66,7 @@ public class CodeConverter {
     public CodeConverter(CodeConverterLogicFactory codeConverterLogicFactory, StringUtils stringUtils) {
         variableMap = new HashMap<>();
         arrayMap = new HashMap<>();
+        methodDataTypeAgnosticArgMap = new HashMap<>();
     }
 
     public Map<String, Variable> getVariableMap() {
@@ -69,6 +75,10 @@ public class CodeConverter {
 
     public Map<String, Array> getArrayMap() {
         return arrayMap;
+    }
+
+    public Map<String, MethodDataTypeAgnosticArg> getMethodDataTypeAgnosticArgMap() {
+        return methodDataTypeAgnosticArgMap;
     }
 
     public void setVariableMap(Map<String, Variable> map) {
@@ -95,7 +105,7 @@ public class CodeConverter {
             CodeConverterLogic codeConverterLogic = CodeConverterLogicFactory.getCodeConverterLogicImpl(chunkType, codeChunk);
             RuleEngineInputUnits ruleEngineInputUnits = null;
             if(codeConverterLogic == null) {
-                CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, variableScope);
+                CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope);
             } else {
                 command.setCodeStrPtr(debugLevelCodeCreator.getLine());
                 ruleEngineInputUnits = codeConverterLogic

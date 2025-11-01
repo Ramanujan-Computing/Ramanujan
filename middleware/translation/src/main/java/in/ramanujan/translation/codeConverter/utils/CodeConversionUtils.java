@@ -4,6 +4,7 @@ package in.ramanujan.translation.codeConverter.utils;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Constant;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.ArrayCommand;
@@ -13,8 +14,44 @@ import java.util.*;
 
 public class CodeConversionUtils {
     public static String useVariable(RuleEngineInput ruleEngineInput, String codeChunk, Command command,
-                                     Map<String, Variable> variableMap, Map<String, Array> arrayMap, List<String> variableScope)
+                                     Map<String, Variable> variableMap, Map<String, Array> arrayMap,
+                                     Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap,
+                                     List<String> variableScope)
             throws CompilationException {
+        String[] scopeString = new String[1];
+        MethodDataTypeAgnosticArg dataTypeAgnosticArg = getMethodDataTypeAgnosticArg(
+                methodDataTypeAgnosticArgMap, codeChunk.trim().split("\\[")[0], variableScope, scopeString);
+        if (dataTypeAgnosticArg != null) {
+            if (codeChunk.contains("[")) // update the ruleEngine to have this object as arrayRE
+            {
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
+                Array arrayRE = new Array();
+                arrayRE.setId(dataTypeAgnosticArg.getId());
+                arrayRE.setName(dataTypeAgnosticArg.getName());
+
+                ArrayCommand arrayCommand = new ArrayCommand();
+                arrayCommand.setArrayId(arrayRE.getId());
+                arrayCommand.setIndex(getIndexesOfArray(codeChunk, ruleEngineInput, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
+                command.setArrayCommand(arrayCommand);
+
+                ruleEngineInput.getArrays().add(arrayRE);
+
+                methodDataTypeAgnosticArgMap.remove(scopeString[0]);
+                arrayMap.put(scopeString[0], arrayRE);
+            } else {
+                // else variableRE
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
+                Variable variableRE = new Variable();
+                variableRE.setId(dataTypeAgnosticArg.getId());
+                variableRE.setName(dataTypeAgnosticArg.getName());
+                ruleEngineInput.getVariables().add(variableRE);
+                command.setVariableId(variableRE.getId());
+
+                methodDataTypeAgnosticArgMap.remove(scopeString[0]);
+                variableMap.put(scopeString[0], variableRE);
+            }
+            return dataTypeAgnosticArg.getId();
+        }
         Variable variable = getVariable(variableMap, codeChunk.trim(), variableScope);
         if (variable != null) {
             command.setVariableId(variable.getId());
@@ -25,7 +62,7 @@ public class CodeConversionUtils {
             if (array != null) {
                 ArrayCommand arrayCommand = new ArrayCommand();
                 arrayCommand.setArrayId(array.getId());
-                arrayCommand.setIndex(getIndexesOfArray(codeChunk, ruleEngineInput, command, variableMap, arrayMap, variableScope));
+                arrayCommand.setIndex(getIndexesOfArray(codeChunk, ruleEngineInput, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
                 command.setArrayCommand(arrayCommand);
                 addArrayInRuleEngineInput(ruleEngineInput, array);
                 return array.getId();
@@ -57,6 +94,20 @@ public class CodeConversionUtils {
         return false;
     }
 
+    public static MethodDataTypeAgnosticArg getMethodDataTypeAgnosticArg(Map<String, MethodDataTypeAgnosticArg> mDataTypeAgnosticArgMap,
+                                                                 String mDataTypeAgnosticArgName,
+                                                                 List<String> variableScope, String[] outScopeString) {
+        MethodDataTypeAgnosticArg mDataTypeAgnosticArg;
+        for(String scope : variableScope) {
+            mDataTypeAgnosticArg = mDataTypeAgnosticArgMap.get(scope + mDataTypeAgnosticArgName);
+            if(mDataTypeAgnosticArg != null) {
+                outScopeString[0] = scope + mDataTypeAgnosticArgName;
+                return mDataTypeAgnosticArg;
+            }
+        }
+        return null;
+    }
+
     public static Variable getVariable(Map<String, Variable> variableMap, String variableName, List<String> variableScope) {
         Variable variable;
         for(String scope : variableScope) {
@@ -85,6 +136,7 @@ public class CodeConversionUtils {
 
     private static List<String> getIndexesOfArray(String arrayCodeChunk, RuleEngineInput ruleEngineInput, Command command,
                                                   Map<String, Variable> variableMap, Map<String, Array> arrayMap,
+                                                  Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap,
                                                   List<String> variableScope) throws CompilationException{
         List<String> indexStringList = new ArrayList<>();
         int len = arrayCodeChunk.length();
@@ -106,7 +158,7 @@ public class CodeConversionUtils {
         }
         List<String> indexIdList = new ArrayList<>();
         for (String indexString : indexStringList) {
-            indexIdList.add(useVariable(ruleEngineInput, indexString, command, variableMap, arrayMap, variableScope));
+            indexIdList.add(useVariable(ruleEngineInput, indexString, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
         }
         return indexIdList;
     }

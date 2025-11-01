@@ -2050,6 +2050,514 @@ public class BigCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
+    //test of method whose arguement doesnt take datatype, like def func(a,b). The argument should be used in method as
+    // variable and array.
+    @Test
+    public void testMethodWithUntypedArguments() throws Exception {
+        String code = "def func(a, b) {\n" +
+                "    var i: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < 5) {\n" +
+                "        a[i] = i * 2;\n" +
+                "        b = b + a[i];\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var myArray[5]: array;\n" +
+                "var mySum: integer;\n" +
+                "mySum = 0;\n" +
+                "exec func(myArray, mySum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // myArray = [0,2,4,6,8], mySum = 0+2+4+6+8 = 20
+        variablesToAssert.put("mySum", 20d);
+
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArray = new HashMap<>();
+        expectedArray.put("0", 0d);
+        expectedArray.put("1", 2d);
+        expectedArray.put("2", 4d);
+        expectedArray.put("3", 6d);
+        expectedArray.put("4", 8d);
+        arrayIndexToAssert.put("myArray", expectedArray);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
+    // test where no datatype is given, and it calls another method which also doesn't have datatype
+    @Test
+    public void testUntypedMethodCallingUntypedMethod() throws Exception {
+        String code =
+                "def addValues(x, y) {\n" +
+                "    var i: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < 3) {\n" +
+                "        x = x + y[i];\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "def computeTotal(a, b) {\n" +
+                "    exec addValues(a, b);\n" +
+                "}\n" +
+                "var values[3]: array;\n" +
+                "values[0] = 5; values[1] = 10; values[2] = 15;\n" +
+                "var total: integer;\n" +
+                "total = 0;\n" +
+                "exec computeTotal(total, values);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // total = 0 + 5 + 10 + 15 = 30
+        variablesToAssert.put("total", 30d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+
+    // Test with 4D array and untyped parameters
+    @Test
+    public void testUntypedMethod4DArrayManipulation() throws Exception {
+        String code = "def process4DArray(matrix, dims) {\n" +
+                "    var i, j, k, l, sum: integer;\n" +
+                "    sum = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < dims[0]) {\n" +
+                "        j = 0;\n" +
+                "        while(j < dims[1]) {\n" +
+                "            k = 0;\n" +
+                "            while(k < dims[2]) {\n" +
+                "                l = 0;\n" +
+                "                while(l < dims[3]) {\n" +
+                "                    matrix[i][j][k][l] = i + j * 10 + k * 100 + l * 1000;\n" +
+                "                    sum = sum + matrix[i][j][k][l];\n" +
+                "                    l = l + 1;\n" +
+                "                }\n" +
+                "                k = k + 1;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "    dims[4] = sum;\n" +
+                "}\n" +
+                "var tensor[2][2][2][2]: array;\n" +
+                "var dimensions[5]: array;\n" +
+                "dimensions[0] = 2; dimensions[1] = 2; dimensions[2] = 2; dimensions[3] = 2;\n" +
+                "exec process4DArray(tensor, dimensions);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedDims = new HashMap<>();
+        expectedDims.put("4", 8888d); // Sum of all tensor values
+        arrayIndexToAssert.put("dimensions", expectedDims);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
+    // Test with variable-length 3D array created inside untyped method
+    @Test
+    public void testUntypedMethodWithDynamic3DArray() throws Exception {
+        String code = "def createAndFill3D(size1, size2, size3, result) {\n" +
+                "    var cube[size1][size2][size3]: array;\n" +
+                "    var i, j, k, product: integer;\n" +
+                "    result = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < size1) {\n" +
+                "        j = 0;\n" +
+                "        while(j < size2) {\n" +
+                "            k = 0;\n" +
+                "            while(k < size3) {\n" +
+                "                product = (i + 1) * (j + 1) * (k + 1);\n" +
+                "                cube[i][j][k] = product;\n" +
+                "                result = result + product;\n" +
+                "                k = k + 1;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var dim1, dim2, dim3, totalSum: integer;\n" +
+                "dim1 = 3; dim2 = 3; dim3 = 3;\n" +
+                "totalSum = 0;\n" +
+                "exec createAndFill3D(dim1, dim2, dim3, totalSum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Sum = 1*1*1 + 1*1*2 + ... + 3*3*3 = 216
+        variablesToAssert.put("totalSum", 216d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with nested untyped methods and multi-dimensional variable arrays
+    @Test
+    public void testNestedUntypedMethodsWithVariableArrays() throws Exception {
+        String code = "def fillLayer(layer, rows, cols, offset) {\n" +
+                "    var i, j: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < rows) {\n" +
+                "        j = 0;\n" +
+                "        while(j < cols) {\n" +
+                "            layer[i][j] = offset + i * cols + j;\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "def build3DStructure(depth, rows, cols, structure, checksum) {\n" +
+                "    var d, localSum: integer;\n" +
+                "    localSum = 0;\n" +
+                "    d = 0;\n" +
+                "    while(d < depth) {\n" +
+                "        var layerOffset: integer;\n" +
+                "        layerOffset = d * 100;\n" +
+                "        exec fillLayer(structure[d], rows, cols, layerOffset);\n" +
+                "        var i, j: integer;\n" +
+                "        i = 0;\n" +
+                "        while(i < rows) {\n" +
+                "            j = 0;\n" +
+                "            while(j < cols) {\n" +
+                "                localSum = localSum + structure[d][i][j];\n" +
+                "                j = j + 1;\n" +
+                "            }\n" +
+                "            i = i + 1;\n" +
+                "        }\n" +
+                "        d = d + 1;\n" +
+                "    }\n" +
+                "    checksum = localSum;\n" +
+                "}\n" +
+                "var depthSize, rowSize, colSize: integer;\n" +
+                "depthSize = 2; rowSize = 3; colSize = 4;\n" +
+                "var volume[depthSize][rowSize][colSize]: array;\n" +
+                "var finalChecksum: integer;\n" +
+                "exec build3DStructure(depthSize, rowSize, colSize, volume, finalChecksum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Layer 0: offset=0, values 0-11, sum=66
+        // Layer 1: offset=100, values 100-111, sum=1266
+        // Total: 1332
+        variablesToAssert.put("finalChecksum", 1332d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with 5D array and mixed typed/untyped parameters
+    @Test
+    public void testMixedTyping5DArrayProcessing() throws Exception {
+        String code = "def init5D(hyper, d1, d2, d3, d4, d5, var maxVal: integer) {\n" +
+                "    var i1, i2, i3, i4, i5, value: integer;\n" +
+                "    maxVal = 0;\n" +
+                "    i1 = 0;\n" +
+                "    while(i1 < d1) {\n" +
+                "        i2 = 0;\n" +
+                "        while(i2 < d2) {\n" +
+                "            i3 = 0;\n" +
+                "            while(i3 < d3) {\n" +
+                "                i4 = 0;\n" +
+                "                while(i4 < d4) {\n" +
+                "                    i5 = 0;\n" +
+                "                    while(i5 < d5) {\n" +
+                "                        value = i1 * 10000 + i2 * 1000 + i3 * 100 + i4 * 10 + i5;\n" +
+                "                        hyper[i1][i2][i3][i4][i5] = value;\n" +
+                "                        if(value > maxVal) {\n" +
+                "                            maxVal = value;\n" +
+                "                        }\n" +
+                "                        i5 = i5 + 1;\n" +
+                "                    }\n" +
+                "                    i4 = i4 + 1;\n" +
+                "                }\n" +
+                "                i3 = i3 + 1;\n" +
+                "            }\n" +
+                "            i2 = i2 + 1;\n" +
+                "        }\n" +
+                "        i1 = i1 + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var hyperCube[2][2][2][2][2]: array;\n" +
+                "var sizes[5]: array;\n" +
+                "sizes[0] = 2; sizes[1] = 2; sizes[2] = 2; sizes[3] = 2; sizes[4] = 2;\n" +
+                "var maximum: integer;\n" +
+                "exec init5D(hyperCube, sizes[0], sizes[1], sizes[2], sizes[3], sizes[4], maximum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("maximum", 11111d); // Max value at [1][1][1][1][1]
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with dynamic 2D array in untyped recursive method
+    @Test
+    public void testUntypedRecursiveWithDynamic2DArray() throws Exception {
+        String code = "def recursiveFill(level, rows, cols, accumulator) {\n" +
+                "    if(level > 0) {\n" +
+                "        var matrix[rows][cols]: array;\n" +
+                "        var i, j, sum: integer;\n" +
+                "        sum = 0;\n" +
+                "        i = 0;\n" +
+                "        while(i < rows) {\n" +
+                "            j = 0;\n" +
+                "            while(j < cols) {\n" +
+                "                matrix[i][j] = level * 10 + i * cols + j;\n" +
+                "                sum = sum + matrix[i][j];\n" +
+                "                j = j + 1;\n" +
+                "            }\n" +
+                "            i = i + 1;\n" +
+                "        }\n" +
+                "        accumulator = accumulator + sum;\n" +
+                "        var nextLevel, nextRows, nextCols: integer;\n" +
+                "        nextLevel = level - 1;\n" +
+                "        nextRows = rows + 1;\n" +
+                "        nextCols = cols - 1;\n" +
+                "        if(nextCols > 0) {\n" +
+                "            exec recursiveFill(nextLevel, nextRows, nextCols, accumulator);\n" +
+                "        }\n" +
+                "    }\n" +
+                "}\n" +
+                "var totalAccumulated: integer;\n" +
+                "totalAccumulated = 0;\n" +
+                "exec recursiveFill(3, 2, 3, totalAccumulated);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Level 3: 2x3, sum includes level offset
+        // Level 2: 3x2, sum includes level offset
+        // Level 1: 4x1, sum includes level offset
+        variablesToAssert.put("totalAccumulated", null); // Analyze only
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with untyped method manipulating 3D variable array with conditionals
+    @Test
+    public void testUntypedMethod3DConditionalProcessing() throws Exception {
+        String code = "def processConditional3D(data, x, y, z, filtered, filterCount) {\n" +
+                "    var i, j, k, value: integer;\n" +
+                "    filterCount = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < x) {\n" +
+                "        j = 0;\n" +
+                "        while(j < y) {\n" +
+                "            k = 0;\n" +
+                "            while(k < z) {\n" +
+                "                value = i * 100 + j * 10 + k;\n" +
+                "                data[i][j][k] = value;\n" +
+                "                if(value > 50) {\n" +
+                "                    if(value < 200) {\n" +
+                "                        filtered[filterCount] = value;\n" +
+                "                        filterCount = filterCount + 1;\n" +
+                "                    }\n" +
+                "                }\n" +
+                "                k = k + 1;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var dim1, dim2, dim3: integer;\n" +
+                "dim1 = 3; dim2 = 3; dim3 = 3;\n" +
+                "var cube[dim1][dim2][dim3]: array;\n" +
+                "var results[50]: array;\n" +
+                "var resultCount: integer;\n" +
+                "exec processConditional3D(cube, dim1, dim2, dim3, results, resultCount);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Values in range (50, 200): 100, 101, 102, 110, 111, 112, 120, 121, 122
+        variablesToAssert.put("resultCount", 9d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with chain of untyped methods passing multi-dimensional arrays
+    @Test
+    public void testUntypedMethodChainWithMultiDimArrays() throws Exception {
+        String code = "def initMatrix(mat, rows, cols, startVal) {\n" +
+                "    var i, j: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < rows) {\n" +
+                "        j = 0;\n" +
+                "        while(j < cols) {\n" +
+                "            mat[i][j] = startVal + i + j;\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "def transformMatrix(mat, rows, cols, multiplier) {\n" +
+                "    var i, j: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < rows) {\n" +
+                "        j = 0;\n" +
+                "        while(j < cols) {\n" +
+                "            mat[i][j] = mat[i][j] * multiplier;\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "def sumMatrix(mat, rows, cols, total) {\n" +
+                "    var i, j: integer;\n" +
+                "    total = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < rows) {\n" +
+                "        j = 0;\n" +
+                "        while(j < cols) {\n" +
+                "            total = total + mat[i][j];\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var r, c: integer;\n" +
+                "r = 3; c = 4;\n" +
+                "var grid[r][c]: array;\n" +
+                "exec initMatrix(grid, r, c, 10);\n" +
+                "exec transformMatrix(grid, r, c, 2);\n" +
+                "var finalSum: integer;\n" +
+                "exec sumMatrix(grid, r, c, finalSum);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Initial: 10,11,12,13,11,12,13,14,12,13,14,15 → sum=150
+        // After *2: sum = 300
+        variablesToAssert.put("finalSum", 300d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with 4D variable array and untyped parameters doing matrix transpose-like operation
+    @Test
+    public void testUntyped4DArrayTransposeOperation() throws Exception {
+        String code = "def transpose4D(source, dest, d1, d2, d3, d4, opCount) {\n" +
+                "    var i, j, k, l: integer;\n" +
+                "    opCount = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < d1) {\n" +
+                "        j = 0;\n" +
+                "        while(j < d2) {\n" +
+                "            k = 0;\n" +
+                "            while(k < d3) {\n" +
+                "                l = 0;\n" +
+                "                while(l < d4) {\n" +
+                "                    source[i][j][k][l] = i * 1000 + j * 100 + k * 10 + l;\n" +
+                "                    dest[l][k][j][i] = source[i][j][k][l];\n" +
+                "                    opCount = opCount + 1;\n" +
+                "                    l = l + 1;\n" +
+                "                }\n" +
+                "                k = k + 1;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var s1, s2, s3, s4: integer;\n" +
+                "s1 = 2; s2 = 2; s3 = 2; s4 = 2;\n" +
+                "var original[s1][s2][s3][s4]: array;\n" +
+                "var transposed[s4][s3][s2][s1]: array;\n" +
+                "var operations: integer;\n" +
+                "exec transpose4D(original, transposed, s1, s2, s3, s4, operations);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("operations", 16d); // 2*2*2*2 = 16 operations
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    // Test with deeply nested untyped methods and variable 3D arrays
+    @Test
+    public void testDeeplyNestedUntypedWith3DArrays() throws Exception {
+        String code = "def level3(arr, size, factor, result) {\n" +
+                "    var i, j, k: integer;\n" +
+                "    result = 0;\n" +
+                "    i = 0;\n" +
+                "    while(i < size) {\n" +
+                "        j = 0;\n" +
+                "        while(j < size) {\n" +
+                "            k = 0;\n" +
+                "            while(k < size) {\n" +
+                "                result = result + arr[i][j][k] * factor;\n" +
+                "                k = k + 1;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "def level2(arr, size, multiplier, result) {\n" +
+                "    var partialResult: integer;\n" +
+                "    exec level3(arr, size, multiplier, partialResult);\n" +
+                "    result = partialResult * 2;\n" +
+                "}\n" +
+                "def level1(size, mult, finalResult) {\n" +
+                "    var cube[size][size][size]: array;\n" +
+                "    var i, j, k: integer;\n" +
+                "    i = 0;\n" +
+                "    while(i < size) {\n" +
+                "        j = 0;\n" +
+                "        while(j < size) {\n" +
+                "            k = 0;\n" +
+                "            while(k < size) {\n" +
+                "                cube[i][j][k] = i + j + k;\n" +
+                "                k = k + 1;\n" +
+                "            }\n" +
+                "            j = j + 1;\n" +
+                "        }\n" +
+                "        i = i + 1;\n" +
+                "    }\n" +
+                "    exec level2(cube, size, mult, finalResult);\n" +
+                "}\n" +
+                "var answer: integer;\n" +
+                "exec level1(3, 3, answer);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        // Cube has values 0-4, sum=54, *3=162, *2=324
+        variablesToAssert.put("answer", 486d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     private void InterpretAndGetVariableArrayMap(String code, Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws Exception {
         RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
 
