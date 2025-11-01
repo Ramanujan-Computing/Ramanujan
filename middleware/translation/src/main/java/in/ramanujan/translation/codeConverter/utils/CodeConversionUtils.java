@@ -18,17 +18,26 @@ public class CodeConversionUtils {
                                      Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap,
                                      List<String> variableScope)
             throws CompilationException {
+        String[] scopeString = new String[1];
         MethodDataTypeAgnosticArg dataTypeAgnosticArg = getMethodDataTypeAgnosticArg(
-                methodDataTypeAgnosticArgMap, codeChunk.trim(), variableScope);
+                methodDataTypeAgnosticArgMap, codeChunk.trim().split("\\[")[0], variableScope, scopeString);
         if (dataTypeAgnosticArg != null) {
-            if (codeChunk.contains("\\[")) // update the ruleEngine to have this object as arrayRE
+            if (codeChunk.contains("[")) // update the ruleEngine to have this object as arrayRE
             {
                 ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
                 Array arrayRE = new Array();
                 arrayRE.setId(dataTypeAgnosticArg.getId());
                 arrayRE.setName(dataTypeAgnosticArg.getName());
 
+                ArrayCommand arrayCommand = new ArrayCommand();
+                arrayCommand.setArrayId(arrayRE.getId());
+                arrayCommand.setIndex(getIndexesOfArray(codeChunk, ruleEngineInput, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
+                command.setArrayCommand(arrayCommand);
+
                 ruleEngineInput.getArrays().add(arrayRE);
+
+                methodDataTypeAgnosticArgMap.remove(scopeString[0]);
+                arrayMap.put(scopeString[0], arrayRE);
             } else {
                 // else variableRE
                 ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
@@ -36,7 +45,12 @@ public class CodeConversionUtils {
                 variableRE.setId(dataTypeAgnosticArg.getId());
                 variableRE.setName(dataTypeAgnosticArg.getName());
                 ruleEngineInput.getVariables().add(variableRE);
+                command.setVariableId(variableRE.getId());
+
+                methodDataTypeAgnosticArgMap.remove(scopeString[0]);
+                variableMap.put(scopeString[0], variableRE);
             }
+            return dataTypeAgnosticArg.getId();
         }
         Variable variable = getVariable(variableMap, codeChunk.trim(), variableScope);
         if (variable != null) {
@@ -82,11 +96,12 @@ public class CodeConversionUtils {
 
     public static MethodDataTypeAgnosticArg getMethodDataTypeAgnosticArg(Map<String, MethodDataTypeAgnosticArg> mDataTypeAgnosticArgMap,
                                                                  String mDataTypeAgnosticArgName,
-                                                                 List<String> variableScope) {
+                                                                 List<String> variableScope, String[] outScopeString) {
         MethodDataTypeAgnosticArg mDataTypeAgnosticArg;
         for(String scope : variableScope) {
             mDataTypeAgnosticArg = mDataTypeAgnosticArgMap.get(scope + mDataTypeAgnosticArgName);
             if(mDataTypeAgnosticArg != null) {
+                outScopeString[0] = scope + mDataTypeAgnosticArgName;
                 return mDataTypeAgnosticArg;
             }
         }

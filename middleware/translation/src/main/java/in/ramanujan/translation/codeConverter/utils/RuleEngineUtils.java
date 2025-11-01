@@ -21,8 +21,13 @@ public class RuleEngineUtils {
             /*
             * var x:integer
             * */
-            argumentDecl = argumentDecl.substring(argumentDecl.indexOf("var") + "var".length());
-            String variableName = argumentDecl.split(":")[0].trim();
+            String variableName = null;
+            if ( argumentDecl.contains("var")) {
+                argumentDecl = argumentDecl.substring(argumentDecl.indexOf("var") + "var".length());
+                variableName = argumentDecl.split(":")[0].trim();
+            } else {
+                variableName = argumentDecl.trim();
+            }
 //            RuleEngineInputUnits ruleEngineInputUnits = codeConverter.getVariable(variableName);
 //            if(ruleEngineInputUnits == null) {
 //                ruleEngineInputUnits = codeConverter.getArray(variableName);

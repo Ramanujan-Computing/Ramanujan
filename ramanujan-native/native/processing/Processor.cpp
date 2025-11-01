@@ -124,6 +124,7 @@ void Processor::fixConditions(std::unordered_map<std::string, RuleEngineInputUni
 std::unordered_map<std::string, RuleEngineInputUnits*>* Processor::createMap(RuleEngineInput ruleEngineInput) {
     std::unordered_map<std::string, RuleEngineInputUnits*> *map = new std::unordered_map<std::string, RuleEngineInputUnits*>;
 
+    storeInIdMap(map, ruleEngineInput.methodAgnosticVariables);
     storeInIdMap(map, ruleEngineInput.variables);
     storeInIdMap(map, ruleEngineInput.ifBlocks);
     storeInIdMap(map, ruleEngineInput.operations);
@@ -143,6 +144,14 @@ void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnit
             std::cout << "Command found" << std::endl;
         }
         pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+    }
+}
+
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<MethodAgnosticVariable*>* list1)
+{
+    for(std::vector<MethodAgnosticVariable*>::iterator itr = list1->begin(); itr !=  list1->end(); itr++) {
+        MethodAgnosticVariableRE * var = (MethodAgnosticVariableRE*)(*itr)->getInternalAnalogy();
+        pMap->insert(std::make_pair((*itr)->id, var));
     }
 }
 

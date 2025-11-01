@@ -402,7 +402,7 @@ public class TranslateUtil {
             {
                 MethodDataTypeAgnosticArg methodDataTypeAgnosticArg = new MethodDataTypeAgnosticArg();
                 methodDataTypeAgnosticArg.setId(UUID.randomUUID().toString());
-                methodDataTypeAgnosticArg.setName(code.trim());
+                methodDataTypeAgnosticArg.setName(argumentCode);
                 methodDataTypeAgnosticArg.setFrameCount(counter);
                 ruleEngineInputs = methodDataTypeAgnosticArg;
                 codeConverter.setMethodDataTypeAgnosticArgMap(methodDataTypeAgnosticArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");

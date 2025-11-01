@@ -29,10 +29,6 @@ public:
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
 
-    DataContainerValueType getType() const override {
-        return DataContainerValueType::DOUBLE_PTR;
-    }
-
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     inline void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
     
@@ -100,14 +96,54 @@ public:
     }
 };
 
-class MethodAgnosticVariableInternal : 
+class MethodAgnosticVariableInternal : public DataContainerValue {
+
+    // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
+    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override
+    {
+
+    }
+
+    // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
+    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override
+    {
+
+    }
+
+    // Combined method to save value and copy from source in one call - eliminates extra pointer hop
+    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override
+    {
+
+    }
+
+    // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
+    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override
+    {
+
+    }
+
+};
 
 class MethodAgnosticVariableRE : public RuleEngineInputUnits, public AbstractDataContainer {
     MethodAgnosticVariable *variable;
+    MethodAgnosticVariableInternal methodAgnosticVariableInternal;
+public:
+    MethodAgnosticVariableRE(MethodAgnosticVariable *variable) {
+        this->variable = variable;
 
-    DoublePtr doublePtr;
+        id = variable->id;
+        valPtr = &methodAgnosticVariableInternal;
+    }
 
-    bool added = false;
+    void destroy() {
+    }
+
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+
+    }
+
+    void process() override {
+    }
 };
 
 // ==================== INLINE METHOD IMPLEMENTATIONS ====================
