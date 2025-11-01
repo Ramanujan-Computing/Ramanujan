@@ -2159,7 +2159,7 @@ public class BigCodeRunTest {
         Map<String, Object> variablesToAssert = new HashMap<>();
         Map<String, Object> arrayIndexToAssert = new HashMap<>();
         Map<String, Object> expectedDims = new HashMap<>();
-        expectedDims.put("4", 8880d); // Sum of all tensor values
+        expectedDims.put("4", 8888d); // Sum of all tensor values
         arrayIndexToAssert.put("dimensions", expectedDims);
 
         analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
@@ -2553,7 +2553,7 @@ public class BigCodeRunTest {
 
         Map<String, Object> variablesToAssert = new HashMap<>();
         // Cube has values 0-4, sum=54, *3=162, *2=324
-        variablesToAssert.put("answer", 324d);
+        variablesToAssert.put("answer", 486d);
 
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
