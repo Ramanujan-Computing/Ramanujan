@@ -63,7 +63,23 @@ public class VariableInitLogicConverter implements CodeConverterLogic {
                             if (dimVar != null) {
                                 resolvedDims.add(dimVar.getId());
                             } else {
-                                throw new CompilationException(null, null, "Dimension variable '" + dimStr + "' not found in scope");
+                                String[] methodDataTypeAgnosticArgScopeStr = new String[1];
+                                MethodDataTypeAgnosticArg methodDataTypeAgnosticArg = CodeConversionUtils.getMethodDataTypeAgnosticArg(
+                                                                            codeConverter.getMethodDataTypeAgnosticArgMap(), dimStr, variableScope, new String[1]
+                                );
+                                if (methodDataTypeAgnosticArg != null) {
+                                    resolvedDims.add(methodDataTypeAgnosticArg.getId());
+                                    //Create variable, put in the scope. add in the ruleEngineInput and delete the methodDataTypeAgnosticArgMap
+                                    ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodDataTypeAgnosticArg);
+                                    Variable variableDim = new Variable();
+                                    variableDim.setId(methodDataTypeAgnosticArg.getId());
+                                    variableDim.setName(methodDataTypeAgnosticArg.getName());
+
+                                    codeConverter.getMethodDataTypeAgnosticArgMap().remove(methodDataTypeAgnosticArgScopeStr[0]);
+                                    codeConverter.getVariableMap().put(methodDataTypeAgnosticArgScopeStr[0], variableDim);
+                                } else {
+                                    throw new CompilationException(null, null, "Dimension variable '" + dimStr + "' not found in scope");
+                                }
                             }
                         }
                     }
