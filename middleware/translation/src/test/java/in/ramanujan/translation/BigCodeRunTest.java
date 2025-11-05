@@ -2207,13 +2207,13 @@ public class BigCodeRunTest {
     // Test with nested untyped methods and multi-dimensional variable arrays
     @Test
     public void testNestedUntypedMethodsWithVariableArrays() throws Exception {
-        String code = "def fillLayer(layer, rows, cols, offset) {\n" +
+        String code = "def fillLayer(structure, depthIndex, rows, cols, offset) {\n" +
                 "    var i, j: integer;\n" +
                 "    i = 0;\n" +
                 "    while(i < rows) {\n" +
                 "        j = 0;\n" +
                 "        while(j < cols) {\n" +
-                "            layer[i][j] = offset + i * cols + j;\n" +
+                "            structure[depthIndex][i][j] = offset + i * cols + j;\n" +
                 "            j = j + 1;\n" +
                 "        }\n" +
                 "        i = i + 1;\n" +
@@ -2226,7 +2226,7 @@ public class BigCodeRunTest {
                 "    while(d < depth) {\n" +
                 "        var layerOffset: integer;\n" +
                 "        layerOffset = d * 100;\n" +
-                "        exec fillLayer(structure[d], rows, cols, layerOffset);\n" +
+                "        exec fillLayer(structure, d, rows, cols, layerOffset);\n" +
                 "        var i, j: integer;\n" +
                 "        i = 0;\n" +
                 "        while(i < rows) {\n" +
@@ -2296,7 +2296,9 @@ public class BigCodeRunTest {
                 "var sizes[5]: array;\n" +
                 "sizes[0] = 2; sizes[1] = 2; sizes[2] = 2; sizes[3] = 2; sizes[4] = 2;\n" +
                 "var maximum: integer;\n" +
-                "exec init5D(hyperCube, sizes[0], sizes[1], sizes[2], sizes[3], sizes[4], maximum);";
+                "var d1, d2, d3, d4, d5: integer;\n" +
+                "d1 = sizes[0]; d2 = sizes[1]; d3 = sizes[2]; d4 = sizes[3]; d5 = sizes[4];\n" +
+                "exec init5D(hyperCube, d1, d2, d3, d4, d5, maximum);";
 
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();

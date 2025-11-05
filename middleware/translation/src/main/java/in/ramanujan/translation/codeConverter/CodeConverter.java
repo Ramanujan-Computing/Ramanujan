@@ -105,7 +105,7 @@ public class CodeConverter {
             CodeConverterLogic codeConverterLogic = CodeConverterLogicFactory.getCodeConverterLogicImpl(chunkType, codeChunk);
             RuleEngineInputUnits ruleEngineInputUnits = null;
             if(codeConverterLogic == null) {
-                CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope);
+                CodeConversionUtils.useVariable(ruleEngineInput, codeChunk, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope, false);
             } else {
                 command.setCodeStrPtr(debugLevelCodeCreator.getLine());
                 ruleEngineInputUnits = codeConverterLogic

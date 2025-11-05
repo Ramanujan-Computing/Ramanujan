@@ -97,31 +97,102 @@ public:
 };
 
 class MethodAgnosticVariableInternal : public DataContainerValue {
+    double doubleValue = 0.0;
+    double * arrayValue = nullptr;
+    bool isArray = false;
+    bool isDataTypeKnown = false;
 
-    // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override
     {
-
+        if (isDataTypeKnown)
+        {
+            if (isArray)
+            {
+                arrayValue = toBeCopied.arrayValuePtr;
+            }
+            else
+            {
+                doubleValue = toBeCopied.value;
+            }
+            return;
+        }
+        if(toBeCopied.arrayValuePtr)
+        {
+            isArray = true;
+            arrayValue = toBeCopied.arrayValuePtr;
+            isDataTypeKnown = true;
+        }
+        else
+        {
+            isArray = false;
+            doubleValue = toBeCopied.value;
+            isDataTypeKnown = true;
+        }
     }
 
-    // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override
     {
 
     }
 
-    // Combined method to save value and copy from source in one call - eliminates extra pointer hop
     void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override
     {
+        if(isDataTypeKnown)
+        {
+            if (isArray)
+            {
+                savedValue.arrayValuePtr = arrayValue;
+                arrayValue = ((MethodAgnosticVariableInternal*)source)->arrayValue;
+            }
+            else
+            {
+                savedValue.value = doubleValue;
+                doubleValue = ((MethodAgnosticVariableInternal*)source)->doubleValue;
+            }
+        } else {
+            // since dataType is not known, func called first time then. No need to save previous value.
+//            savedValue.arrayValuePtr = arrayValue;
+//            savedValue.value = doubleValue;
 
+            DoublePtr* sourceDoublePtr = dynamic_cast<DoublePtr*>(source);
+            if(sourceDoublePtr)
+            {
+                isArray = false;
+                doubleValue = sourceDoublePtr->value;
+                isDataTypeKnown = true;
+            } else {
+                MethodAgnosticVariableInternal* methodAgnosticVariableInternal = dynamic_cast<MethodAgnosticVariableInternal*>(source);
+                if (methodAgnosticVariableInternal)
+                {
+                    isArray = true;
+                    arrayValue = methodAgnosticVariableInternal->arrayValue;
+                    isDataTypeKnown = true;
+                }
+                else{
+                    copyArrayValueFromDataContainerValue(source);
+                }
+            }
+        }
     }
 
-    // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
+    void copyArrayValueFromDataContainerValue(DataContainerValue* source);
+
     void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override
     {
-
+        if(isDataTypeKnown)
+        {
+            if (isArray)
+            {
+                savedValue.arrayValuePtr = arrayValue;
+                arrayValue = restoreFrom.arrayValuePtr;
+            }
+            else
+            {
+                savedValue.value = doubleValue;
+                doubleValue = restoreFrom.value;
+            }
+        }
     }
-
 };
 
 class MethodAgnosticVariableRE : public RuleEngineInputUnits, public AbstractDataContainer {

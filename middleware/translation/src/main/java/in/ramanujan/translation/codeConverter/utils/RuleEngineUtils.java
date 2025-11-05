@@ -34,7 +34,7 @@ public class RuleEngineUtils {
 //            }
 //            arguments.add(ruleEngineInputUnits.getId());
             arguments.add(CodeConversionUtils.useVariable(ruleEngineInput, variableName, new Command(),
-                    codeConverter.getVariableMap(), codeConverter.getArrayMap(), codeConverter.getMethodDataTypeAgnosticArgMap(), variableScope));
+                    codeConverter.getVariableMap(), codeConverter.getArrayMap(), codeConverter.getMethodDataTypeAgnosticArgMap(), variableScope, false));
         }
         FunctionCall functionCall = new FunctionCall();
         functionCall.setId(functionName);

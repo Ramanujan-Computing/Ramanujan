@@ -7,8 +7,17 @@
 
 #include "VariableRE.h"
 #include "DataContainerValueFunctionCommandRE.h"
+#include "array/ArrayValue.h"
 
-// Moved to header for inlining - these are now inline methods in VariableRE.h
+void MethodAgnosticVariableInternal::copyArrayValueFromDataContainerValue(DataContainerValue *source) {
+    ArrayDataContainerValue* arrayDataContainerValue = dynamic_cast<ArrayDataContainerValue*>(source);
+    if(arrayDataContainerValue)
+    {
+        isArray = true;
+        arrayValue = arrayDataContainerValue->arrayValue->val;
+        isDataTypeKnown = true;
+    }
+}
 
 #endif
 

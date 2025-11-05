@@ -16,12 +16,16 @@ public class CodeConversionUtils {
     public static String useVariable(RuleEngineInput ruleEngineInput, String codeChunk, Command command,
                                      Map<String, Variable> variableMap, Map<String, Array> arrayMap,
                                      Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap,
-                                     List<String> variableScope)
+                                     List<String> variableScope, boolean isFuncArgCreation)
             throws CompilationException {
         String[] scopeString = new String[1];
         MethodDataTypeAgnosticArg dataTypeAgnosticArg = getMethodDataTypeAgnosticArg(
                 methodDataTypeAgnosticArgMap, codeChunk.trim().split("\\[")[0], variableScope, scopeString);
         if (dataTypeAgnosticArg != null) {
+            if (isFuncArgCreation)
+            {
+                return dataTypeAgnosticArg.getId();
+            }
             if (codeChunk.contains("[")) // update the ruleEngine to have this object as arrayRE
             {
                 ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(dataTypeAgnosticArg);
@@ -158,7 +162,7 @@ public class CodeConversionUtils {
         }
         List<String> indexIdList = new ArrayList<>();
         for (String indexString : indexStringList) {
-            indexIdList.add(useVariable(ruleEngineInput, indexString, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope));
+            indexIdList.add(useVariable(ruleEngineInput, indexString, command, variableMap, arrayMap, methodDataTypeAgnosticArgMap, variableScope, false));
         }
         return indexIdList;
     }
