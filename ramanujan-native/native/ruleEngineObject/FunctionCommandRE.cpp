@@ -8,7 +8,7 @@
 #include "dataContainer/array/ArrayValue.h"
 #include "DebugPoint.h"
 #include "dataContainer/DataContainerValueFunctionCommandRE.h"
-#include <list>
+#include <vector>
 
 #include <limits>
 #include <random>
@@ -147,6 +147,71 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     }
 }
 
+// This class maintains stack of DataContainerValueFunctionCommandRE.
+// DataContainerValueFunctionCommandREArray will request this object to return n number of DataContainerValueFunctionCommandRE objects.
+// If all n objects are in stack, it will return from stack. If not, it will create new objects and return.
+// DataContainerValueFunctionCommandREArray when destroyed will return all objects to this maintainer, and this
+// maintainer will push them in stack for re-use.
+class DataContainerValueFunctionCommandREMemMaintainer {
+private:
+    DataContainerValueFunctionCommandRE* memStack[256 * 1000];
+    int currentIter = 0;  // Current number of available objects in the stack
+    int totalSize;
+public:
+    // Structure to hold start and end pointers for a contiguous range
+    struct PointerRange {
+        DataContainerValueFunctionCommandRE **startArr1, **startArr2;
+    };
+    
+    // Return start and end pointers for two contiguous ranges in a single allocation
+    // This avoids memcpy by returning direct pointers into the memStack
+    void allocateDual(int &size1, int &size2, PointerRange& ranges) {
+        totalSize = size1 + size2;
+        
+        // Check if we need to allocate more objects
+        if(currentIter < totalSize) {
+            int needed = totalSize - currentIter;
+            for(int i = 0; i < needed; i++) {
+                memStack[currentIter + i] = new DataContainerValueFunctionCommandRE();
+            }
+            currentIter = totalSize;
+        }
+        
+        // Return pointers directly into the stack - no memcpy needed!
+        ranges.startArr1 = &memStack[currentIter - totalSize];
+        
+        ranges.startArr2 = &memStack[currentIter - size2];
+        
+        currentIter -= totalSize;
+    }
+    
+    // Return the ranges back to the pool
+    void deallocateDual(int &totalSizeDeAllocated) {
+        currentIter += totalSizeDeAllocated;
+    }
+};
+
+DataContainerValueFunctionCommandREMemMaintainer dataContainerValueFunctionCommandReMemMaintainer;
+
+// Combined allocation wrapper for two arrays to reduce ctor/dtor overhead
+// Now uses pointer ranges instead of copying arrays
+class DataContainerValueFunctionCommandRECombinedArray {
+private:
+    int totalSize;
+public:
+
+    
+    DataContainerValueFunctionCommandRECombinedArray(int& s1, int& s2, DataContainerValueFunctionCommandREMemMaintainer::PointerRange& ranges)
+        : totalSize(s1 + s2)
+    {
+        dataContainerValueFunctionCommandReMemMaintainer.allocateDual(s1, s2, ranges);
+    }
+
+    ~DataContainerValueFunctionCommandRECombinedArray() {
+        dataContainerValueFunctionCommandReMemMaintainer.deallocateDual(totalSize);
+    }
+};
+
 /**
  * Main execution method for function calls.
  * 
@@ -179,17 +244,25 @@ void FunctionCommandRE::process() {
      * 
      * This establishes the parameter passing mechanism while preserving state for restoration.
      */
-     DataContainerValueFunctionCommandRE methodArgDataContainerCurrentVal[totalDataContainerCount];
-     DataContainerValueFunctionCommandRE methodCalledDataContainerValue[argSize];
+     
+     // Create wrapper that will allocate pointer ranges from the memory pool and return them on destruction
+     // No memcpy needed - we get direct pointers into the pool!
+     DataContainerValueFunctionCommandREMemMaintainer::PointerRange ranges;
+     DataContainerValueFunctionCommandRECombinedArray combinedArray(totalDataContainerCount, argSize, ranges);
+     
+     // Get direct pointers to the allocated ranges
+     DataContainerValueFunctionCommandRE** methodArgDataContainerCurrentValArray = ranges.startArr1;
+     DataContainerValueFunctionCommandRE** methodCalledDataContainerValueArray = ranges.startArr2;
+     
     for (int i = 0; i < argSize; i++) {
 #ifdef DEBUG_BUILD
         // Record the argument value being passed for debugging
         debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
         // Save the current value of ALL function variables (for complete restoration)
-        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentValArray[i]);
         // Save the current value of the function parameter and copy from calling argument in one operation
-        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndCopyFrom(methodCalledDataContainerValue[i], methodCallingOriginalPlaceHolderAddrs[i]);
+        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndCopyFrom(methodCalledDataContainerValueArray[i], methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
 #ifdef DEBUG_BUILD
@@ -207,7 +280,7 @@ void FunctionCommandRE::process() {
      * restored after function execution. Local variables are indexed from argSize onwards.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentValArray[i]);
     }
 
     // ==================== PHASE 2: FUNCTION BODY EXECUTION ====================
@@ -250,7 +323,7 @@ void FunctionCommandRE::process() {
      * This ensures that each function call has isolated local variable scope.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerAddr[i]->copyDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->copyDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentValArray[i]);
     }
 
     /**
@@ -298,7 +371,7 @@ void FunctionCommandRE::process() {
          * during function execution (call-by-reference semantics) and is crucial
          * for recursive functions where the same parameter variable is used across multiple call levels.
          */
-        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndRestoreFrom(methodArgContainerFinalValue, methodCalledDataContainerValue[i]);
+        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndRestoreFrom(methodArgContainerFinalValue, methodCalledDataContainerValueArray[i]);
 
         /**
          * CALL-BY-REFERENCE VALUE PROPAGATION:
@@ -311,7 +384,7 @@ void FunctionCommandRE::process() {
          * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
          * The careful ordering of operations above prevents corruption in such cases.
          */
-        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(methodArgContainerFinalValue);
+        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(&methodArgContainerFinalValue);
     }
 }
 

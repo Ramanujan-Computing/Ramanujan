@@ -27,16 +27,16 @@ public:
     DoublePtr(double  val) : value(val) {}
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
-    inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
+    inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override;
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
-    inline void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    inline void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) override;
     
     // Combined method to save value and copy from source in one call - eliminates extra pointer hop
-    inline void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    inline void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) override;
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
-    inline void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
+    inline void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override;
 
 };
 
@@ -102,57 +102,57 @@ class MethodAgnosticVariableInternal : public DataContainerValue {
     bool isArray = false;
     bool isDataTypeKnown = false;
 
-    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override
+    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override
     {
         if (isDataTypeKnown)
         {
             if (isArray)
             {
-                arrayValue = toBeCopied.arrayValuePtr;
+                arrayValue = toBeCopied->arrayValuePtr;
             }
             else
             {
-                doubleValue = toBeCopied.value;
+                doubleValue = toBeCopied->value;
             }
             return;
         }
-        if(toBeCopied.arrayValuePtr)
+        if(toBeCopied->arrayValuePtr)
         {
             isArray = true;
-            arrayValue = toBeCopied.arrayValuePtr;
+            arrayValue = toBeCopied->arrayValuePtr;
             isDataTypeKnown = true;
         }
         else
         {
             isArray = false;
-            doubleValue = toBeCopied.value;
+            doubleValue = toBeCopied->value;
             isDataTypeKnown = true;
         }
     }
 
-    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override
+    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) override
     {
 
     }
 
-    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override
+    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) override
     {
         if(isDataTypeKnown)
         {
             if (isArray)
             {
-                savedValue.arrayValuePtr = arrayValue;
+                savedValue->arrayValuePtr = arrayValue;
                 arrayValue = ((MethodAgnosticVariableInternal*)source)->arrayValue;
             }
             else
             {
-                savedValue.value = doubleValue;
+                savedValue->value = doubleValue;
                 doubleValue = ((MethodAgnosticVariableInternal*)source)->doubleValue;
             }
         } else {
             // since dataType is not known, func called first time then. No need to save previous value.
-//            savedValue.arrayValuePtr = arrayValue;
-//            savedValue.value = doubleValue;
+//            savedValue->arrayValuePtr = arrayValue;
+//            savedValue->value = doubleValue;
 
             DoublePtr* sourceDoublePtr = dynamic_cast<DoublePtr*>(source);
             if(sourceDoublePtr)
@@ -177,19 +177,19 @@ class MethodAgnosticVariableInternal : public DataContainerValue {
 
     void copyArrayValueFromDataContainerValue(DataContainerValue* source);
 
-    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override
+    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override
     {
         if(isDataTypeKnown)
         {
             if (isArray)
             {
                 savedValue.arrayValuePtr = arrayValue;
-                arrayValue = restoreFrom.arrayValuePtr;
+                arrayValue = restoreFrom->arrayValuePtr;
             }
             else
             {
                 savedValue.value = doubleValue;
-                doubleValue = restoreFrom.value;
+                doubleValue = restoreFrom->value;
             }
         }
     }
@@ -221,22 +221,22 @@ public:
 // These methods are performance-critical (showing up as ~11% in flamegraph)
 // Inlining eliminates virtual function call overhead while maintaining polymorphism
 
-inline void DoublePtr::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) {
-    value = toBeCopied.value;
+inline void DoublePtr::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) {
+    value = toBeCopied->value;
 }
 
-inline void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
-    toBeSet.value = value;
+inline void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) {
+    toBeSet->value = value;
 }
 
-inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) {
-    savedValue.value = value;
+inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) {
+    savedValue->value = value;
     value = ((DoublePtr*)source)->value;
 }
 
-inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) {
+inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) {
     savedValue.value = value;
-    value = restoreFrom.value;
+    value = restoreFrom->value;
 }
 
 #endif //NATIVE_VARIABLERE_H

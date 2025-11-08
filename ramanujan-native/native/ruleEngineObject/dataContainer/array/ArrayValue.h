@@ -230,16 +230,16 @@ public:
         arrayValue = arrayValueIn;
     }
 
-    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
+    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override;
 
     // Ultra-fast direct array value setting - eliminates switch statement overhead
-    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) override;
     
     // Combined method to save value and copy from source in one call - eliminates extra pointer hop
-    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) override;
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
-    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
+    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override;
 
     ~ArrayDataContainerValue() override{
         if (arrayValue) {

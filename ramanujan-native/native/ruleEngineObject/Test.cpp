@@ -739,9 +739,9 @@ class Test {
                           "}";
 
 
-    //std::string firstCommandId = "command_2b95556d-866f-4ec4-8541-802c86e51466";
+    std::string firstCommandId = "command_2b95556d-866f-4ec4-8541-802c86e51466";
 
-std::string firstCommandId = "command_e8daa799-4cd7-4992-a218-5a995a7d72b6";
+//std::string firstCommandId = "command_e8daa799-4cd7-4992-a218-5a995a7d72b6";
     Processor *processor = new Processor();
 
 public:
@@ -751,7 +751,7 @@ public:
         Json::Value root;
         Json::CharReaderBuilder builder;
         std::string errors;
-        std::istringstream iss(newCode);
+        std::istringstream iss(code);
         Json::parseFromStream(builder, iss, &root, &errors);
 
         RuleEngineInput *ruleEngineInput = new RuleEngineInput(&root);
