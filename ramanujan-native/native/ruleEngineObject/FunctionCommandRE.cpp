@@ -186,25 +186,6 @@ public:
 
 DataContainerValueFunctionCommandREMemMaintainer dataContainerValueFunctionCommandReMemMaintainer;
 
-// Combined allocation wrapper for two arrays to reduce ctor/dtor overhead
-// Now uses pointer ranges instead of copying arrays
-class DataContainerValueFunctionCommandRECombinedArray {
-private:
-    int totalSize;
-public:
-
-    
-    DataContainerValueFunctionCommandRECombinedArray(int totalSize)
-        : totalSize(totalSize)
-    {
-        dataContainerValueFunctionCommandReMemMaintainer.allocateDual(totalSize);
-    }
-
-    ~DataContainerValueFunctionCommandRECombinedArray() {
-        dataContainerValueFunctionCommandReMemMaintainer.deallocateDual(totalSize);
-    }
-};
-
 /**
  * Main execution method for function calls.
  * 
@@ -238,9 +219,10 @@ void FunctionCommandRE::process() {
      * This establishes the parameter passing mechanism while preserving state for restoration.
      */
      
-     // Create wrapper that will allocate pointer ranges from the memory pool and return them on destruction
+     // Allocate pointer ranges from the memory pool
      // No memcpy needed - we get direct pointers into the pool!
-     DataContainerValueFunctionCommandRECombinedArray combinedArray(totalDataContainerCount + argSize);
+     int totalSizeAllocated = totalDataContainerCount + argSize;
+     dataContainerValueFunctionCommandReMemMaintainer.allocateDual(totalSizeAllocated);
 
      currentAsk = dataContainerValueFunctionCommandReMemMaintainer.currentAsk;
 
@@ -380,6 +362,9 @@ void FunctionCommandRE::process() {
          */
         methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(&methodArgContainerFinalValue);
     }
+
+    // Deallocate the memory pool ranges
+    dataContainerValueFunctionCommandReMemMaintainer.deallocateDual(totalSizeAllocated);
 }
 
 /**
