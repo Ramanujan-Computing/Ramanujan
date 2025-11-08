@@ -157,13 +157,12 @@ class DataContainerValueFunctionCommandREMemMaintainer {
         DataContainerValueFunctionCommandRE* memStack[256 * 1000];
         int memStackSizePtrCreated = 0;
         int currentIter = 0;  // Current number of available objects in the stack
-        public:
-        struct PointerRange {
-            DataContainerValueFunctionCommandRE **startArr;
-        };
+
+public:
+        DataContainerValueFunctionCommandRE** currentAsk;
         // Return start and end pointers for two contiguous ranges in a single allocation
         // This avoids memcpy by returning direct pointers into the memStack
-        void allocateDual(int totalSize, PointerRange& ranges) {
+        void allocateDual(int totalSize) {
 
             // Check if we need to allocate more objects
             if((memStackSizePtrCreated - currentIter) < totalSize) {
@@ -174,7 +173,7 @@ class DataContainerValueFunctionCommandREMemMaintainer {
             }
 
             // Return pointers directly into the stack - no memcpy needed!
-            ranges.startArr = &memStack[currentIter];
+            currentAsk = &memStack[currentIter];
 
             currentIter += totalSize;
         }
@@ -195,10 +194,10 @@ private:
 public:
 
     
-    DataContainerValueFunctionCommandRECombinedArray(int totalSize, DataContainerValueFunctionCommandREMemMaintainer::PointerRange& ranges)
+    DataContainerValueFunctionCommandRECombinedArray(int totalSize)
         : totalSize(totalSize)
     {
-        dataContainerValueFunctionCommandReMemMaintainer.allocateDual(totalSize, ranges);
+        dataContainerValueFunctionCommandReMemMaintainer.allocateDual(totalSize);
     }
 
     ~DataContainerValueFunctionCommandRECombinedArray() {
@@ -241,12 +240,13 @@ void FunctionCommandRE::process() {
      
      // Create wrapper that will allocate pointer ranges from the memory pool and return them on destruction
      // No memcpy needed - we get direct pointers into the pool!
-     DataContainerValueFunctionCommandREMemMaintainer::PointerRange ranges;
-     DataContainerValueFunctionCommandRECombinedArray combinedArray(totalDataContainerCount + argSize, ranges);
-     
+     DataContainerValueFunctionCommandRECombinedArray combinedArray(totalDataContainerCount + argSize);
+
+     currentAsk = dataContainerValueFunctionCommandReMemMaintainer.currentAsk;
+
      // Get direct pointers to the allocated ranges
-     DataContainerValueFunctionCommandRE** methodArgDataContainerCurrentValArray = ranges.startArr;
-     DataContainerValueFunctionCommandRE** methodCalledDataContainerValueArray = ranges.startArr + totalDataContainerCount;
+     DataContainerValueFunctionCommandRE** methodArgDataContainerCurrentValArray = currentAsk;
+     DataContainerValueFunctionCommandRE** methodCalledDataContainerValueArray = currentAsk + totalDataContainerCount;
      
     for (int i = 0; i < argSize; i++) {
 #ifdef DEBUG_BUILD

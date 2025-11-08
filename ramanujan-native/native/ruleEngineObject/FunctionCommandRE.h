@@ -137,6 +137,8 @@ private:
      * */
     DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
 
+    DataContainerValueFunctionCommandRE** currentAsk;
+
     // ==================== Parameter Mapping - DataContainer Arguments ====================
     
     /**
