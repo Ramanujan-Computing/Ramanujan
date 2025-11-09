@@ -362,7 +362,7 @@ void FunctionCommandRE::process() {
          * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
          * The careful ordering of operations above prevents corruption in such cases.
          */
-        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(&methodArgContainerFinalValue);
+        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(methodArgContainerFinalValuePtr);
         methodArgContainerFinalValue.arrayValuePtr = nullptr;  // Reset pointer to avoid dangling references
     }
 

@@ -136,6 +136,7 @@ private:
      * Temporary storage for final value to propagate back to calling context.
      * */
     DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
+    DataContainerValueFunctionCommandRE* methodArgContainerFinalValuePtr = &methodArgContainerFinalValue;
 
     DataContainerValueFunctionCommandRE** currentAsk;
 

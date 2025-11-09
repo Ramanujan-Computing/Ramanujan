@@ -65,21 +65,6 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
 //            savedValue->arrayValuePtr = arrayValue;
 //            savedValue->value = doubleValue;
 
-            MethodAgnosticVariableInternal* methodAgnosticVariableInternal = dynamic_cast<MethodAgnosticVariableInternal*>(source);
-            if (methodAgnosticVariableInternal)
-            {
-                //isArray = true;
-                arrayValue = methodAgnosticVariableInternal->arrayValue;
-                if (arrayValue)
-                {
-                    isArray = true;
-                    arrayValue = new ArrayValue(arrayValue, true);
-                }
-                value = methodAgnosticVariableInternal->value;
-                //isDataTypeKnown = true;
-                return;
-            }
-
             DoublePtr* sourceDoublePtr = dynamic_cast<DoublePtr*>(source);
             if(sourceDoublePtr)
             {
@@ -87,6 +72,20 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
                 value = sourceDoublePtr->value;
                 isDataTypeKnown = true;
             } else {
+                MethodAgnosticVariableInternal* methodAgnosticVariableInternal = dynamic_cast<MethodAgnosticVariableInternal*>(source);
+                if (methodAgnosticVariableInternal)
+                {
+                    //isArray = true;
+                    arrayValue = methodAgnosticVariableInternal->arrayValue;
+                    if (arrayValue)
+                    {
+                        isArray = true;
+                        arrayValue = new ArrayValue(arrayValue, true);
+                    }
+                    value = methodAgnosticVariableInternal->value;
+                    //isDataTypeKnown = true;
+                    return;
+                }
                 copyArrayValueFromDataContainerValue(source);
             }
         }
