@@ -30,5 +30,9 @@ public:
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
     virtual void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) = 0;
+    
+    // Ultimate combined method: save current value, restore from saved, and propagate saved to target
+    // This coalesces saveValueAndRestoreFrom + copyDataContainerValueFunctionCommandRE into one call
+    virtual void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) = 0;
 };
 #endif //NATIVE_DATACONTAINERVALUE_H

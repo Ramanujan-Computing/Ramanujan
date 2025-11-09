@@ -342,28 +342,21 @@ void FunctionCommandRE::process() {
 
     for(int i = 0; i < argSize; i++) {
         /**
-         * FINAL VALUE EXTRACTION AND FUNCTION PARAMETER RESTORATION:
-         * Extract the final value of the function parameter after execution and restore
-         * the function parameter to its pre-call state in one operation.
-         * This captures the computed result that was stored in the parameter
-         * during function execution (call-by-reference semantics) and is crucial
-         * for recursive functions where the same parameter variable is used across multiple call levels.
-         */
-        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndRestoreFrom(methodArgContainerFinalValue, methodCalledDataContainerValueArray[i]);
-
-        /**
-         * CALL-BY-REFERENCE VALUE PROPAGATION:
-         * Propagate the final computed value back to the calling context variable.
-         * This implements the call-by-reference mechanism where parameter modifications
-         * are reflected in the calling context.
+         * UNIFIED CALL-BY-REFERENCE RESTORATION AND PROPAGATION:
+         * This single method call performs three critical operations atomically:
+         * 1. Saves the final computed value from the function parameter
+         * 2. Restores the function parameter to its pre-call state
+         * 3. Propagates the final value to the calling context variable
          *
-         * RECURSIVE FUNCTION CONSIDERATION:
-         * In recursive calls, methodCallingOriginalPlaceHolderAddrs[i] might point
-         * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
-         * The careful ordering of operations above prevents corruption in such cases.
+         * This eliminates the need for temporary storage (methodArgContainerFinalValue/Ptr)
+         * and reduces overhead by combining two virtual function calls into one.
+         *
+         * RECURSIVE FUNCTION SAFETY:
+         * The atomic nature of this operation ensures correct behavior even when
+         * methodCallingOriginalPlaceHolderAddrs[i] and methodCalledOriginalPlaceHolderAddrs[i]
+         * point to the same memory location (recursive calls).
          */
-        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(methodArgContainerFinalValuePtr);
-        methodArgContainerFinalValue.arrayValuePtr = nullptr;  // Reset pointer to avoid dangling references
+        methodCalledOriginalPlaceHolderAddrs[i]->saveRestoreAndPropagate(methodCalledDataContainerValueArray[i], methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
     // Deallocate the memory pool ranges

@@ -37,6 +37,9 @@ public:
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
     inline void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override;
+    
+    // Ultimate combined method: save current value, restore from saved, and propagate saved to target
+    inline void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) override;
 
 };
 
@@ -135,6 +138,15 @@ inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE*
 inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) {
     savedValue.value = value;
     value = restoreFrom->value;
+}
+
+inline void DoublePtr::saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) {
+    // Save current value (final computed result)
+    double finalValue = value;
+    // Restore from previous saved value
+    value = restoreFrom->value;
+    // Propagate final value to calling context
+    propagateTo->value = finalValue;
 }
 
 #endif //NATIVE_VARIABLERE_H

@@ -109,6 +109,31 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
             }
         }
     }
+    
+    void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) override
+    {
+        if(isDataTypeKnown)
+        {
+            if (isArray)
+            {
+                // Save current value (final computed result)
+                double* finalArrayPtr = arrayValue->val;
+                // Restore from previous saved value
+                arrayValue->val = restoreFrom->arrayValuePtr;
+                // Propagate final value to calling context
+                ((ArrayDataContainerValue*)propagateTo)->arrayValue->val = finalArrayPtr;
+            }
+            else
+            {
+                // Save current value (final computed result)
+                double finalValue = value;
+                // Restore from previous saved value
+                value = restoreFrom->value;
+                // Propagate final value to calling context
+                propagateTo->value = finalValue;
+            }
+        }
+    }
 };
 
 void MethodAgnosticVariableInternal::copyArrayValueFromDataContainerValue(DataContainerValue *source) {

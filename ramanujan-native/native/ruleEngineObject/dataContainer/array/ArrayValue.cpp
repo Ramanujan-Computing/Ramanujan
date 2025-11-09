@@ -66,3 +66,12 @@ void ArrayDataContainerValue::saveValueAndRestoreFrom(DataContainerValueFunction
 
     arrayValue->val = restoreFrom->arrayValuePtr;
 }
+
+void ArrayDataContainerValue::saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) {
+    // Save current value (final computed result)
+    double* finalArrayPtr = arrayValue->val;
+    // Restore from previous saved value
+    arrayValue->val = restoreFrom->arrayValuePtr;
+    // Propagate final value to calling context
+    ((ArrayDataContainerValue*)propagateTo)->arrayValue->val = finalArrayPtr;
+}

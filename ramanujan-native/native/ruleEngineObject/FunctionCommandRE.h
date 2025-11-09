@@ -132,12 +132,6 @@ private:
 
     static const int maxArgSize = 255;
 
-    /**
-     * Temporary storage for final value to propagate back to calling context.
-     * */
-    DataContainerValueFunctionCommandRE methodArgContainerFinalValue;
-    DataContainerValueFunctionCommandRE* methodArgContainerFinalValuePtr = &methodArgContainerFinalValue;
-
     DataContainerValueFunctionCommandRE** currentAsk;
 
     // ==================== Parameter Mapping - DataContainer Arguments ====================
