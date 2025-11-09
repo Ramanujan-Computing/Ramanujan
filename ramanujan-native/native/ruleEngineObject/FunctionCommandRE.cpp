@@ -157,16 +157,18 @@ class DataContainerValueFunctionCommandREMemMaintainer {
         DataContainerValueFunctionCommandRE* memStack[256 * 1000];
         int memStackSizePtrCreated = 0;
         int currentIter = 0;  // Current number of available objects in the stack
+        int needed;
 
 public:
         DataContainerValueFunctionCommandRE** currentAsk;
         // Return start and end pointers for two contiguous ranges in a single allocation
         // This avoids memcpy by returning direct pointers into the memStack
-        void allocateDual(int totalSize) {
+        inline void allocateDual(int totalSize) {
 
             // Check if we need to allocate more objects
-            if((memStackSizePtrCreated - currentIter) < totalSize) {
-                int needed = totalSize - (memStackSizePtrCreated - currentIter);
+            // Optimize: only calculate and allocate if we don't have enough
+            if(__builtin_expect((memStackSizePtrCreated - currentIter) < totalSize, 0)) {
+                needed = totalSize - (memStackSizePtrCreated - currentIter);
                 for(int i = 0; i < needed; i++) {
                     memStack[memStackSizePtrCreated++] = new DataContainerValueFunctionCommandRE();
                 }
@@ -179,7 +181,7 @@ public:
         }
 
         // Return the ranges back to the pool
-        void deallocateDual(int &totalSizeDeAllocated) {
+        inline void deallocateDual(int totalSizeDeAllocated) {
             currentIter -= totalSizeDeAllocated;
         }
 };
