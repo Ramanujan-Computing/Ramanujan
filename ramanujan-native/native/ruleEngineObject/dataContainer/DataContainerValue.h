@@ -16,6 +16,8 @@ enum class DataContainerValueType {
 
 class DataContainerValue {
 public:
+    //to minimize casting:
+    double value;
     DataContainerValue() = default;
     virtual ~DataContainerValue() = default;
     virtual void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) = 0;

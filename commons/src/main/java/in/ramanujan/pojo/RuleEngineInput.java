@@ -55,6 +55,7 @@ public class RuleEngineInput {
         arrays.addAll(ruleEngineInput.getArrays());
         whileBlocks.addAll(ruleEngineInput.getWhileBlocks());
         redefineArrayCommands.addAll(ruleEngineInput.getRedefineArrayCommands());
+        methodDataTypeAgnosticArgs.addAll(ruleEngineInput.getMethodDataTypeAgnosticArgs());
     }
 
 }

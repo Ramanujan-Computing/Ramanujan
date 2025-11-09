@@ -18,13 +18,13 @@
 
 class DoublePtr : public DataContainerValue{
 public:
-    double value = 0.0;
+    //double value = 0.0;
 
     DoublePtr() = default;
 
     ~DoublePtr() = default;
 
-    DoublePtr(double  val) : value(val) {}
+    DoublePtr(double  val)   {value = val;}
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override;
@@ -96,115 +96,13 @@ public:
     }
 };
 
-class MethodAgnosticVariableInternal : public DataContainerValue {
-    double doubleValue = 0.0;
-    double * arrayValue = nullptr;
-    bool isArray = false;
-    bool isDataTypeKnown = false;
-
-    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override
-    {
-        if (isDataTypeKnown)
-        {
-            if (isArray)
-            {
-                arrayValue = toBeCopied->arrayValuePtr;
-            }
-            else
-            {
-                doubleValue = toBeCopied->value;
-            }
-            return;
-        }
-        if(toBeCopied->arrayValuePtr)
-        {
-            isArray = true;
-            arrayValue = toBeCopied->arrayValuePtr;
-            isDataTypeKnown = true;
-        }
-        else
-        {
-            isArray = false;
-            doubleValue = toBeCopied->value;
-            isDataTypeKnown = true;
-        }
-    }
-
-    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) override
-    {
-
-    }
-
-    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) override
-    {
-        if(isDataTypeKnown)
-        {
-            if (isArray)
-            {
-                savedValue->arrayValuePtr = arrayValue;
-                arrayValue = ((MethodAgnosticVariableInternal*)source)->arrayValue;
-            }
-            else
-            {
-                savedValue->value = doubleValue;
-                doubleValue = ((MethodAgnosticVariableInternal*)source)->doubleValue;
-            }
-        } else {
-            // since dataType is not known, func called first time then. No need to save previous value.
-//            savedValue->arrayValuePtr = arrayValue;
-//            savedValue->value = doubleValue;
-
-            DoublePtr* sourceDoublePtr = dynamic_cast<DoublePtr*>(source);
-            if(sourceDoublePtr)
-            {
-                isArray = false;
-                doubleValue = sourceDoublePtr->value;
-                isDataTypeKnown = true;
-            } else {
-                MethodAgnosticVariableInternal* methodAgnosticVariableInternal = dynamic_cast<MethodAgnosticVariableInternal*>(source);
-                if (methodAgnosticVariableInternal)
-                {
-                    isArray = true;
-                    arrayValue = methodAgnosticVariableInternal->arrayValue;
-                    isDataTypeKnown = true;
-                }
-                else{
-                    copyArrayValueFromDataContainerValue(source);
-                }
-            }
-        }
-    }
-
-    void copyArrayValueFromDataContainerValue(DataContainerValue* source);
-
-    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override
-    {
-        if(isDataTypeKnown)
-        {
-            if (isArray)
-            {
-                savedValue.arrayValuePtr = arrayValue;
-                arrayValue = restoreFrom->arrayValuePtr;
-            }
-            else
-            {
-                savedValue.value = doubleValue;
-                doubleValue = restoreFrom->value;
-            }
-        }
-    }
-};
+class MethodAgnosticVariableInternal;
 
 class MethodAgnosticVariableRE : public RuleEngineInputUnits, public AbstractDataContainer {
     MethodAgnosticVariable *variable;
-    MethodAgnosticVariableInternal methodAgnosticVariableInternal;
+    MethodAgnosticVariableInternal* methodAgnosticVariableInternal;;
 public:
-    MethodAgnosticVariableRE(MethodAgnosticVariable *variable) {
-        this->variable = variable;
-
-        id = variable->id;
-        valPtr = &methodAgnosticVariableInternal;
-    }
+    MethodAgnosticVariableRE(MethodAgnosticVariable *variable);
 
     void destroy() {
     }
@@ -231,7 +129,7 @@ inline void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContain
 
 inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) {
     savedValue->value = value;
-    value = ((DoublePtr*)source)->value;
+    value = source->value;
 }
 
 inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) {

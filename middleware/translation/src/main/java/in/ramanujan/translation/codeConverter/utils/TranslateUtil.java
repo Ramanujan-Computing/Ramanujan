@@ -404,6 +404,7 @@ public class TranslateUtil {
                 methodDataTypeAgnosticArg.setId(UUID.randomUUID().toString());
                 methodDataTypeAgnosticArg.setName(argumentCode);
                 methodDataTypeAgnosticArg.setFrameCount(counter);
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodDataTypeAgnosticArg);
                 ruleEngineInputs = methodDataTypeAgnosticArg;
                 codeConverter.setMethodDataTypeAgnosticArgMap(methodDataTypeAgnosticArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
             }
