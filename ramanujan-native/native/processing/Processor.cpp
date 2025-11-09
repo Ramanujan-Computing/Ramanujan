@@ -12,6 +12,8 @@
 #include "../ruleEngineObject/dataContainer/ArrayRE.h"
 #include "../ruleEngineObject/OperationRE.h"
 #include "../ruleEngineObject/ConditionRE.h"
+#include "../ruleEngineObject/FunctionCommandRE.h"
+#include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
 #include <json/json.h>
 //#include <boost/stacktrace.hpp>
 #include <DebugPoint.h>
@@ -26,8 +28,12 @@ Processor::~Processor() {
 
 std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngineInput ruleEngineInput,
         std::string firstCommandId) {
+    // Create memory maintainer for efficient function call memory management
+    DataContainerValueFunctionCommandREMemMaintainer memMaintainer;
+    
     std::unordered_map<std::string, RuleEngineInputUnits*>* mapBetweenIdAndRuleInput
         = createMap(ruleEngineInput);
+    
     /*
      * Right now, the map does have info of each other, for ex, lets take Command,
      * it does not have refs to the componenets of the Command.
@@ -48,6 +54,14 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
         int size = arrayValue->totalSize;
         for(int i = 0; i < size; i++) {
             dataFieldOriginalData.insert(std::make_pair(&arrayValue->val[i],arrayValue->val[i]));
+        }
+    }
+
+    for (auto command : *ruleEngineInput.commands)
+    {
+        auto commandRE = dynamic_cast<CommandRE*>(mapBetweenIdAndRuleInput->at(command->id));
+        if(commandRE->functionCommandRE != nullptr) {
+            commandRE->functionCommandRE->setMemMaintainer(&memMaintainer);
         }
     }
 

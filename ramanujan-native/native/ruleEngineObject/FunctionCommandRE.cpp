@@ -3,6 +3,7 @@
 //
 
 #include "FunctionCommandRE.h"
+#include "DataContainerValueFunctionCommandREMemMaintainer.h"
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/array/ArrayValue.h"
@@ -147,47 +148,6 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
     }
 }
 
-// This class maintains stack of DataContainerValueFunctionCommandRE.
-// DataContainerValueFunctionCommandREArray will request this object to return n number of DataContainerValueFunctionCommandRE objects.
-// If all n objects are in stack, it will return from stack. If not, it will create new objects and return.
-// DataContainerValueFunctionCommandREArray when destroyed will return all objects to this maintainer, and this
-// maintainer will push them in stack for re-use.
-class DataContainerValueFunctionCommandREMemMaintainer {
-        private:
-        DataContainerValueFunctionCommandRE* memStack[256 * 1000];
-        int memStackSizePtrCreated = 0;
-        int currentIter = 0;  // Current number of available objects in the stack
-        int needed;
-
-public:
-        DataContainerValueFunctionCommandRE** currentAsk;
-        // Return start and end pointers for two contiguous ranges in a single allocation
-        // This avoids memcpy by returning direct pointers into the memStack
-        inline void allocateDual(int totalSize) {
-
-            // Check if we need to allocate more objects
-            // Optimize: only calculate and allocate if we don't have enough
-            if(__builtin_expect((memStackSizePtrCreated - currentIter) < totalSize, 0)) {
-                needed = totalSize - (memStackSizePtrCreated - currentIter);
-                for(int i = 0; i < needed; i++) {
-                    memStack[memStackSizePtrCreated++] = new DataContainerValueFunctionCommandRE();
-                }
-            }
-
-            // Return pointers directly into the stack - no memcpy needed!
-            currentAsk = &memStack[currentIter];
-
-            currentIter += totalSize;
-        }
-
-        // Return the ranges back to the pool
-        inline void deallocateDual(int totalSizeDeAllocated) {
-            currentIter -= totalSizeDeAllocated;
-        }
-};
-
-DataContainerValueFunctionCommandREMemMaintainer dataContainerValueFunctionCommandReMemMaintainer;
-
 /**
  * Main execution method for function calls.
  * 
@@ -224,9 +184,9 @@ void FunctionCommandRE::process() {
      // Allocate pointer ranges from the memory pool
      // No memcpy needed - we get direct pointers into the pool!
      int totalSizeAllocated = totalDataContainerCount + argSize;
-     dataContainerValueFunctionCommandReMemMaintainer.allocateDual(totalSizeAllocated);
-
-     currentAsk = dataContainerValueFunctionCommandReMemMaintainer.currentAsk;
+     
+    memMaintainer->allocateDual(totalSizeAllocated);
+    currentAsk = memMaintainer->currentAsk;
 
      // Get direct pointers to the allocated ranges
      DataContainerValueFunctionCommandRE** methodArgDataContainerCurrentValArray = currentAsk;
@@ -360,7 +320,7 @@ void FunctionCommandRE::process() {
     }
 
     // Deallocate the memory pool ranges
-    dataContainerValueFunctionCommandReMemMaintainer.deallocateDual(totalSizeAllocated);
+    memMaintainer->deallocateDual(totalSizeAllocated);
 }
 
 /**

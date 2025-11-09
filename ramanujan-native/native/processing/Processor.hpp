@@ -9,6 +9,7 @@
 #include "ProcessingResult.hpp"
 #include "../input/RuleEngineInput.hpp"
 #include "../ruleEngineObject/RuleEngineInputUnits.hpp"
+#include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
 
 
 

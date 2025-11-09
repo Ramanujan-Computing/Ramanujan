@@ -14,6 +14,7 @@
 #include "dataContainer/DataContainerValue.h"
 #include "FunctionCallRE.h"
 #include "dataContainer/DataContainerValueFunctionCommandRE.h"
+#include "DataContainerValueFunctionCommandREMemMaintainer.h"
 #include<unordered_map>
 #include <list>
 
@@ -134,6 +135,12 @@ private:
 
     DataContainerValueFunctionCommandRE** currentAsk;
 
+    /**
+     * Memory maintainer for efficient allocation and deallocation of DataContainerValueFunctionCommandRE objects.
+     * This is injected from the Processor and shared across all function calls in a processing session.
+     */
+    DataContainerValueFunctionCommandREMemMaintainer* memMaintainer = nullptr;
+
     // ==================== Parameter Mapping - DataContainer Arguments ====================
     
     /**
@@ -239,6 +246,16 @@ public:
     
     // ==================== Core Interface Methods ====================
     
+    /**
+     * Sets the memory maintainer for efficient allocation/deallocation.
+     * Must be called before setFields() to enable memory pool usage.
+     * 
+     * @param maintainer Pointer to the memory maintainer instance
+     */
+    void setMemMaintainer(DataContainerValueFunctionCommandREMemMaintainer* maintainer) {
+        this->memMaintainer = maintainer;
+    }
+
     /**
      * Sets up all field mappings and initializes data structures.
      * This method performs the complex task of:
