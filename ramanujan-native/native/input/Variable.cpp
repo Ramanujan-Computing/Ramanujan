@@ -20,6 +20,19 @@ Variable::Variable(Json::Value *pValue) {
     frameCount = (*pValue)["frameCount"].asString();
 }
 
+RuleEngineInputUnits* MethodAgnosticVariable::getInternalAnalogy() {
+    return new MethodAgnosticVariableRE(this);
+}
+
+MethodAgnosticVariable::MethodAgnosticVariable(Json::Value *pValue) {
+    id = (*pValue)["id"].asString();
+    name = (*pValue)["name"].asString();
+    value = (*pValue)["value"].asDouble();
+    frameCount = (*pValue)["frameCount"].asString();
+}
+
+
+
 
 #endif
 

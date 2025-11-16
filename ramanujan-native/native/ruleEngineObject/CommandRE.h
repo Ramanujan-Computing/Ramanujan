@@ -28,7 +28,6 @@ private:
     IfRE* ifCommandRE;
     ConstantRE* constantRE;
     VariableRE* variableRE;
-    FunctionCommandRE* functionCommandRE = nullptr;
     ConditionRE* conditionRe;
     ArrayCommandRE* arrayCommandRE = nullptr;
     Command * command;
@@ -43,6 +42,7 @@ private:
     int line;
 
 public:
+    FunctionCommandRE* functionCommandRE = nullptr;
     //TODO: can we save all variables in an array and variableVal be nothing but just an index to that array?
 
 

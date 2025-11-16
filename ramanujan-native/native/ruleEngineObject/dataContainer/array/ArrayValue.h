@@ -230,20 +230,19 @@ public:
         arrayValue = arrayValueIn;
     }
 
-    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
-
-    DataContainerValueType getType() const override {
-        return DataContainerValueType::ARRAY_DATA_CONTAINER_VALUE;
-    }
+    void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override;
 
     // Ultra-fast direct array value setting - eliminates switch statement overhead
-    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) override;
     
     // Combined method to save value and copy from source in one call - eliminates extra pointer hop
-    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) override;
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
-    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
+    void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override;
+    
+    // Ultimate combined method: save current value, restore from saved, and propagate saved to target
+    void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) override;
 
     ~ArrayDataContainerValue() override{
         if (arrayValue) {

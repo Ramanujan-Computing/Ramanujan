@@ -39,30 +39,39 @@ void ArrayValue::add(int* index, double value) {
     val[indexInt] = (value);
 }
 
-void ArrayDataContainerValue::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) {
+void ArrayDataContainerValue::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) {
     //delete arrayValue;
     //TODO: pranav: check if this is causing memory leak
-    arrayValue->val = toBeCopied.arrayValuePtr;
+    arrayValue->val = toBeCopied->arrayValuePtr;
 }
 
-void ArrayDataContainerValue::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
+void ArrayDataContainerValue::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) {
     // Clean up current array value if present
-    toBeSet.arrayValuePtr = arrayValue->val;
+    toBeSet->arrayValuePtr = arrayValue->val;
 }
 
-void ArrayDataContainerValue::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) {
+void ArrayDataContainerValue::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) {
     // Save current value
-    savedValue.arrayValuePtr = arrayValue->val;
+    savedValue->arrayValuePtr = arrayValue->val;
     auto oldValue = arrayValue;
     // Copy from source
     arrayValue = new ArrayValue(((ArrayDataContainerValue*) source)->arrayValue, true);
     delete oldValue;
 }
 
-void ArrayDataContainerValue::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) {
+void ArrayDataContainerValue::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) {
     // Save current value
     savedValue.arrayValuePtr = arrayValue->val;
     // Restore from saved value
 
-    arrayValue->val = restoreFrom.arrayValuePtr;
+    arrayValue->val = restoreFrom->arrayValuePtr;
+}
+
+void ArrayDataContainerValue::saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) {
+    // Save current value (final computed result)
+    double* finalArrayPtr = arrayValue->val;
+    // Restore from previous saved value
+    arrayValue->val = restoreFrom->arrayValuePtr;
+    // Propagate final value to calling context
+    ((ArrayDataContainerValue*)propagateTo)->arrayValue->val = finalArrayPtr;
 }

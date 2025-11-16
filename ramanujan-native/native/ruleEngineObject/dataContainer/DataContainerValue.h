@@ -16,18 +16,23 @@ enum class DataContainerValueType {
 
 class DataContainerValue {
 public:
+    //to minimize casting:
+    double value;
     DataContainerValue() = default;
     virtual ~DataContainerValue() = default;
-    virtual void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) = 0;
-    virtual DataContainerValueType getType() const = 0;
+    virtual void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) = 0;
     
     // New virtual method for direct value setting - eliminates switch statement overhead
-    virtual void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) = 0;
+    virtual void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) = 0;
     
     // Combined method to save value and copy from source in one call - eliminates extra pointer hop
-    virtual void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) = 0;
+    virtual void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) = 0;
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
-    virtual void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) = 0;
+    virtual void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) = 0;
+    
+    // Ultimate combined method: save current value, restore from saved, and propagate saved to target
+    // This coalesces saveValueAndRestoreFrom + copyDataContainerValueFunctionCommandRE into one call
+    virtual void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) = 0;
 };
 #endif //NATIVE_DATACONTAINERVALUE_H

@@ -3,12 +3,13 @@
 //
 
 #include "FunctionCommandRE.h"
+#include "DataContainerValueFunctionCommandREMemMaintainer.h"
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/array/ArrayValue.h"
 #include "DebugPoint.h"
 #include "dataContainer/DataContainerValueFunctionCommandRE.h"
-#include <list>
+#include <vector>
 
 #include <limits>
 #include <random>
@@ -179,17 +180,27 @@ void FunctionCommandRE::process() {
      * 
      * This establishes the parameter passing mechanism while preserving state for restoration.
      */
-     DataContainerValueFunctionCommandRE methodArgDataContainerCurrentVal[totalDataContainerCount];
-     DataContainerValueFunctionCommandRE methodCalledDataContainerValue[argSize];
+     
+     // Allocate pointer ranges from the memory pool
+     // No memcpy needed - we get direct pointers into the pool!
+     int totalSizeAllocated = totalDataContainerCount + argSize;
+     
+    memMaintainer->allocateDual(totalSizeAllocated);
+    currentAsk = memMaintainer->currentAsk;
+
+     // Get direct pointers to the allocated ranges
+     DataContainerValueFunctionCommandRE** methodArgDataContainerCurrentValArray = currentAsk;
+     DataContainerValueFunctionCommandRE** methodCalledDataContainerValueArray = currentAsk + totalDataContainerCount;
+     
     for (int i = 0; i < argSize; i++) {
 #ifdef DEBUG_BUILD
         // Record the argument value being passed for debugging
         debugPoint->addCurrentFuncVal(*methodCallingOriginalPlaceHolderAddrs[i]);
 #endif
         // Save the current value of ALL function variables (for complete restoration)
-        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentValArray[i]);
         // Save the current value of the function parameter and copy from calling argument in one operation
-        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndCopyFrom(methodCalledDataContainerValue[i], methodCallingOriginalPlaceHolderAddrs[i]);
+        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndCopyFrom(methodCalledDataContainerValueArray[i], methodCallingOriginalPlaceHolderAddrs[i]);
     }
 
 #ifdef DEBUG_BUILD
@@ -207,7 +218,7 @@ void FunctionCommandRE::process() {
      * restored after function execution. Local variables are indexed from argSize onwards.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->setValueInDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentValArray[i]);
     }
 
     // ==================== PHASE 2: FUNCTION BODY EXECUTION ====================
@@ -250,7 +261,7 @@ void FunctionCommandRE::process() {
      * This ensures that each function call has isolated local variable scope.
      */
     for(int i = argSize; i < totalDataContainerCount; i++) {
-        methodArgDataContainerAddr[i]->copyDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentVal[i]);
+        methodArgDataContainerAddr[i]->copyDataContainerValueFunctionCommandRE(methodArgDataContainerCurrentValArray[i]);
     }
 
     /**
@@ -291,28 +302,25 @@ void FunctionCommandRE::process() {
 
     for(int i = 0; i < argSize; i++) {
         /**
-         * FINAL VALUE EXTRACTION AND FUNCTION PARAMETER RESTORATION:
-         * Extract the final value of the function parameter after execution and restore
-         * the function parameter to its pre-call state in one operation.
-         * This captures the computed result that was stored in the parameter
-         * during function execution (call-by-reference semantics) and is crucial
-         * for recursive functions where the same parameter variable is used across multiple call levels.
-         */
-        methodCalledOriginalPlaceHolderAddrs[i]->saveValueAndRestoreFrom(methodArgContainerFinalValue, methodCalledDataContainerValue[i]);
-
-        /**
-         * CALL-BY-REFERENCE VALUE PROPAGATION:
-         * Propagate the final computed value back to the calling context variable.
-         * This implements the call-by-reference mechanism where parameter modifications
-         * are reflected in the calling context.
+         * UNIFIED CALL-BY-REFERENCE RESTORATION AND PROPAGATION:
+         * This single method call performs three critical operations atomically:
+         * 1. Saves the final computed value from the function parameter
+         * 2. Restores the function parameter to its pre-call state
+         * 3. Propagates the final value to the calling context variable
          *
-         * RECURSIVE FUNCTION CONSIDERATION:
-         * In recursive calls, methodCallingOriginalPlaceHolderAddrs[i] might point
-         * to the same memory location as methodCalledOriginalPlaceHolderAddrs[i].
-         * The careful ordering of operations above prevents corruption in such cases.
+         * This eliminates the need for temporary storage (methodArgContainerFinalValue/Ptr)
+         * and reduces overhead by combining two virtual function calls into one.
+         *
+         * RECURSIVE FUNCTION SAFETY:
+         * The atomic nature of this operation ensures correct behavior even when
+         * methodCallingOriginalPlaceHolderAddrs[i] and methodCalledOriginalPlaceHolderAddrs[i]
+         * point to the same memory location (recursive calls).
          */
-        methodCallingOriginalPlaceHolderAddrs[i]->copyDataContainerValueFunctionCommandRE(methodArgContainerFinalValue);
+        methodCalledOriginalPlaceHolderAddrs[i]->saveRestoreAndPropagate(methodCalledDataContainerValueArray[i], methodCallingOriginalPlaceHolderAddrs[i]);
     }
+
+    // Deallocate the memory pool ranges
+    memMaintainer->deallocateDual(totalSizeAllocated);
 }
 
 /**

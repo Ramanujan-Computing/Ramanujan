@@ -21,6 +21,7 @@
 
 class RuleEngineInput {
     public:
+        std::vector<MethodAgnosticVariable*> *methodAgnosticVariables = new std::vector<MethodAgnosticVariable*>();
         std::vector<Variable *> *variables = new std::vector<Variable *>();
         std::vector<Command *> *commands = new std::vector<Command *>();
         std::vector<If *> *ifBlocks = new std::vector<If *>();
@@ -36,6 +37,10 @@ class RuleEngineInput {
             Json::Value variables = (*value)["variables"];
             for(int i = 0; i < variables.size(); i++) {
                 this->variables->push_back(new Variable(&variables[i]));
+            }
+            Json::Value methodDataTypeAgnosticArgs = (*value)["methodDataTypeAgnosticArgs"];
+            for(int i=0; i< methodDataTypeAgnosticArgs.size(); i++) {
+                this->methodAgnosticVariables->push_back(new MethodAgnosticVariable(&methodDataTypeAgnosticArgs[i]));
             }
 
             Json::Value commands = (*value)["commands"];

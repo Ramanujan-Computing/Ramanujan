@@ -9,6 +9,7 @@
 #include "ProcessingResult.hpp"
 #include "../input/RuleEngineInput.hpp"
 #include "../ruleEngineObject/RuleEngineInputUnits.hpp"
+#include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
 
 
 
@@ -55,6 +56,8 @@ class Processor {
     void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<Operation*>* list1);
 
     void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<If*>* list1);
+
+    void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<MethodAgnosticVariable*>* list1);
 
     void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<Variable*>* list1);
 

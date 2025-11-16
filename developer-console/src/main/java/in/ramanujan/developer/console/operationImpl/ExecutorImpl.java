@@ -30,7 +30,9 @@ public class ExecutorImpl implements Operation {
     }
 
     private static void runCode(List<String> args) throws JsonProcessingException {
-        OkHttpClient httpClient = new OkHttpClient();
+        OkHttpClient.Builder builder = new OkHttpClient.Builder();
+        builder.readTimeout(500_000, java.util.concurrent.TimeUnit.MILLISECONDS);
+        OkHttpClient httpClient = new OkHttpClient(builder);
         String json = new ObjectMapper().writeValueAsString(createJson(args));
         RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
         Request request = new Request.Builder().url("https://server.ramanujan.dev/run?debug=false").post(requestBody).build();
@@ -65,6 +67,7 @@ public class ExecutorImpl implements Operation {
                     if("200 OK".equalsIgnoreCase(apiResponse.getStatus())) {
                         Map<String, Object> asyncTask = (Map<String, Object>) apiResponse.getData();
                         if("SUCCESS".equalsIgnoreCase((String) asyncTask.get("taskStatus")) || "FAILED".equalsIgnoreCase((String) asyncTask.get("taskStatus"))) {
+                            System.out.println(asyncTask);
                             // Extract and store variable/array values for later querying
                             Object resultObj = asyncTask.get("result");
                             if (resultObj instanceof Map) {

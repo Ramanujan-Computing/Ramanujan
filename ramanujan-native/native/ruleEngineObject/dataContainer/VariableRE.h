@@ -18,29 +18,28 @@
 
 class DoublePtr : public DataContainerValue{
 public:
-    double value = 0.0;
+    //double value = 0.0;
 
     DoublePtr() = default;
 
     ~DoublePtr() = default;
 
-    DoublePtr(double  val) : value(val) {}
+    DoublePtr(double  val)   {value = val;}
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
-    inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) override;
-
-    DataContainerValueType getType() const override {
-        return DataContainerValueType::DOUBLE_PTR;
-    }
+    inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override;
 
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
-    inline void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) override;
+    inline void setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) override;
     
     // Combined method to save value and copy from source in one call - eliminates extra pointer hop
-    inline void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) override;
+    inline void saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) override;
     
     // Combined method to save current value and restore from saved value in one call - eliminates extra pointer hop
-    inline void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) override;
+    inline void saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) override;
+    
+    // Ultimate combined method: save current value, restore from saved, and propagate saved to target
+    inline void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) override;
 
 };
 
@@ -100,26 +99,54 @@ public:
     }
 };
 
+class MethodAgnosticVariableInternal;
+
+class MethodAgnosticVariableRE : public RuleEngineInputUnits, public AbstractDataContainer {
+    MethodAgnosticVariable *variable;
+    MethodAgnosticVariableInternal* methodAgnosticVariableInternal;;
+public:
+    MethodAgnosticVariableRE(MethodAgnosticVariable *variable);
+
+    void destroy() {
+    }
+
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+
+    }
+
+    void process() override {
+    }
+};
+
 // ==================== INLINE METHOD IMPLEMENTATIONS ====================
 // These methods are performance-critical (showing up as ~11% in flamegraph)
 // Inlining eliminates virtual function call overhead while maintaining polymorphism
 
-inline void DoublePtr::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeCopied) {
-    value = toBeCopied.value;
+inline void DoublePtr::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) {
+    value = toBeCopied->value;
 }
 
-inline void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE& toBeSet) {
-    toBeSet.value = value;
+inline void DoublePtr::setValueInDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeSet) {
+    toBeSet->value = value;
 }
 
-inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValue* source) {
+inline void DoublePtr::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) {
+    savedValue->value = value;
+    value = source->value;
+}
+
+inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE* restoreFrom) {
     savedValue.value = value;
-    value = ((DoublePtr*)source)->value;
+    value = restoreFrom->value;
 }
 
-inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommandRE& savedValue, DataContainerValueFunctionCommandRE& restoreFrom) {
-    savedValue.value = value;
-    value = restoreFrom.value;
+inline void DoublePtr::saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) {
+    // Save current value (final computed result)
+    double finalValue = value;
+    // Restore from previous saved value
+    value = restoreFrom->value;
+    // Propagate final value to calling context
+    propagateTo->value = finalValue;
 }
 
 #endif //NATIVE_VARIABLERE_H
