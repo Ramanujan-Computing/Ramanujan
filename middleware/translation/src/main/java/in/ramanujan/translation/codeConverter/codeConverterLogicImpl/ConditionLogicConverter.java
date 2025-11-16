@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static in.ramanujan.translation.codeConverter.CodeConverterLogicFactory.isConditionOperation;
+
 /*
 * condition expected to be <operand> <operator> <operand>
 */
@@ -47,6 +49,10 @@ public class ConditionLogicConverter extends OperationLogicConverter {
 
     @Override
     protected RuleEngineInputUnits getPostFixUnit(String type, String operationLeft, String operationRight, RuleEngineInput ruleEngineInput) {
+        if (!isConditionOperation(type)) {
+            // This is a math operator. We are dealing with math + condition here, like a > b + c. b + c have to be math operation.
+            return super.getPostFixUnit(type, operationLeft, operationRight, ruleEngineInput);
+        }
         Condition condition = new Condition();
         condition.setId(UUID.randomUUID().toString());
         condition.setConditionType(type);

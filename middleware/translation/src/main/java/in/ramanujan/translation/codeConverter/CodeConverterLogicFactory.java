@@ -65,7 +65,7 @@ public class CodeConverterLogicFactory {
         return false;
     }
 
-    private static Boolean isConditionOperation(String codeChunk) {
+    public static Boolean isConditionOperation(String codeChunk) {
         for(ConditionType conditionType : ConditionType.values()) {
             if(codeChunk.contains(conditionType.getConditionTypeString())) {
                 return true;

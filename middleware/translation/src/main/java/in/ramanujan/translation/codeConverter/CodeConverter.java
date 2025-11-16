@@ -54,7 +54,7 @@ public class CodeConverter {
 
     public CodeConverter(CodeConverterLogicFactory codeConverterLogicFactory, StringUtils stringUtils,
                          List<CsvInformation> csvInformations) {
-        this(codeConverterLogicFactory, stringUtils);
+        this();
         if(csvInformations != null) {
             this.csvDataMap = new HashMap<>();
             for(CsvInformation csvInformation : csvInformations) {
@@ -63,7 +63,7 @@ public class CodeConverter {
         }
     }
 
-    public CodeConverter(CodeConverterLogicFactory codeConverterLogicFactory, StringUtils stringUtils) {
+    public CodeConverter() {
         variableMap = new HashMap<>();
         arrayMap = new HashMap<>();
         methodDataTypeAgnosticArgMap = new HashMap<>();

@@ -24,6 +24,9 @@
 *.json
 */cmake.check_cache*
 
+# Ignore Java compiled files
+*.class
+
 # Ignore native libraries
 *.so
 *.dll
