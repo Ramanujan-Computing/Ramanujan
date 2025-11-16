@@ -2761,4 +2761,204 @@ public class BigCodeRunTest {
 
         resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
     }
+
+    // Tests recursive function with multiple array assertions and transformations.
+    // This test uses a recursive merge sort that operates on input, output, and tracking arrays simultaneously.
+    @Test
+    public void testRecursiveMergeSortWithMultipleArrayAssertions() throws Exception {
+        String code = "def mergeSort(var arr:array, var temp:array, var left:integer, var right:integer, var depth:array, var level:integer) {\n" +
+                "    if(left < right) {\n" +
+                "        var mid:integer;\n" +
+                "        mid = (left + right) / 2;\n" +
+                "        exec FLOOR(mid);\n" +
+                "        \n" +
+                "        var nextLevel:integer;\n" +
+                "        nextLevel = level + 1;\n" +
+                "        \n" +
+                "        var midPlus1 : double; midPlus1 = mid + 1;" +
+                "        exec mergeSort(arr, temp, left, mid, depth, nextLevel);\n" +
+                "        exec mergeSort(arr, temp, midPlus1, right, depth, nextLevel);\n" +
+                "        \n" +
+                "        depth[level] = depth[level] + 1;\n" +
+                "        \n" +
+                "        var i, j, k:integer;\n" +
+                "        i = left;\n" +
+                "        j = mid + 1;\n" +
+                "        k = left;\n" +
+                "        \n" +
+                "        while(i <= mid) {\n" +
+                "            if(j <= right) {\n" +
+                "                if(arr[i] < arr[j]) {\n" +
+                "                    temp[k] = arr[i];\n" +
+                "                    i = i + 1;\n" +
+                "                } else {\n" +
+                "                    temp[k] = arr[j];\n" +
+                "                    j = j + 1;\n" +
+                "                }\n" +
+                "            } else {\n" +
+                "                temp[k] = arr[i];\n" +
+                "                i = i + 1;\n" +
+                "            }\n" +
+                "            k = k + 1;\n" +
+                "        }\n" +
+                "        \n" +
+                "        while(j <= right) {\n" +
+                "            temp[k] = arr[j];\n" +
+                "            j = j + 1;\n" +
+                "            k = k + 1;\n" +
+                "        }\n" +
+                "        \n" +
+                "        i = left;\n" +
+                "        while(i <= right) {\n" +
+                "            arr[i] = temp[i];\n" +
+                "            i = i + 1;\n" +
+                "        }\n" +
+                "    }\n" +
+                "}\n" +
+                "var data[8]:array;\n" +
+                "data[0] = 64; data[1] = 34; data[2] = 25; data[3] = 12;\n" +
+                "data[4] = 22; data[5] = 11; data[6] = 90; data[7] = 88;\n" +
+                "var tempArray[8]:array;\n" +
+                "var recursionDepth[5]:array;\n" +
+                "recursionDepth[0] = 0; recursionDepth[1] = 0; recursionDepth[2] = 0;\n" +
+                "recursionDepth[3] = 0; recursionDepth[4] = 0;\n" +
+                "exec mergeSort(data, tempArray, 0, 7, recursionDepth, 0);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        
+        // Assert multiple arrays
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        
+        // Assert sorted data array
+        Map<String, Object> expectedData = new HashMap<>();
+        expectedData.put("0", 11d);
+        expectedData.put("1", 12d);
+        expectedData.put("2", 22d);
+        expectedData.put("3", 25d);
+        expectedData.put("4", 34d);
+        expectedData.put("5", 64d);
+        expectedData.put("6", 88d);
+        expectedData.put("7", 90d);
+        arrayIndexToAssert.put("data", expectedData);
+        
+        // Assert temp array (should match sorted data)
+        Map<String, Object> expectedTemp = new HashMap<>();
+        expectedTemp.put("0", 11d);
+        expectedTemp.put("1", 12d);
+        expectedTemp.put("2", 22d);
+        expectedTemp.put("3", 25d);
+        expectedTemp.put("4", 34d);
+        expectedTemp.put("5", 64d);
+        expectedTemp.put("6", 88d);
+        expectedTemp.put("7", 90d);
+        arrayIndexToAssert.put("tempArray", expectedTemp);
+        
+        // Assert recursion depth tracking array
+        // Level 0: 1 merge (final merge)
+        // Level 1: 2 merges
+        // Level 2: 4 merges
+        // Level 3: 0 (base case)
+        Map<String, Object> expectedDepth = new HashMap<>();
+        expectedDepth.put("0", 1d);
+        expectedDepth.put("1", 2d);
+        expectedDepth.put("2", 4d);
+        expectedDepth.put("3", 0d);
+        expectedDepth.put("4", 0d);
+        arrayIndexToAssert.put("recursionDepth", expectedDepth);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
+    // Tests recursive tree traversal with multiple arrays tracking paths and values.
+    @Test
+    public void testRecursiveTreeTraversalWithMultipleArrays() throws Exception {
+        String code = "def traverseTree(var nodes:array, var current:integer, var inorder:array, var preorder:array, var postorder:array, var inIdx:integer, var preIdx:integer, var postIdx:integer) {\n" +
+                "    if(current >= 0) {\n" +
+                "        preorder[preIdx] = nodes[current];\n" +
+                "        preIdx = preIdx + 1;\n" +
+                "        \n" +
+                "        var leftChild, rightChild:integer;\n" +
+                "        leftChild = current * 2 + 1;\n" +
+                "        rightChild = current * 2 + 2;\n" +
+                "        \n" +
+                "        if(leftChild < 7) {\n" +
+                "            exec traverseTree(nodes, leftChild, inorder, preorder, postorder, inIdx, preIdx, postIdx);\n" +
+                "        }\n" +
+                "        \n" +
+                "        inorder[inIdx] = nodes[current];\n" +
+                "        inIdx = inIdx + 1;\n" +
+                "        \n" +
+                "        if(rightChild < 7) {\n" +
+                "            exec traverseTree(nodes, rightChild, inorder, preorder, postorder, inIdx, preIdx, postIdx);\n" +
+                "        }\n" +
+                "        \n" +
+                "        postorder[postIdx] = nodes[current];\n" +
+                "        postIdx = postIdx + 1;\n" +
+                "    }\n" +
+                "}\n" +
+                "var tree[7]:array;\n" +
+                "tree[0] = 4; tree[1] = 2; tree[2] = 6; tree[3] = 1;\n" +
+                "tree[4] = 3; tree[5] = 5; tree[6] = 7;\n" +
+                "var inorderResult[7]:array;\n" +
+                "var preorderResult[7]:array;\n" +
+                "var postorderResult[7]:array;\n" +
+                "var inIdx, preIdx, postIdx:integer;\n" +
+                "inIdx = 0; preIdx = 0; postIdx = 0;\n" +
+                "exec traverseTree(tree, 0, inorderResult, preorderResult, postorderResult, inIdx, preIdx, postIdx);";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        
+        // Assert multiple arrays for tree traversal
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        
+        // Tree structure:
+        //       4
+        //      / \
+        //     2   6
+        //    / \ / \
+        //   1  3 5  7
+        
+        // Assert inorder traversal: left-root-right = 1,2,3,4,5,6,7
+        Map<String, Object> expectedInorder = new HashMap<>();
+        expectedInorder.put("0", 1d);
+        expectedInorder.put("1", 2d);
+        expectedInorder.put("2", 3d);
+        expectedInorder.put("3", 4d);
+        expectedInorder.put("4", 5d);
+        expectedInorder.put("5", 6d);
+        expectedInorder.put("6", 7d);
+        arrayIndexToAssert.put("inorderResult", expectedInorder);
+        
+        // Assert preorder traversal: root-left-right = 4,2,1,3,6,5,7
+        Map<String, Object> expectedPreorder = new HashMap<>();
+        expectedPreorder.put("0", 4d);
+        expectedPreorder.put("1", 2d);
+        expectedPreorder.put("2", 1d);
+        expectedPreorder.put("3", 3d);
+        expectedPreorder.put("4", 6d);
+        expectedPreorder.put("5", 5d);
+        expectedPreorder.put("6", 7d);
+        arrayIndexToAssert.put("preorderResult", expectedPreorder);
+        
+        // Assert postorder traversal: left-right-root = 1,3,2,5,7,6,4
+        Map<String, Object> expectedPostorder = new HashMap<>();
+        expectedPostorder.put("0", 1d);
+        expectedPostorder.put("1", 3d);
+        expectedPostorder.put("2", 2d);
+        expectedPostorder.put("3", 5d);
+        expectedPostorder.put("4", 7d);
+        expectedPostorder.put("5", 6d);
+        expectedPostorder.put("6", 4d);
+        arrayIndexToAssert.put("postorderResult", expectedPostorder);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
 }
