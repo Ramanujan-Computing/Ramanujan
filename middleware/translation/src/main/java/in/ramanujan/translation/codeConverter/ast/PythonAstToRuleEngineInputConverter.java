@@ -4,23 +4,270 @@ import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.*;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.ArrayCommand;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
 
 import java.util.*;
 
+/**
+ * Converts Python AST nodes into RuleEngineInput structures.
+ * 
+ * <p>This converter is the bridge between Python's abstract syntax tree representation
+ * and Ramanujan's internal RuleEngineInput format. It traverses AST nodes (ModuleNode,
+ * AssignNode, IfNode, etc.) and generates corresponding RuleEngine structures (Variables,
+ * Operations, Conditions, Commands, etc.) that can be executed by the Ramanujan engine.</p>
+ * 
+ * <h3>Conversion Flow</h3>
+ * <pre>
+ * Python Code
+ *     ↓ (python3 -m ast)
+ * Python AST Dump
+ *     ↓ (AstParser)
+ * AST Node Objects (ModuleNode, AssignNode, etc.)
+ *     ↓ (PythonAstToRuleEngineInputConverter - THIS CLASS)
+ * RuleEngineInput (Variables, Operations, Commands, etc.)
+ *     ↓ (Ramanujan Engine)
+ * Execution
+ * </pre>
+ * 
+ * <h3>Key Responsibilities</h3>
+ * <ul>
+ *   <li><b>Statement Conversion:</b> Convert Python statements (assignments, if/while, function calls)
+ *       into Command objects with appropriate links and references</li>
+ *   <li><b>Expression Conversion:</b> Convert Python expressions (binary operations, function calls,
+ *       array subscripts) into Operation objects and return their IDs</li>
+ *   <li><b>Type Inference:</b> Determine variable data types from their initial values
+ *       (Integer, Double, String, array)</li>
+ *   <li><b>Scope Management:</b> Track variable scope through nested blocks (if/while/function)
+ *       using variableScope list</li>
+ *   <li><b>Command Chaining:</b> Link commands in sequence using nextId references</li>
+ *   <li><b>Debug Code Generation:</b> Maintain human-readable Python code representation
+ *       via DebugLevelCodeCreator</li>
+ * </ul>
+ * 
+ * <h3>Conversion Examples</h3>
+ * 
+ * <h4>Example 1: Simple Assignment</h4>
+ * <pre>
+ * Python Code:
+ *   x = 5
+ * 
+ * AST:
+ *   AssignNode(targets=[NameNode('x')], value=ConstantNode(5))
+ * 
+ * Converts To:
+ *   - Variable: {id: "var_uuid", name: "x", dataType: "Integer"}
+ *   - Constant: {id: "const_uuid", value: "5", dataType: "Integer"}
+ *   - Operation: {id: "op_uuid", operatorType: "=", operand1: "var_uuid", operand2: "const_uuid"}
+ *   - Command: {id: "cmd_uuid", operationId: "op_uuid"}
+ * </pre>
+ * 
+ * <h4>Example 2: Binary Operation</h4>
+ * <pre>
+ * Python Code:
+ *   result = x + 5
+ * 
+ * AST:
+ *   AssignNode(
+ *     targets=[NameNode('result')],
+ *     value=BinOpNode(left=NameNode('x'), op='Add', right=ConstantNode(5)))
+ * 
+ * Converts To:
+ *   - Variable: {id: "result_var_id", name: "result", dataType: "Double"}
+ *   - Constant: {id: "const_5_id", value: "5"}
+ *   - Operation (addition): {id: "add_op_id", operatorType: "+", 
+ *                           operand1: "x_var_id", operand2: "const_5_id"}
+ *   - Operation (assignment): {id: "assign_op_id", operatorType: "=",
+ *                             operand1: "result_var_id", operand2: "add_op_id"}
+ *   - Command: {id: "cmd_id", operationId: "assign_op_id"}
+ * </pre>
+ * 
+ * <h4>Example 3: If Statement</h4>
+ * <pre>
+ * Python Code:
+ *   if x > 5:
+ *       y = 10
+ *   else:
+ *       y = 20
+ * 
+ * AST:
+ *   IfNode(
+ *     test=CompareNode(left=NameNode('x'), ops=['Gt'], comparators=[ConstantNode(5)]),
+ *     body=[AssignNode(targets=[NameNode('y')], value=ConstantNode(10))],
+ *     orelse=[AssignNode(targets=[NameNode('y')], value=ConstantNode(20))]))
+ * 
+ * Converts To:
+ *   - Condition: {id: "cond_id", conditionType: ">", 
+ *                comparisionCommand1: "x_var_id", comparisionCommand2: "const_5_id"}
+ *   - If Block: {id: "if_id", conditionId: "cond_id", 
+ *               ifCommand: "cmd_y_10_id", elseCommandId: "cmd_y_20_id"}
+ *   - Command (if body): {id: "cmd_y_10_id", operationId: "op_y_10_id"}
+ *   - Command (else body): {id: "cmd_y_20_id", operationId: "op_y_20_id"}
+ *   - Command (if statement): {id: "cmd_if_id", ifBlocks: "if_id"}
+ * </pre>
+ * 
+ * <h4>Example 4: Array Assignment</h4>
+ * <pre>
+ * Python Code:
+ *   arr = [1, 2, 3]
+ *   arr[0] = 10
+ * 
+ * AST:
+ *   AssignNode(targets=[NameNode('arr')], value=ListNode(elts=[Constant(1), Constant(2), Constant(3)]))
+ *   AssignNode(
+ *     targets=[SubscriptNode(value=NameNode('arr'), slice=ConstantNode(0))],
+ *     value=ConstantNode(10))
+ * 
+ * Converts To:
+ *   - Array: {id: "arr_id", name: "arr", dataType: "array", dimension: [3]}
+ *   - Command (array creation): {id: "cmd_arr_id", arrayCommand: "arr_id"}
+ *   - Command (array assignment): {id: "cmd_arr_assign_id", ...}
+ * </pre>
+ * 
+ * <h3>Data Structures</h3>
+ * <table border="1">
+ *   <tr><th>Input (AST)</th><th>Output (RuleEngine)</th><th>Purpose</th></tr>
+ *   <tr><td>AssignNode</td><td>Variable + Operation + Command</td><td>Variable declaration/assignment</td></tr>
+ *   <tr><td>AugAssignNode</td><td>Operation + Command</td><td>Augmented assignment (+=, -=, etc.)</td></tr>
+ *   <tr><td>IfNode</td><td>If + Condition + Commands</td><td>Conditional branching</td></tr>
+ *   <tr><td>WhileNode</td><td>While + Condition + Commands</td><td>Loop structure</td></tr>
+ *   <tr><td>BinOpNode</td><td>Operation</td><td>Binary arithmetic/logic</td></tr>
+ *   <tr><td>CompareNode</td><td>Condition</td><td>Comparison operations</td></tr>
+ *   <tr><td>ConstantNode</td><td>Constant</td><td>Literal values</td></tr>
+ *   <tr><td>NameNode</td><td>Variable/Array ID</td><td>Variable references</td></tr>
+ *   <tr><td>ListNode</td><td>Array</td><td>Array/list creation</td></tr>
+ *   <tr><td>SubscriptNode</td><td>Array reference</td><td>Array element access</td></tr>
+ *   <tr><td>CallNode</td><td>FunctionCall</td><td>Function invocation</td></tr>
+ * </table>
+ * 
+ * <h3>Type Inference Rules</h3>
+ * <ul>
+ *   <li><b>Integer:</b> ConstantNode with Integer value → Variable with dataType="Integer"</li>
+ *   <li><b>Double:</b> ConstantNode with Double value OR BinOpNode → Variable with dataType="Double"</li>
+ *   <li><b>String:</b> ConstantNode with String value → Variable with dataType="String"</li>
+ *   <li><b>Array:</b> ListNode → Array with dataType="array"</li>
+ * </ul>
+ * 
+ * <h3>Scope Management</h3>
+ * <p>Variables can be declared at different scopes:</p>
+ * <pre>
+ * Global Scope: variableScope = []
+ *   x = 5           # Stored as: "x" → Variable
+ *   
+ * If Block Scope: variableScope = ["if_id_123"]
+ *   if condition:
+ *       y = 10      # Stored as: "if_id_123y" → Variable
+ *       
+ * While Block Scope: variableScope = ["while_id_456"]
+ *   while condition:
+ *       z = 20      # Stored as: "while_id_456z" → Variable
+ *       
+ * Nested Scope: variableScope = ["if_id_123", "while_id_789"]
+ *   if condition:
+ *       while nested:
+ *           w = 30  # Stored as: "while_id_789w" → Variable
+ * </pre>
+ * 
+ * <h3>Command Chaining</h3>
+ * <p>Commands are linked in execution order:</p>
+ * <pre>
+ * Python:
+ *   x = 5
+ *   y = 10
+ *   z = x + y
+ * 
+ * Commands:
+ *   Command1 {id: "cmd1", operationId: "op1", nextId: "cmd2"}
+ *   Command2 {id: "cmd2", operationId: "op2", nextId: "cmd3"}
+ *   Command3 {id: "cmd3", operationId: "op3", nextId: null}
+ * </pre>
+ * 
+ * <h3>Usage Example</h3>
+ * <pre>
+ * // Setup
+ * CodeConverter codeConverter = new CodeConverter();
+ * RuleEngineInput ruleEngineInput = new RuleEngineInput();
+ * DebugLevelCodeCreator debugCreator = new DebugLevelCodeCreator();
+ * Map<Integer, RuleEngineInputUnits> functionFrameMap = new HashMap<>();
+ * Integer[] frameCounter = {0};
+ * 
+ * // Create converter
+ * PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
+ *     codeConverter, ruleEngineInput, debugCreator, functionFrameMap, frameCounter);
+ * 
+ * // Parse Python code to AST
+ * String pythonCode = "x = 5\ny = x + 10";
+ * ModuleNode module = parseToAst(pythonCode);
+ * 
+ * // Convert AST to RuleEngineInput
+ * List<String> variableScope = new ArrayList<>();
+ * List<Command> commands = converter.convert(module, variableScope);
+ * 
+ * // Result: ruleEngineInput now contains:
+ * // - Variables: x, y
+ * // - Constants: 5, 10
+ * // - Operations: assignment, addition
+ * // - Commands: linked chain of commands
+ * </pre>
+ * 
+ * @see ModuleNode
+ * @see AstNode
+ * @see RuleEngineInput
+ * @see Command
+ * @see Operation
+ * @see Variable
+ * @see Condition
+ */
 public class PythonAstToRuleEngineInputConverter {
     
+    /**
+     * CodeConverter instance managing variable/array/method argument maps.
+     * Used to lookup existing variables and register new ones in appropriate scopes.
+     */
     private CodeConverter codeConverter;
+    
+    /**
+     * The target RuleEngineInput object being populated with converted structures.
+     * Contains lists of Variables, Arrays, Operations, Commands, Conditions, If/While blocks, etc.
+     */
     private RuleEngineInput ruleEngineInput;
+    
+    /**
+     * Creates human-readable Python code representation during conversion.
+     * Maintains indentation and generates debug output matching original Python syntax.
+     */
     private DebugLevelCodeCreator debugLevelCodeCreator;
+    
+    /**
+     * Maps function frame IDs to their local variables/arguments.
+     * Used for function-scoped variable management (currently minimal function support).
+     */
     private Map<Integer, RuleEngineInputUnits> functionFrameVariableMap;
+    
+    /**
+     * Counter for generating unique function frame IDs.
+     * Array of size 1 to allow pass-by-reference modification.
+     */
     private Integer[] frameVariableCounterId;
     
-    // Track variable types for inference
+    /**
+     * Tracks inferred data types for variables.
+     * Maps variable name → data type ("Integer", "Double", "String", "array").
+     * Used to remember type decisions made during first assignment.
+     */
     private Map<String, String> inferredTypes = new HashMap<>();
     
+    /**
+     * Constructs a new converter for transforming Python AST to RuleEngineInput.
+     * 
+     * @param codeConverter The code converter managing variable/array maps and scope resolution
+     * @param ruleEngineInput The target RuleEngineInput to populate with converted structures
+     * @param debugLevelCodeCreator Generator for human-readable debug code
+     * @param functionFrameVariableMap Map of function frames to their local variables
+     * @param frameVariableCounterId Counter for unique function frame ID generation
+     */
     public PythonAstToRuleEngineInputConverter(CodeConverter codeConverter,
                                                 RuleEngineInput ruleEngineInput,
                                                 DebugLevelCodeCreator debugLevelCodeCreator,
@@ -33,12 +280,47 @@ public class PythonAstToRuleEngineInputConverter {
         this.frameVariableCounterId = frameVariableCounterId;
     }
     
+    /**
+     * Converts a Python module (top-level AST node) into a list of Commands.
+     * 
+     * <p>This is the main entry point for conversion. It processes all statements in the
+     * module's body sequentially, converting each to a Command and linking them via nextId
+     * references to maintain execution order.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python Module:
+     *   x = 5
+     *   y = 10
+     *   z = x + y
+     * 
+     * ModuleNode:
+     *   body: [
+     *     AssignNode(targets=[Name('x')], value=Constant(5)),
+     *     AssignNode(targets=[Name('y')], value=Constant(10)),
+     *     AssignNode(targets=[Name('z')], value=BinOp(Name('x'), Add, Name('y')))
+     *   ]
+     * 
+     * Returns:
+     *   [
+     *     Command1 {id: "cmd1", operationId: "op1", nextId: "cmd2"},
+     *     Command2 {id: "cmd2", operationId: "op2", nextId: "cmd3"},
+     *     Command3 {id: "cmd3", operationId: "op3", nextId: null}
+     *   ]
+     * </pre>
+     * 
+     * @param module The ModuleNode containing the Python program's AST
+     * @param variableScope List of scope IDs for nested block tracking (empty for top-level)
+     * @return List of Commands in execution order, linked via nextId references
+     * @throws CompilationException If conversion fails due to unsupported constructs or errors
+     */
     public List<Command> convert(ModuleNode module, List<String> variableScope) throws CompilationException {
         List<Command> commands = new ArrayList<>();
         Command previousCommand = null;
         
         for (AstNode node : module.getBody()) {
-            Command command = convertStatement(node, variableScope);
+            // Top-level code is not inside a function, so pass null for variableFrameMap and counter
+            Command command = convertStatement(node, variableScope, null, null);
             if (command != null) {
                 commands.add(command);
                 if (previousCommand != null) {
@@ -51,20 +333,55 @@ public class PythonAstToRuleEngineInputConverter {
         return commands;
     }
     
-    private Command convertStatement(AstNode node, List<String> variableScope) throws CompilationException {
+    /**
+     * Converts a single AST statement node into a Command.
+     * 
+     * <p>Routes the statement to the appropriate conversion method based on its type.
+     * Each statement type has specific conversion logic that populates the Command object
+     * with the appropriate references (operationId, ifBlocks, whileBlock, etc.).</p>
+     * 
+     * <h4>Statement Type Routing</h4>
+     * <ul>
+     *   <li><b>AssignNode</b> → convertAssign() - Variable/array assignments</li>
+     *   <li><b>AugAssignNode</b> → convertAugAssign() - Augmented assignments (+=, -=, etc.)</li>
+     *   <li><b>IfNode</b> → convertIf() - Conditional branching</li>
+     *   <li><b>WhileNode</b> → convertWhile() - Loop structures</li>
+     *   <li><b>FunctionDefNode</b> → convertFunctionDef() - Function definitions (returns null)</li>
+     *   <li><b>ExprNode</b> → convertExpr() - Expression statements (function calls)</li>
+     *   <li><b>ReturnNode</b> → Returns null (skip in main flow)</li>
+     * </ul>
+     * 
+     * <h4>Command Creation</h4>
+     * <pre>
+     * Each command receives:
+     *   - Unique ID: "command_" + UUID
+     *   - Code pointer: Line number in debug output
+     *   - Type-specific reference: operationId, ifBlocks, whileBlock, arrayCommand, etc.
+     * </pre>
+     * 
+     * @param node The statement node to convert
+     * @param variableScope Current scope stack for variable resolution
+     * @param variableFrameMap Map to track variables/arrays created in function body (null for non-function contexts)
+     * @param counter Array containing current frame counter (modified during conversion)
+     * @return The created Command, or null if statement doesn't produce a command (functions, returns)
+     * @throws CompilationException If conversion fails for unsupported constructs
+     */
+    private Command convertStatement(AstNode node, List<String> variableScope,
+                                    Map<Integer, RuleEngineInputUnits> variableFrameMap,
+                                    int[] counter) throws CompilationException {
         Command command = new Command();
         command.setId("command_" + UUID.randomUUID().toString());
         command.setCodeStrPtr(debugLevelCodeCreator.getLine());
         ruleEngineInput.getCommands().add(command);
         
         if (node instanceof AssignNode) {
-            convertAssign((AssignNode) node, command, variableScope);
+            convertAssign((AssignNode) node, command, variableScope, variableFrameMap, counter);
         } else if (node instanceof AugAssignNode) {
             convertAugAssign((AugAssignNode) node, command, variableScope);
         } else if (node instanceof IfNode) {
-            convertIf((IfNode) node, command, variableScope);
+            convertIf((IfNode) node, command, variableScope, variableFrameMap, counter);
         } else if (node instanceof WhileNode) {
-            convertWhile((WhileNode) node, command, variableScope);
+            convertWhile((WhileNode) node, command, variableScope, variableFrameMap, counter);
         } else if (node instanceof FunctionDefNode) {
             convertFunctionDef((FunctionDefNode) node, command, variableScope);
             return null; // Functions don't create commands in main flow
@@ -77,7 +394,63 @@ public class PythonAstToRuleEngineInputConverter {
         return command;
     }
     
-    private void convertAssign(AssignNode assign, Command command, List<String> variableScope) 
+    /**
+     * Converts an assignment statement into Variable/Array and Operation structures.
+     * 
+     * <p>Handles both variable assignments and array element assignments. For new variables,
+     * infers the data type from the value being assigned. For existing variables, creates
+     * an Operation to perform the assignment.</p>
+     * 
+     * <h4>Variable Assignment (New Variable)</h4>
+     * <pre>
+     * Python: x = 5
+     * AST: AssignNode(targets=[NameNode('x')], value=ConstantNode(5))
+     * 
+     * Creates:
+     *   - Variable {id: "var_uuid", name: "x", dataType: "Integer"}
+     *   - Constant {id: "const_uuid", value: "5", dataType: "Integer"}
+     *   - Operation {id: "op_uuid", operatorType: "=", operand1: "var_uuid", operand2: "const_uuid"}
+     *   - Command.operationId = "op_uuid"
+     * </pre>
+     * 
+     * <h4>Variable Assignment (Existing Variable)</h4>
+     * <pre>
+     * Python: x = 10  (x already declared)
+     * 
+     * Creates:
+     *   - Constant {id: "const_uuid", value: "10"}
+     *   - Operation {id: "op_uuid", operatorType: "=", operand1: "existing_x_id", operand2: "const_uuid"}
+     *   - Command.operationId = "op_uuid"
+     * </pre>
+     * 
+     * <h4>Array Creation</h4>
+     * <pre>
+     * Python: arr = [1, 2, 3]
+     * AST: AssignNode(targets=[NameNode('arr')], value=ListNode(elts=[...]))
+     * 
+     * Creates:
+     *   - Array {id: "arr_uuid", name: "arr", dataType: "array", dimension: [3]}
+     *   - Command.arrayCommand = "arr_uuid"
+     * </pre>
+     * 
+     * <h4>Array Element Assignment</h4>
+     * <pre>
+     * Python: arr[0] = 10
+     * AST: AssignNode(targets=[SubscriptNode(...)], value=ConstantNode(10))
+     * 
+     * Routes to: convertArrayAssignment()
+     * </pre>
+     * 
+     * @param assign The AssignNode to convert
+     * @param command The Command object to populate
+     * @param variableScope Current scope stack for variable registration
+     * @param variableFrameMap Map to track variables/arrays created in function body (null for non-function contexts)
+     * @param counter Array containing current frame counter (modified when new variables/arrays are created)
+     * @throws CompilationException If target or value cannot be converted
+     */
+    private void convertAssign(AssignNode assign, Command command, List<String> variableScope,
+                              Map<Integer, RuleEngineInputUnits> variableFrameMap,
+                              int[] counter) 
             throws CompilationException {
         
         AstNode target = assign.getTargets().get(0);
@@ -89,6 +462,49 @@ public class PythonAstToRuleEngineInputConverter {
             
             Variable existingVar = getExistingVariable(varName, variableScope);
             Array existingArray = getExistingArray(varName, variableScope);
+            MethodDataTypeAgnosticArg existingMethodArg = getExistingMethodArg(varName, variableScope);
+            
+            // If it's a method arg, convert it to Variable or Array based on usage
+            if (existingMethodArg != null) {
+                String dataType = inferDataType(value);
+                
+                if ("array".equals(dataType)) {
+                    // Convert MethodArg to Array
+                    ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(existingMethodArg);
+                    Array array = new Array();
+                    array.setId(existingMethodArg.getId());
+                    array.setName(existingMethodArg.getName());
+                    array.setDataType("array");
+                    
+                    ruleEngineInput.getArrays().add(array);
+                    String scope = getScope(variableScope);
+                    codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + varName);
+                    codeConverter.setArray(array, scope);
+                    
+                    Operation operation = createAssignmentOperation(array.getId(), value, variableScope);
+                    command.setOperation(operation.getId());
+                } else {
+                    // Convert MethodArg to Variable
+                    ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(existingMethodArg);
+                    Variable variable = new Variable();
+                    variable.setId(existingMethodArg.getId());
+                    variable.setName(existingMethodArg.getName());
+                    variable.setDataType(dataType);
+                    
+                    ruleEngineInput.getVariables().add(variable);
+                    String scope = getScope(variableScope);
+                    codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + varName);
+                    codeConverter.setVariable(variable, scope);
+                    
+                    Operation operation = createAssignmentOperation(variable.getId(), value, variableScope);
+                    command.setOperation(operation.getId());
+                }
+                
+                debugLevelCodeCreator.concat(varName + " = ");
+                appendValueToDebug(value);
+                debugLevelCodeCreator.nextLine();
+                return;
+            }
             
             if (existingVar == null && existingArray == null) {
                 String dataType = inferDataType(value);
@@ -99,16 +515,53 @@ public class PythonAstToRuleEngineInputConverter {
                     array.setName(varName);
                     array.setDataType("array");
                     
+                    boolean hasNonConstantDimension = false;
+                    List<Integer> constantDims = new ArrayList<>();
+                    List<String> resolvedDims = new ArrayList<>();
+                    
                     if (value instanceof ListNode) {
-                        List<Integer> dims = new ArrayList<>();
-                        dims.add(((ListNode) value).getElts().size());
-                        array.setDimension(dims);
+                        boolean[] hasNonConstant = new boolean[]{false};
+                        resolvedDims = extractArrayDimensions((ListNode) value, variableScope, constantDims, hasNonConstant);
+                        hasNonConstantDimension = hasNonConstant[0];
+                        
+                        // Only set dimension if all dimensions are constant
+                        if (!hasNonConstantDimension) {
+                            array.setDimension(constantDims);
+                        }
+                    } else if (value instanceof ListCompNode) {
+                        boolean[] hasNonConstant = new boolean[]{false};
+                        resolvedDims = extractArrayDimensionsFromListComp((ListCompNode) value, variableScope, constantDims, hasNonConstant);
+                        hasNonConstantDimension = hasNonConstant[0];
+                        
+                        // Only set dimension if all dimensions are constant
+                        if (!hasNonConstantDimension) {
+                            array.setDimension(constantDims);
+                        }
                     }
                     
                     ruleEngineInput.getArrays().add(array);
                     codeConverter.setArray(array, getScope(variableScope));
                     inferredTypes.put(varName, "array");
-                    command.setArrayCommand(array.getId());
+                    
+                    // If any dimension is not constant, emit RedefineArrayCommand
+                    if (hasNonConstantDimension && !resolvedDims.isEmpty()) {
+                        in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand redefineCmd = 
+                            new in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand();
+                        redefineCmd.setId(UUID.randomUUID().toString());
+                        redefineCmd.setArrayId(array.getId());
+                        redefineCmd.setNewDimensions(resolvedDims);
+                        command.setRedefineArrayCommand(redefineCmd);
+                    } else {
+                        ArrayCommand arrayCommand = new ArrayCommand();
+                        arrayCommand.setArrayId(array.getId());
+                        command.setArrayCommand(arrayCommand);
+                    }
+                    
+                    // Track array in function frame if inside a function
+                    if (variableFrameMap != null && counter != null) {
+                        array.setFrameCount(counter[0]);
+                        variableFrameMap.put(counter[0]++, array);
+                    }
                 } else {
                     Variable variable = new Variable();
                     variable.setId(getScopedId(variableScope) + UUID.randomUUID().toString());
@@ -119,13 +572,19 @@ public class PythonAstToRuleEngineInputConverter {
                     codeConverter.setVariable(variable, getScope(variableScope));
                     inferredTypes.put(varName, dataType);
                     
+                    // Track variable in function frame if inside a function
+                    if (variableFrameMap != null && counter != null) {
+                        variable.setFrameCount(counter[0]);
+                        variableFrameMap.put(counter[0]++, variable);
+                    }
+                    
                     Operation operation = createAssignmentOperation(variable.getId(), value, variableScope);
-                    command.setOperationId(operation.getId());
+                    command.setOperation(operation.getId());
                 }
             } else {
                 String targetId = existingVar != null ? existingVar.getId() : existingArray.getId();
                 Operation operation = createAssignmentOperation(targetId, value, variableScope);
-                command.setOperationId(operation.getId());
+                command.setOperation(operation.getId());
             }
             
             debugLevelCodeCreator.concat(varName + " = ");
@@ -137,6 +596,44 @@ public class PythonAstToRuleEngineInputConverter {
         }
     }
     
+    /**
+     * Converts an augmented assignment statement into an Operation.
+     * 
+     * <p>Augmented assignments (+=, -=, *=, etc.) are converted by creating a synthetic
+     * BinOpNode that represents the equivalent binary operation, then creating an
+     * assignment operation.</p>
+     * 
+     * <h4>Conversion Logic</h4>
+     * <pre>
+     * Python: x += 5
+     * AST: AugAssignNode(target=NameNode('x'), op='Add', value=ConstantNode(5))
+     * 
+     * Equivalent to: x = x + 5
+     * 
+     * Creates:
+     *   - Constant {id: "const_5_id", value: "5"}
+     *   - Operation (addition) {id: "add_op_id", operatorType: "+",
+     *                          operand1: "x_var_id", operand2: "const_5_id"}
+     *   - Operation (assignment) {id: "assign_op_id", operatorType: "=",
+     *                            operand1: "x_var_id", operand2: "add_op_id"}
+     *   - Command.operationId = "assign_op_id"
+     * </pre>
+     * 
+     * <h4>Supported Operators</h4>
+     * <ul>
+     *   <li><b>Add</b> (+) - Addition assignment: x += 5</li>
+     *   <li><b>Sub</b> (-) - Subtraction assignment: x -= 3</li>
+     *   <li><b>Mult</b> (*) - Multiplication assignment: x *= 2</li>
+     *   <li><b>Div</b> (/) - Division assignment: x /= 4</li>
+     *   <li><b>Mod</b> (%) - Modulo assignment: x %= 10</li>
+     *   <li><b>Pow</b> (^) - Power assignment: x **= 2</li>
+     * </ul>
+     * 
+     * @param augAssign The AugAssignNode to convert
+     * @param command The Command object to populate
+     * @param variableScope Current scope stack for variable resolution
+     * @throws CompilationException If variable doesn't exist or conversion fails
+     */
     private void convertAugAssign(AugAssignNode augAssign, Command command, List<String> variableScope) 
             throws CompilationException {
         
@@ -149,7 +646,31 @@ public class PythonAstToRuleEngineInputConverter {
             String varName = nameNode.getId();
             
             Variable variable = getExistingVariable(varName, variableScope);
-            if (variable == null) {
+            Array array = getExistingArray(varName, variableScope);
+            MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(varName, variableScope);
+            
+            String targetId;
+            
+            // If it's a method arg, convert it to Variable first
+            if (methodArg != null) {
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodArg);
+                Variable newVar = new Variable();
+                newVar.setId(methodArg.getId());
+                newVar.setName(methodArg.getName());
+                // Data type will be determined from the operation result
+                newVar.setDataType("Integer"); // Default, will be refined during operation
+                
+                ruleEngineInput.getVariables().add(newVar);
+                String scope = getScope(variableScope);
+                codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + varName);
+                codeConverter.setVariable(newVar, scope);
+                
+                targetId = newVar.getId();
+            } else if (variable != null) {
+                targetId = variable.getId();
+            } else if (array != null) {
+                targetId = array.getId();
+            } else {
                 throw new CompilationException(null, null, 
                     "Variable " + varName + " not found for augmented assignment");
             }
@@ -159,8 +680,8 @@ public class PythonAstToRuleEngineInputConverter {
             binOp.setOp(op);
             binOp.setRight(value);
             
-            Operation operation = createAssignmentOperation(variable.getId(), binOp, variableScope);
-            command.setOperationId(operation.getId());
+            Operation operation = createAssignmentOperation(targetId, binOp, variableScope);
+            command.setOperation(operation.getId());
             
             debugLevelCodeCreator.concat(varName + " " + opToPython(op) + "= ");
             appendValueToDebug(value);
@@ -168,6 +689,43 @@ public class PythonAstToRuleEngineInputConverter {
         }
     }
     
+    /**
+     * Converts an array element assignment statement.
+     * 
+     * <p>Handles assignments to array elements using subscript notation. Currently supports
+     * simple array indexing with variable or constant indices. Complex expressions as
+     * array names are not yet supported.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python: arr[0] = 10
+     * AST: SubscriptNode(
+     *        value=NameNode('arr'),
+     *        slice=ConstantNode(0),
+     *        ctx='Store')
+     * 
+     * Debug Output: "arr[0] = 10"
+     * </pre>
+     * 
+     * <h4>Supported Patterns</h4>
+     * <ul>
+     *   <li><b>Constant index:</b> arr[0] = value, arr[5] = data</li>
+     *   <li><b>Variable index:</b> arr[i] = value, arr[index] = data</li>
+     *   <li><b>Expression value:</b> arr[0] = x + 5, arr[i] = compute()</li>
+     * </ul>
+     * 
+     * <h4>Limitations</h4>
+     * <ul>
+     *   <li>Only simple array names supported (not expressions like func()[0] = x)</li>
+     *   <li>Single-dimensional indexing only (arr[i], not arr[i][j])</li>
+     * </ul>
+     * 
+     * @param target The SubscriptNode representing the array element being assigned
+     * @param value The value expression being assigned to the array element
+     * @param command The Command object to populate
+     * @param variableScope Current scope stack for array resolution
+     * @throws CompilationException If array doesn't exist or indexing is too complex
+     */
     private void convertArrayAssignment(SubscriptNode target, AstNode value, Command command, 
                                        List<String> variableScope) throws CompilationException {
         
@@ -190,7 +748,64 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.nextLine();
     }
     
-    private void convertIf(IfNode ifNode, Command command, List<String> variableScope) 
+    /**
+     * Converts an if statement into an If block with Condition and command chains.
+     * 
+     * <p>Creates an If block containing the condition and references to the first commands
+     * of both the if-body and else-body. The if block ID is added to variableScope to
+     * properly scope any variables declared within the branches.</p>
+     * 
+     * <h4>Simple If Example</h4>
+     * <pre>
+     * Python:
+     *   if x > 5:
+     *       y = 10
+     * 
+     * AST:
+     *   IfNode(
+     *     test=CompareNode(left=Name('x'), ops=['Gt'], comparators=[Constant(5)]),
+     *     body=[AssignNode(targets=[Name('y')], value=Constant(10))],
+     *     orelse=[])
+     * 
+     * Creates:
+     *   - Condition {id: "cond_id", conditionType: ">",
+     *               comparisionCommand1: "x_var_id", comparisionCommand2: "const_5_id"}
+     *   - Command (y=10) {id: "cmd_y_id", operationId: "op_y_id"}
+     *   - If Block {id: "if_id", conditionId: "cond_id", ifCommand: "cmd_y_id", elseCommandId: null}
+     *   - Command (if stmt) {id: "cmd_if_id", ifBlocks: "if_id"}
+     * </pre>
+     * 
+     * <h4>If-Else Example</h4>
+     * <pre>
+     * Python:
+     *   if x > 5:
+     *       y = 10
+     *   else:
+     *       y = 20
+     * 
+     * Creates:
+     *   - If Block {id: "if_id", conditionId: "cond_id",
+     *              ifCommand: "cmd_y_10_id", elseCommandId: "cmd_y_20_id"}
+     * </pre>
+     * 
+     * <h4>Scope Management</h4>
+     * <pre>
+     * Before: variableScope = []
+     * During if body: variableScope = ["if_id_123"]
+     *   Variables declared: "if_id_123var_name"
+     * After: variableScope = []
+     * </pre>
+     * 
+     * @param ifNode The IfNode to convert
+     * @param command The Command object to populate with If block reference
+     * @param variableScope Current scope stack (if block ID added/removed during conversion)
+     * @param variableFrameMap Map to track variables/arrays created in function body (null for non-function contexts)
+     * @param counter Array containing current frame counter (modified during conversion)
+     * @throws CompilationException If condition or body conversion fails
+     */
+    private void convertIf(IfNode ifNode, Command command, List<String> variableScope,
+                          Map<Integer, RuleEngineInputUnits> variableFrameMap,
+                          int[] counter) 
             throws CompilationException {
         
         If ifBlock = new If();
@@ -206,7 +821,7 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.addIndentation();
         debugLevelCodeCreator.nextLine();
         
-        List<Command> ifCommands = convertBody(ifNode.getBody(), variableScope);
+        List<Command> ifCommands = convertBody(ifNode.getBody(), variableScope, variableFrameMap, counter);
         if (!ifCommands.isEmpty()) {
             ifBlock.setIfCommand(ifCommands.get(0).getId());
         }
@@ -218,7 +833,7 @@ public class PythonAstToRuleEngineInputConverter {
             debugLevelCodeCreator.addIndentation();
             debugLevelCodeCreator.nextLine();
             
-            List<Command> elseCommands = convertBody(ifNode.getOrelse(), variableScope);
+            List<Command> elseCommands = convertBody(ifNode.getOrelse(), variableScope, variableFrameMap, counter);
             if (!elseCommands.isEmpty()) {
                 ifBlock.setElseCommandId(elseCommands.get(0).getId());
             }
@@ -232,7 +847,66 @@ public class PythonAstToRuleEngineInputConverter {
         variableScope.remove(variableScope.size() - 1);
     }
     
-    private void convertWhile(WhileNode whileNode, Command command, List<String> variableScope) 
+    /**
+     * Converts a while loop into a While block with Condition and loop command chain.
+     * 
+     * <p>Creates a While block containing the loop condition and a reference to the first
+     * command in the loop body. The while block ID is added to variableScope to properly
+     * scope any variables declared within the loop.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python:
+     *   count = 5
+     *   while count > 0:
+     *       count -= 1
+     * 
+     * AST:
+     *   WhileNode(
+     *     test=CompareNode(left=Name('count'), ops=['Gt'], comparators=[Constant(0)]),
+     *     body=[AugAssignNode(target=Name('count'), op='Sub', value=Constant(1))],
+     *     orelse=[])
+     * 
+     * Creates:
+     *   - Condition {id: "cond_id", conditionType: ">",
+     *               comparisionCommand1: "count_var_id", comparisionCommand2: "const_0_id"}
+     *   - Command (count -= 1) {id: "cmd_decr_id", operationId: "op_decr_id"}
+     *   - While Block {id: "while_id", conditionId: "cond_id", loopCommand: "cmd_decr_id"}
+     *   - Command (while stmt) {id: "cmd_while_id", whileBlock: "while_id"}
+     * </pre>
+     * 
+     * <h4>Loop Body Command Chain</h4>
+     * <pre>
+     * Python:
+     *   while condition:
+     *       x = x + 1
+     *       y = y * 2
+     *       z = x + y
+     * 
+     * Loop commands linked:
+     *   Command1 {id: "cmd1", nextId: "cmd2"} ← loopCommand points here
+     *   Command2 {id: "cmd2", nextId: "cmd3"}
+     *   Command3 {id: "cmd3", nextId: null}
+     * </pre>
+     * 
+     * <h4>Scope Management</h4>
+     * <pre>
+     * Before: variableScope = []
+     * During loop body: variableScope = ["while_id_456"]
+     *   Variables declared: "while_id_456var_name"
+     * After: variableScope = []
+     * </pre>
+     * 
+     * @param whileNode The WhileNode to convert
+     * @param command The Command object to populate with While block reference
+     * @param variableScope Current scope stack (while block ID added/removed during conversion)
+     * @param variableFrameMap Map to track variables/arrays created in function body (null for non-function contexts)
+     * @param counter Array containing current frame counter (modified during conversion)
+     * @throws CompilationException If condition or body conversion fails
+     */
+    private void convertWhile(WhileNode whileNode, Command command, List<String> variableScope,
+                             Map<Integer, RuleEngineInputUnits> variableFrameMap,
+                             int[] counter) 
             throws CompilationException {
         
         While whileBlock = new While();
@@ -248,30 +922,126 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.addIndentation();
         debugLevelCodeCreator.nextLine();
         
-        List<Command> bodyCommands = convertBody(whileNode.getBody(), variableScope);
+        List<Command> bodyCommands = convertBody(whileNode.getBody(), variableScope, variableFrameMap, counter);
         if (!bodyCommands.isEmpty()) {
-            whileBlock.setLoopCommand(bodyCommands.get(0).getId());
+            whileBlock.setWhileCommandId(bodyCommands.get(0).getId());
         }
         
         debugLevelCodeCreator.decrementIndentation();
         
         ruleEngineInput.getWhileBlocks().add(whileBlock);
-        command.setWhileBlock(whileBlock.getId());
+        command.setWhileId(whileBlock.getId());
         
         variableScope.remove(variableScope.size() - 1);
     }
     
-    private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScope) {
+    /**
+     * Converts a function definition statement (currently minimal support).
+     * 
+     * <p>Function definitions are currently only processed for debug output generation.
+     * Full function support including local variables, return values, and function calls
+     * is planned but not yet implemented.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python:
+     *   def add(a, b):
+     *       return a + b
+     * 
+     * AST:
+     *   FunctionDefNode(
+     *     name='add',
+     *     args=arguments(args=[arg('a'), arg('b')]),
+     *     body=[ReturnNode(...)])
+     * 
+     * Debug Output: "def add(a, b):"
+     * </pre>
+     * 
+     * @param funcDef The FunctionDefNode to process
+     * @param command The Command object (unused, function returns null from convertStatement)
+     * @param variableScope Current scope stack (unused for functions currently)
+     */
+    private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScope) throws CompilationException {
         debugLevelCodeCreator.concat("def " + funcDef.getName() + "(");
         List<String> paramNames = new ArrayList<>();
+        List<String> paramIds = new ArrayList<>();
+        int[] counter = new int[]{0};
+        Map<Integer, RuleEngineInputUnits> variableFrameMap = new HashMap<>();
         for (ArgNode arg : funcDef.getArgs().getArgs()) {
+            String argStr = arg.getArg();
+            MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
+            methodArg.setName(argStr);
+            methodArg.setFrameCount(counter[0]);
+            methodArg.setId("arg_" + UUID.randomUUID().toString());
             paramNames.add(arg.getArg());
+            paramIds.add(methodArg.getId());
+
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodArg);
+            codeConverter.setMethodDataTypeAgnosticArgMap(methodArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
+            variableFrameMap.put(counter[0]++, methodArg);
         }
         debugLevelCodeCreator.concat(String.join(", ", paramNames));
         debugLevelCodeCreator.concat("):");
         debugLevelCodeCreator.nextLine();
+
+        FunctionCall functionCall = new FunctionCall();
+        List<Command> bodyCommands = convertBody(funcDef.getBody(), variableScope, variableFrameMap, counter);
+        if (!bodyCommands.isEmpty()) {
+            functionCall.setFirstCommandId(bodyCommands.get(0).getId());
+        }
+
+        functionCall.setArguments(paramIds);
+
+        List<String> variablesInFunction = new ArrayList<>();
+        int frameCounter = 0;
+        while(true) {
+            RuleEngineInputUnits units = variableFrameMap.get(frameCounter);
+            if(units == null) {
+                break;
+            }
+            variablesInFunction.add(units.getId());
+            frameCounter++;
+        }
+
+        functionCall.setAllVariablesInMethod(variablesInFunction);
+        ruleEngineInput.getFunctionCalls().add(functionCall);
+
+
     }
     
+    /**
+     * Converts an expression statement (function/method calls executed for side effects).
+     * 
+     * <p>Expression statements are expressions that appear as standalone statements rather
+     * than as part of assignments or conditions. Most commonly these are function calls
+     * like print() or method calls like list.append().</p>
+     * 
+     * <h4>Function Call Example</h4>
+     * <pre>
+     * Python: print("Hello")
+     * AST: ExprNode(value=CallNode(func=Name('print'), args=[Constant('Hello')]))
+     * 
+     * Converts to: FunctionCall structure
+     * Debug Output: "print(\"Hello\")"
+     * </pre>
+     * 
+     * <h4>List Append Example</h4>
+     * <pre>
+     * Python: my_list.append(5)
+     * AST: ExprNode(
+     *        value=CallNode(
+     *          func=AttributeNode(value=Name('my_list'), attr='append'),
+     *          args=[Constant(5)]))
+     * 
+     * Special handling: convertListAppend()
+     * Debug Output: "my_list.append(5)"
+     * </pre>
+     * 
+     * @param expr The ExprNode to convert
+     * @param command The Command object to populate
+     * @param variableScope Current scope stack for variable resolution
+     * @throws CompilationException If expression cannot be converted
+     */
     private void convertExpr(ExprNode expr, Command command, List<String> variableScope) 
             throws CompilationException {
         
@@ -279,21 +1049,34 @@ public class PythonAstToRuleEngineInputConverter {
         
         if (value instanceof CallNode) {
             CallNode call = (CallNode) value;
-            
-            if (call.getFunc() instanceof AttributeNode) {
-                AttributeNode attr = (AttributeNode) call.getFunc();
-                if ("append".equals(attr.getAttr()) && attr.getValue() instanceof NameNode) {
-                    convertListAppend((NameNode) attr.getValue(), call, command, variableScope);
-                    return;
-                }
-            }
-            
             convertFunctionCall(call, command, variableScope);
         }
         
         debugLevelCodeCreator.nextLine();
     }
     
+    /**
+     * Converts a list.append() method call (special handling).
+     * 
+     * <p>List append operations are recognized as a special case of method calls and
+     * handled separately. Currently only generates debug output; full array modification
+     * operations are planned for future implementation.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python: my_list.append(10)
+     * AST: CallNode(
+     *        func=AttributeNode(value=Name('my_list'), attr='append'),
+     *        args=[Constant(10)])
+     * 
+     * Debug Output: "my_list.append(10)"
+     * </pre>
+     * 
+     * @param listName The NameNode identifying the list variable
+     * @param call The CallNode containing the append call details
+     * @param command The Command object (currently unused)
+     * @param variableScope Current scope stack (currently unused)
+     */
     private void convertListAppend(NameNode listName, CallNode call, Command command, 
                                    List<String> variableScope) {
         
@@ -306,6 +1089,27 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.concat(")");
     }
     
+    /**
+     * Converts a function call for debug output.
+     * 
+     * <p>Generates the debug representation of a function call with its arguments.
+     * Currently only supports simple function calls (not method chains or complex expressions).</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python: calculate(x, 5, y + 2)
+     * AST: CallNode(
+     *        func=Name('calculate'),
+     *        args=[Name('x'), Constant(5), BinOp(...)])
+     * 
+     * Debug Output: "calculate(x, 5, y + 2)"
+     * </pre>
+     * 
+     * @param call The CallNode representing the function call
+     * @param command The Command object (currently unused)
+     * @param variableScope Current scope stack for argument resolution
+     * @throws CompilationException If function reference is complex (not a simple name)
+     */
     private void convertFunctionCall(CallNode call, Command command, List<String> variableScope) 
             throws CompilationException {
         
@@ -316,24 +1120,74 @@ public class PythonAstToRuleEngineInputConverter {
         NameNode funcName = (NameNode) call.getFunc();
         String functionName = funcName.getId();
         
-        debugLevelCodeCreator.concat(functionName + "(");
+        FunctionCall functionCall = new FunctionCall();
+        List<String> argumentIds = new ArrayList<>();
+        
+        // Build debug output: exec functionName(arg1, arg2, ...)
+        debugLevelCodeCreator.concat("exec " + functionName + "(");
+        
         boolean first = true;
         for (AstNode arg : call.getArgs()) {
-            if (!first) debugLevelCodeCreator.concat(", ");
+            if (!first) {
+                debugLevelCodeCreator.concat(", ");
+            }
+            
+            // Get the ID of the argument (variable, array, or methodArg)
+            String argumentId = getArgumentId(arg, variableScope);
+            argumentIds.add(argumentId);
+            
+            // Add to debug output
             appendValueToDebug(arg);
             first = false;
         }
+        
         debugLevelCodeCreator.concat(")");
+        
+        functionCall.setId(functionName);
+        functionCall.setArguments(argumentIds);
+        
+        command.setFunctionCall(functionCall);
     }
     
-    private List<Command> convertBody(List<AstNode> body, List<String> variableScope) 
+    /**
+     * Converts a list of statement nodes into a linked chain of Commands.
+     * 
+     * <p>Used to convert the body of if blocks, while loops, and function definitions.
+     * Each statement is converted to a Command, and commands are linked via nextId
+     * to maintain execution order.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python Body (inside if block):
+     *   x = 5
+     *   y = 10
+     *   z = x + y
+     * 
+     * Returns:
+     *   [
+     *     Command1 {id: "cmd1", operationId: "op1", nextId: "cmd2"},
+     *     Command2 {id: "cmd2", operationId: "op2", nextId: "cmd3"},
+     *     Command3 {id: "cmd3", operationId: "op3", nextId: null}
+     *   ]
+     * </pre>
+     * 
+     * @param body List of AST statement nodes to convert
+     * @param variableScope Current scope stack (passed to each statement conversion)
+     * @param variableFrameMap Map to track variables/arrays created in function body (null for non-function contexts)
+     * @param counter Array containing current frame counter (modified during conversion)
+     * @return List of Commands linked via nextId references
+     * @throws CompilationException If any statement conversion fails
+     */
+    private List<Command> convertBody(List<AstNode> body, List<String> variableScope,
+                                     Map<Integer, RuleEngineInputUnits> variableFrameMap, 
+                                     int[] counter) 
             throws CompilationException {
         
         List<Command> commands = new ArrayList<>();
         Command previousCommand = null;
         
         for (AstNode node : body) {
-            Command command = convertStatement(node, variableScope);
+            Command command = convertStatement(node, variableScope, variableFrameMap, counter);
             if (command != null) {
                 commands.add(command);
                 if (previousCommand != null) {
@@ -346,6 +1200,45 @@ public class PythonAstToRuleEngineInputConverter {
         return commands;
     }
     
+    /**
+     * Converts a test expression into a Condition object.
+     * 
+     * <p>Conditions are used in if statements and while loops. Currently only supports
+     * CompareNode (comparison operations). Future support planned for boolean operations
+     * (and/or/not) and truthiness checks.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python: x > 5
+     * AST: CompareNode(
+     *        left=Name('x'),
+     *        ops=['Gt'],
+     *        comparators=[Constant(5)])
+     * 
+     * Creates:
+     *   Condition {
+     *     id: "cond_uuid",
+     *     conditionType: ">",
+     *     comparisionCommand1: "x_var_id",
+     *     comparisionCommand2: "const_5_id"
+     *   }
+     * </pre>
+     * 
+     * <h4>Supported Comparisons</h4>
+     * <ul>
+     *   <li><b>Lt</b> (&lt;) - Less than</li>
+     *   <li><b>LtE</b> (&lt;=) - Less than or equal</li>
+     *   <li><b>Gt</b> (&gt;) - Greater than</li>
+     *   <li><b>GtE</b> (&gt;=) - Greater than or equal</li>
+     *   <li><b>Eq</b> (==) - Equal</li>
+     *   <li><b>NotEq</b> (!=) - Not equal</li>
+     * </ul>
+     * 
+     * @param test The condition expression node to convert
+     * @param variableScope Current scope stack for variable resolution
+     * @return The created Condition object
+     * @throws CompilationException If condition type is unsupported
+     */
     private Condition convertCondition(AstNode test, List<String> variableScope) 
             throws CompilationException {
         
@@ -358,11 +1251,12 @@ public class PythonAstToRuleEngineInputConverter {
             String op = compare.getOps().get(0);
             condition.setConditionType(mapCompareOp(op));
             
-            String leftId = convertExpression(compare.getLeft(), variableScope);
-            String rightId = convertExpression(compare.getComparators().get(0), variableScope);
+            // Convert expressions and wrap in Commands
+            String leftCommandId = convertExpressionToCommand(compare.getLeft(), variableScope);
+            String rightCommandId = convertExpressionToCommand(compare.getComparators().get(0), variableScope);
             
-            condition.setComparisionCommand1(leftId);
-            condition.setComparisionCommand2(rightId);
+            condition.setComparisionCommand1(leftCommandId);
+            condition.setComparisionCommand2(rightCommandId);
             
             ruleEngineInput.getConditions().add(condition);
             return condition;
@@ -371,42 +1265,144 @@ public class PythonAstToRuleEngineInputConverter {
         throw new CompilationException(null, null, "Unsupported condition type");
     }
     
+    /**
+     * Creates an Operation object for assignment.
+     * 
+     * <p>Assignment operations have operatorType "=" and connect a target (Variable/Array)
+     * to a value expression. The value expression is recursively converted and its ID
+     * is used as operand2.</p>
+     * 
+     * <h4>Simple Assignment Example</h4>
+     * <pre>
+     * Python: x = 5
+     * 
+     * Creates:
+     *   Constant {id: "const_5_id", value: "5", dataType: "Integer"}
+     *   Operation {
+     *     id: "op_uuid",
+     *     operatorType: "=",
+     *     operand1: "x_var_id",      // target variable
+     *     operand2: "const_5_id"     // converted value expression
+     *   }
+     * </pre>
+     * 
+     * <h4>Expression Assignment Example</h4>
+     * <pre>
+     * Python: result = x + 5
+     * 
+     * Creates:
+     *   Operation (addition) {id: "add_op_id", operatorType: "+", ...}
+     *   Operation (assignment) {
+     *     id: "assign_op_id",
+     *     operatorType: "=",
+     *     operand1: "result_var_id",
+     *     operand2: "add_op_id"      // references the addition operation
+     *   }
+     * </pre>
+     * 
+     * @param targetId The ID of the target Variable or Array
+     * @param value The value expression node to assign
+     * @param variableScope Current scope stack for expression conversion
+     * @return The created Operation object
+     * @throws CompilationException If value expression cannot be converted
+     */
     private Operation createAssignmentOperation(String targetId, AstNode value, 
                                                List<String> variableScope) throws CompilationException {
         
         Operation operation = new Operation();
         operation.setId(UUID.randomUUID().toString());
         operation.setOperatorType("=");
-        operation.setOperand1(targetId);
         
-        String valueId = convertExpression(value, variableScope);
-        operation.setOperand2(valueId);
+        // Create command for operand1 (target variable/array)
+        Command operand1Command = createCommandForVariableOrArray(targetId);
+        operation.setOperand1(operand1Command.getId());
+        
+        // Create command for operand2 (value expression)
+        String valueCommandId = convertExpressionToCommand(value, variableScope);
+        operation.setOperand2(valueCommandId);
         
         ruleEngineInput.getOperations().add(operation);
         return operation;
     }
     
-    private String convertExpression(AstNode expr, List<String> variableScope) 
+    /**
+     * Creates a Command object that wraps a variable or array by its ID.
+     */
+    private Command createCommandForVariableOrArray(String entityId) {
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        
+        // Check if it's a variable or array
+        Variable variable = findVariableById(entityId);
+        if (variable != null) {
+            command.setVariableId(variable.getId());
+        } else {
+            Array array = findArrayById(entityId);
+            if (array != null) {
+                ArrayCommand arrayCommand = new ArrayCommand();
+                arrayCommand.setArrayId(array.getId());
+                command.setArrayCommand(arrayCommand);
+            } else {
+                // Could be a method arg - set as variableId
+                command.setVariableId(entityId);
+            }
+        }
+        
+        ruleEngineInput.getCommands().add(command);
+        return command;
+    }
+    
+    /**
+     * Finds a Variable by its ID.
+     */
+    private Variable findVariableById(String id) {
+        for (Variable v : ruleEngineInput.getVariables()) {
+            if (id.equals(v.getId())) {
+                return v;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Finds an Array by its ID.
+     */
+    private Array findArrayById(String id) {
+        for (Array a : ruleEngineInput.getArrays()) {
+            if (id.equals(a.getId())) {
+                return a;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Converts an expression node and wraps it in a Command, returning the Command ID.
+     */
+    private String convertExpressionToCommand(AstNode expr, List<String> variableScope) 
             throws CompilationException {
         
         if (expr instanceof ConstantNode) {
-            return convertConstant((ConstantNode) expr);
+            return convertConstantToCommand((ConstantNode) expr);
         } else if (expr instanceof NameNode) {
-            return convertName((NameNode) expr, variableScope);
+            return convertNameToCommand((NameNode) expr, variableScope);
         } else if (expr instanceof BinOpNode) {
-            return convertBinOp((BinOpNode) expr, variableScope);
+            return convertBinOpToCommand((BinOpNode) expr, variableScope);
         } else if (expr instanceof SubscriptNode) {
-            return convertSubscript((SubscriptNode) expr, variableScope);
+            return convertSubscriptToCommand((SubscriptNode) expr, variableScope);
         } else if (expr instanceof CallNode) {
-            return convertCallExpression((CallNode) expr, variableScope);
+            return convertCallExpressionToCommand((CallNode) expr, variableScope);
         } else if (expr instanceof ListNode) {
-            return convertList((ListNode) expr, variableScope);
+            return convertListToCommand((ListNode) expr, variableScope);
         }
         
         throw new CompilationException(null, null, "Unsupported expression type: " + expr.getClass().getSimpleName());
     }
     
-    private String convertConstant(ConstantNode constant) {
+    /**
+     * Converts a constant and wraps it in a Command.
+     */
+    private String convertConstantToCommand(ConstantNode constant) {
         Constant c = new Constant();
         c.setId(UUID.randomUUID().toString());
         c.setValue(String.valueOf(constant.getValue()));
@@ -421,11 +1417,172 @@ public class PythonAstToRuleEngineInputConverter {
         }
         
         ruleEngineInput.getConstants().add(c);
-        return c.getId();
+        
+        // Wrap in command
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        command.setConstant(c.getId());
+        ruleEngineInput.getCommands().add(command);
+        
+        return command.getId();
     }
     
-    private String convertName(NameNode name, List<String> variableScope) throws CompilationException {
+    /**
+     * Converts a variable name reference and wraps it in a Command.
+     */
+    private String convertNameToCommand(NameNode name, List<String> variableScope) throws CompilationException {
         String varName = name.getId();
+        
+        Variable variable = getExistingVariable(varName, variableScope);
+        if (variable != null) {
+            Command command = new Command();
+            command.setId("command_" + UUID.randomUUID().toString());
+            command.setVariableId(variable.getId());
+            ruleEngineInput.getCommands().add(command);
+            return command.getId();
+        }
+        
+        Array array = getExistingArray(varName, variableScope);
+        if (array != null) {
+            Command command = new Command();
+            command.setId("command_" + UUID.randomUUID().toString());
+            ArrayCommand arrayCommand = new ArrayCommand();
+            arrayCommand.setArrayId(array.getId());
+            command.setArrayCommand(arrayCommand);
+            ruleEngineInput.getCommands().add(command);
+            return command.getId();
+        }
+        
+        MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(varName, variableScope);
+        if (methodArg != null) {
+            Command command = new Command();
+            command.setId("command_" + UUID.randomUUID().toString());
+            command.setVariableId(methodArg.getId());
+            ruleEngineInput.getCommands().add(command);
+            return command.getId();
+        }
+        
+        throw new CompilationException(null, null, "Variable " + varName + " not found");
+    }
+    
+    /**
+     * Converts a binary operation and wraps it in a Command.
+     */
+    private String convertBinOpToCommand(BinOpNode binOp, List<String> variableScope) 
+            throws CompilationException {
+        
+        Operation operation = new Operation();
+        operation.setId(UUID.randomUUID().toString());
+        operation.setOperatorType(mapBinOp(binOp.getOp()));
+        
+        // Recursively convert left and right, each wrapped in commands
+        String leftCommandId = convertExpressionToCommand(binOp.getLeft(), variableScope);
+        String rightCommandId = convertExpressionToCommand(binOp.getRight(), variableScope);
+        
+        operation.setOperand1(leftCommandId);
+        operation.setOperand2(rightCommandId);
+        
+        ruleEngineInput.getOperations().add(operation);
+        
+        // Wrap operation in command
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        command.setOperation(operation.getId());
+        ruleEngineInput.getCommands().add(command);
+        
+        return command.getId();
+    }
+    
+    /**
+     * Converts a subscript expression and wraps it in a Command.
+     */
+    private String convertSubscriptToCommand(SubscriptNode subscript, List<String> variableScope) 
+            throws CompilationException {
+        
+        if (!(subscript.getValue() instanceof NameNode)) {
+            throw new CompilationException(null, null, "Complex subscript not supported");
+        }
+        
+        NameNode arrayName = (NameNode) subscript.getValue();
+        String arrayVarName = arrayName.getId();
+        
+        Array array = getExistingArray(arrayVarName, variableScope);
+        if (array == null) {
+            throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
+        }
+        
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        ArrayCommand arrayCommand = new ArrayCommand();
+        arrayCommand.setArrayId(array.getId());
+        command.setArrayCommand(arrayCommand);
+        ruleEngineInput.getCommands().add(command);
+        
+        return command.getId();
+    }
+    
+    /**
+     * Converts a function call expression and wraps it in a Command.
+     */
+    private String convertCallExpressionToCommand(CallNode call, List<String> variableScope) 
+            throws CompilationException {
+        
+        if (!(call.getFunc() instanceof NameNode)) {
+            throw new CompilationException(null, null, "Complex function calls not supported");
+        }
+        
+        FunctionCall functionCall = new FunctionCall();
+        functionCall.setId("funcCall_" + UUID.randomUUID().toString());
+        
+        List<String> argCommandIds = new ArrayList<>();
+        for (AstNode arg : call.getArgs()) {
+            argCommandIds.add(convertExpressionToCommand(arg, variableScope));
+        }
+        functionCall.setArguments(argCommandIds);
+        
+        ruleEngineInput.getFunctionCalls().add(functionCall);
+        
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        command.setFunctionCall(functionCall);
+        ruleEngineInput.getCommands().add(command);
+        
+        return command.getId();
+    }
+    
+    /**
+     * Converts a list expression and wraps it in a Command.
+     */
+    private String convertListToCommand(ListNode list, List<String> variableScope) {
+        // For now, return empty command - list literals need special handling
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        ruleEngineInput.getCommands().add(command);
+        return command.getId();
+    }
+    
+    // ============================================================================
+    // Helper Methods
+    // ============================================================================
+    
+    /**
+     * Gets the ID of an argument expression (variable, array, or methodArg).
+     * 
+     * <p>Used for function call arguments where we need just the entity ID,
+     * not wrapped in a Command.</p>
+     * 
+     * @param arg The argument expression node (expected to be a NameNode)
+     * @param variableScope Current scope stack for variable resolution
+     * @return The ID of the variable, array, or methodArg
+     * @throws CompilationException If argument is not a simple name or not found
+     */
+    private String getArgumentId(AstNode arg, List<String> variableScope) throws CompilationException {
+        if (!(arg instanceof NameNode)) {
+            throw new CompilationException(null, null, "Function argument must be a simple variable name");
+        }
+        
+        NameNode nameNode = (NameNode) arg;
+        String varName = nameNode.getId();
         
         Variable variable = getExistingVariable(varName, variableScope);
         if (variable != null) {
@@ -442,73 +1599,38 @@ public class PythonAstToRuleEngineInputConverter {
             return methodArg.getId();
         }
         
-        throw new CompilationException(null, null, "Variable " + varName + " not found");
+        throw new CompilationException(null, null, "Argument " + varName + " not found");
     }
     
-    private String convertBinOp(BinOpNode binOp, List<String> variableScope) 
-            throws CompilationException {
-        
-        Operation operation = new Operation();
-        operation.setId(UUID.randomUUID().toString());
-        operation.setOperatorType(mapBinOp(binOp.getOp()));
-        
-        String leftId = convertExpression(binOp.getLeft(), variableScope);
-        String rightId = convertExpression(binOp.getRight(), variableScope);
-        
-        operation.setOperand1(leftId);
-        operation.setOperand2(rightId);
-        
-        ruleEngineInput.getOperations().add(operation);
-        return operation.getId();
-    }
-    
-    private String convertSubscript(SubscriptNode subscript, List<String> variableScope) 
-            throws CompilationException {
-        
-        if (!(subscript.getValue() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex subscript not supported");
-        }
-        
-        NameNode arrayName = (NameNode) subscript.getValue();
-        String arrayVarName = arrayName.getId();
-        
-        Array array = getExistingArray(arrayVarName, variableScope);
-        if (array == null) {
-            throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
-        }
-        
-        return array.getId();
-    }
-    
-    private String convertCallExpression(CallNode call, List<String> variableScope) 
-            throws CompilationException {
-        
-        if (!(call.getFunc() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex function calls not supported");
-        }
-        
-        NameNode funcName = (NameNode) call.getFunc();
-        
-        FunctionCall functionCall = new FunctionCall();
-        functionCall.setId("funcCall_" + UUID.randomUUID().toString());
-        functionCall.setName(funcName.getId());
-        
-        List<String> argIds = new ArrayList<>();
-        for (AstNode arg : call.getArgs()) {
-            argIds.add(convertExpression(arg, variableScope));
-        }
-        functionCall.setArgumentIds(argIds);
-        
-        ruleEngineInput.getFunctionCalls().add(functionCall);
-        return functionCall.getId();
-    }
-    
-    private String convertList(ListNode list, List<String> variableScope) {
-        return "";
-    }
-    
-    // Helper methods
-    
+    /**
+     * Infers the data type of a variable from its initial value.
+     * 
+     * <p>Used during variable declaration to determine the appropriate dataType field.
+     * Examines the value node to decide between Integer, Double, String, or array.</p>
+     * 
+     * <h4>Inference Rules</h4>
+     * <table border="1">
+     *   <tr><th>Value Node</th><th>Value Type</th><th>Inferred Type</th><th>Example</th></tr>
+     *   <tr><td>ConstantNode</td><td>Integer</td><td>"Integer"</td><td>x = 5</td></tr>
+     *   <tr><td>ConstantNode</td><td>Double</td><td>"Double"</td><td>x = 3.14</td></tr>
+     *   <tr><td>ConstantNode</td><td>String</td><td>"String"</td><td>x = "hello"</td></tr>
+     *   <tr><td>ListNode</td><td>-</td><td>"array"</td><td>x = [1, 2, 3]</td></tr>
+     *   <tr><td>BinOpNode</td><td>-</td><td>"Double"</td><td>x = a + b</td></tr>
+     *   <tr><td>Other</td><td>-</td><td>"Integer"</td><td>Default fallback</td></tr>
+     * </table>
+     * 
+     * <h4>Examples</h4>
+     * <pre>
+     * x = 42          → "Integer"
+     * y = 3.14        → "Double"
+     * name = "Alice"  → "String"
+     * arr = [1, 2, 3] → "array"
+     * sum = a + b     → "Double" (assumes arithmetic produces floating point)
+     * </pre>
+     * 
+     * @param value The value node being assigned to the variable
+     * @return The inferred data type string
+     */
     private String inferDataType(AstNode value) {
         if (value instanceof ConstantNode) {
             Object v = ((ConstantNode) value).getValue();
@@ -517,12 +1639,36 @@ public class PythonAstToRuleEngineInputConverter {
             return "String";
         } else if (value instanceof ListNode) {
             return "array";
+        } else if (value instanceof ListCompNode) {
+            return "array";
         } else if (value instanceof BinOpNode) {
             return "Double";
         }
         return "Integer";
     }
     
+    /**
+     * Looks up an existing Variable by name, respecting scope hierarchy.
+     * 
+     * <p>Searches from innermost scope outward, then checks global scope. This implements
+     * proper variable shadowing where inner scopes can have variables with the same name
+     * as outer scopes.</p>
+     * 
+     * <h4>Search Order Example</h4>
+     * <pre>
+     * variableScope = ["if_123", "while_456"]
+     * name = "x"
+     * 
+     * Search order:
+     *   1. "while_456x" (innermost scope)
+     *   2. "if_123x" (outer scope)
+     *   3. "x" (global scope)
+     * </pre>
+     * 
+     * @param name The variable name to lookup
+     * @param variableScope Current scope stack
+     * @return The Variable object if found, null otherwise
+     */
     private Variable getExistingVariable(String name, List<String> variableScope) {
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
@@ -532,6 +1678,15 @@ public class PythonAstToRuleEngineInputConverter {
         return codeConverter.getVariableMap().get(name);
     }
     
+    /**
+     * Looks up an existing Array by name, respecting scope hierarchy.
+     * 
+     * <p>Same scoping logic as getExistingVariable but searches the array map.</p>
+     * 
+     * @param name The array name to lookup
+     * @param variableScope Current scope stack
+     * @return The Array object if found, null otherwise
+     */
     private Array getExistingArray(String name, List<String> variableScope) {
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
@@ -541,6 +1696,15 @@ public class PythonAstToRuleEngineInputConverter {
         return codeConverter.getArrayMap().get(name);
     }
     
+    /**
+     * Looks up an existing method argument by name, respecting scope hierarchy.
+     * 
+     * <p>Used for function parameter resolution (currently minimal function support).</p>
+     * 
+     * @param name The argument name to lookup
+     * @param variableScope Current scope stack
+     * @return The MethodDataTypeAgnosticArg object if found, null otherwise
+     */
     private MethodDataTypeAgnosticArg getExistingMethodArg(String name, List<String> variableScope) {
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
@@ -550,14 +1714,53 @@ public class PythonAstToRuleEngineInputConverter {
         return codeConverter.getMethodDataTypeAgnosticArgMap().get(name);
     }
     
+    /**
+     * Gets the current scope ID for variable registration.
+     * 
+     * <p>Returns the innermost scope ID (last element in variableScope list) or empty
+     * string for global scope. Used as prefix when creating new variables/arrays.</p>
+     * 
+     * <h4>Examples</h4>
+     * <pre>
+     * variableScope = [] → "" (global scope)
+     * variableScope = ["if_123"] → "if_123"
+     * variableScope = ["if_123", "while_456"] → "while_456" (innermost)
+     * </pre>
+     * 
+     * @param variableScope Current scope stack
+     * @return The current scope ID or empty string for global
+     */
     private String getScopedId(List<String> variableScope) {
         return variableScope.isEmpty() ? "" : variableScope.get(variableScope.size() - 1);
     }
     
+    /**
+     * Gets the current scope for variable registration (identical to getScopedId).
+     * 
+     * @param variableScope Current scope stack
+     * @return The current scope ID or empty string for global
+     */
     private String getScope(List<String> variableScope) {
         return variableScope.isEmpty() ? "" : variableScope.get(variableScope.size() - 1);
     }
     
+    /**
+     * Maps Python AST binary operator names to RuleEngine operator symbols.
+     * 
+     * <h4>Operator Mapping</h4>
+     * <pre>
+     * AST Name → Symbol
+     * "Add"    → "+"
+     * "Sub"    → "-"
+     * "Mult"   → "*"
+     * "Div"    → "/"
+     * "Mod"    → "%"
+     * "Pow"    → "^"
+     * </pre>
+     * 
+     * @param op The AST operator name (e.g., "Add", "Mult")
+     * @return The operator symbol (e.g., "+", "*")
+     */
     private String mapBinOp(String op) {
         switch (op) {
             case "Add": return "+";
@@ -570,6 +1773,23 @@ public class PythonAstToRuleEngineInputConverter {
         }
     }
     
+    /**
+     * Maps Python AST comparison operator names to RuleEngine comparison symbols.
+     * 
+     * <h4>Operator Mapping</h4>
+     * <pre>
+     * AST Name  → Symbol
+     * "Lt"      → "<"
+     * "LtE"     → "<="
+     * "Gt"      → ">"
+     * "GtE"     → ">="
+     * "Eq"      → "=="
+     * "NotEq"   → "!="
+     * </pre>
+     * 
+     * @param op The AST comparison operator name (e.g., "Gt", "Eq")
+     * @return The comparison symbol (e.g., ">", "==")
+     */
     private String mapCompareOp(String op) {
         switch (op) {
             case "Lt": return "<";
@@ -582,6 +1802,21 @@ public class PythonAstToRuleEngineInputConverter {
         }
     }
     
+    /**
+     * Maps Python AST operator names to Python source code symbols for debug output.
+     * 
+     * <h4>Operator Mapping</h4>
+     * <pre>
+     * AST Name → Python Symbol
+     * "Add"    → "+"
+     * "Sub"    → "-"
+     * "Mult"   → "*"
+     * "Div"    → "/"
+     * </pre>
+     * 
+     * @param op The AST operator name
+     * @return The Python operator symbol for debug output
+     */
     private String opToPython(String op) {
         switch (op) {
             case "Add": return "+";
@@ -592,6 +1827,23 @@ public class PythonAstToRuleEngineInputConverter {
         }
     }
     
+    /**
+     * Recursively appends a value expression to the debug code output.
+     * 
+     * <p>Traverses the expression tree and generates Python-like syntax for debug purposes.
+     * Handles constants, variables, binary operations, and comparisons with proper formatting.</p>
+     * 
+     * <h4>Examples</h4>
+     * <pre>
+     * ConstantNode(42) → "42"
+     * NameNode('x') → "x"
+     * BinOpNode(Name('x'), Add, Constant(5)) → "x + 5"
+     * BinOpNode(BinOp(a, Add, b), Mult, c) → "a + b * c"
+     * CompareNode(Name('x'), Gt, Constant(10)) → "x > 10"
+     * </pre>
+     * 
+     * @param value The expression node to append to debug output
+     */
     private void appendValueToDebug(AstNode value) {
         if (value instanceof ConstantNode) {
             debugLevelCodeCreator.concat(String.valueOf(((ConstantNode) value).getValue()));
@@ -608,5 +1860,203 @@ public class PythonAstToRuleEngineInputConverter {
             debugLevelCodeCreator.concat(" " + mapCompareOp(compare.getOps().get(0)) + " ");
             appendValueToDebug(compare.getComparators().get(0));
         }
+    }
+    
+    /**
+     * Extracts array dimensions from a ListNode, detecting both constant and variable dimensions.
+     * Returns a list of dimension strings (either integer literals or variable IDs).
+     * Also populates the constantDims list and sets the hasNonConstantDimension flag.
+     */
+    private List<String> extractArrayDimensions(ListNode listNode, List<String> variableScope,
+                                                List<Integer> constantDims, boolean[] hasNonConstantDimension) 
+            throws CompilationException {
+        List<String> resolvedDims = new ArrayList<>();
+        
+        if (listNode == null || listNode.getElts().isEmpty()) {
+            return resolvedDims;
+        }
+        
+        // First dimension is the size of this list
+        int size = listNode.getElts().size();
+        constantDims.add(size);
+        resolvedDims.add(String.valueOf(size));
+        
+        // Check if elements are nested lists (for multi-dimensional arrays)
+        AstNode firstElt = listNode.getElts().get(0);
+        if (firstElt instanceof ListNode) {
+            // Recursively extract nested dimensions
+            boolean[] hasNonConstant = new boolean[]{false};
+            List<String> nestedDims = extractArrayDimensions((ListNode) firstElt, variableScope, constantDims, hasNonConstant);
+            resolvedDims.addAll(nestedDims);
+            if (hasNonConstant[0]) {
+                hasNonConstantDimension[0] = true;
+            }
+        } else if (firstElt instanceof BinOpNode) {
+            // Handle pattern like [0] * n for variable-length dimension
+            BinOpNode binOp = (BinOpNode) firstElt;
+            if ("Mult".equals(binOp.getOp())) {
+                AstNode right = binOp.getRight();
+                if (right instanceof ConstantNode) {
+                    try {
+                        int dim = Integer.parseInt(((ConstantNode) right).getValue().toString());
+                        constantDims.add(dim);
+                        resolvedDims.add(String.valueOf(dim));
+                    } catch (NumberFormatException e) {
+                        hasNonConstantDimension[0] = true;
+                        constantDims.add(1);
+                        resolvedDims.add(((ConstantNode) right).getValue().toString());
+                    }
+                } else if (right instanceof NameNode) {
+                    String dimVarName = ((NameNode) right).getId();
+                    String dimVarId = resolveDimensionVariable(dimVarName, variableScope);
+                    if (dimVarId != null) {
+                        hasNonConstantDimension[0] = true;
+                        constantDims.add(1);
+                        resolvedDims.add(dimVarId);
+                    }
+                }
+            }
+        }
+        
+        return resolvedDims;
+    }
+    
+    /**
+     * Extracts array dimensions from a ListComp (list comprehension), detecting both constant and variable dimensions.
+     * Handles patterns like [[0] * 10 for _ in range(10)] for 2D arrays with variable dimensions.
+     * Supports n-dimensional arrays with nested comprehensions: [[[0] * p for _ in range(m)] for _ in range(n)]
+     */
+    private List<String> extractArrayDimensionsFromListComp(ListCompNode listComp, List<String> variableScope,
+                                                            List<Integer> constantDims, boolean[] hasNonConstantDimension) 
+            throws CompilationException {
+        List<String> resolvedDims = new ArrayList<>();
+        
+        if (listComp == null || listComp.getGenerators().isEmpty()) {
+            return resolvedDims;
+        }
+        
+        // Extract outer dimension from the range() call in the generator
+        ComprehensionNode generator = listComp.getGenerators().get(0);
+        AstNode iter = generator.getIter();
+        
+        // Expect: Call(func=Name('range'), args=[...])
+        if (iter instanceof CallNode) {
+            CallNode rangeCall = (CallNode) iter;
+            if (rangeCall.getFunc() instanceof NameNode && 
+                "range".equals(((NameNode) rangeCall.getFunc()).getId())) {
+                
+                if (!rangeCall.getArgs().isEmpty()) {
+                    AstNode rangeArg = rangeCall.getArgs().get(0);
+                    
+                    if (rangeArg instanceof ConstantNode) {
+                        // Constant dimension: range(10)
+                        try {
+                            int dim = Integer.parseInt(((ConstantNode) rangeArg).getValue().toString());
+                            constantDims.add(dim);
+                            resolvedDims.add(String.valueOf(dim));
+                        } catch (NumberFormatException e) {
+                            hasNonConstantDimension[0] = true;
+                            constantDims.add(1);
+                            resolvedDims.add(((ConstantNode) rangeArg).getValue().toString());
+                        }
+                    } else if (rangeArg instanceof NameNode) {
+                        // Variable dimension: range(n)
+                        String dimVarName = ((NameNode) rangeArg).getId();
+                        String dimVarId = resolveDimensionVariable(dimVarName, variableScope);
+                        if (dimVarId != null) {
+                            hasNonConstantDimension[0] = true;
+                            constantDims.add(1); // Placeholder
+                            resolvedDims.add(dimVarId);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Extract inner dimensions from the element expression
+        AstNode elt = listComp.getElt();
+        
+        // Handle nested list comprehension: [[[0] * p for _ in range(m)] for _ in range(n)]
+        if (elt instanceof ListCompNode) {
+            // Recursively extract dimensions from nested comprehension
+            boolean[] hasNonConstant = new boolean[]{false};
+            List<String> nestedDims = extractArrayDimensionsFromListComp((ListCompNode) elt, variableScope, constantDims, hasNonConstant);
+            resolvedDims.addAll(nestedDims);
+            if (hasNonConstant[0]) {
+                hasNonConstantDimension[0] = true;
+            }
+        }
+        // Handle: [0] * 10 (BinOp with Mult)
+        else if (elt instanceof BinOpNode) {
+            BinOpNode binOp = (BinOpNode) elt;
+            if ("Mult".equals(binOp.getOp())) {
+                // Left side should be a list: [0]
+                if (binOp.getLeft() instanceof ListNode) {
+                    // Right side is the dimension: 10 or variable
+                    AstNode right = binOp.getRight();
+                    
+                    if (right instanceof ConstantNode) {
+                        try {
+                            int dim = Integer.parseInt(((ConstantNode) right).getValue().toString());
+                            constantDims.add(dim);
+                            resolvedDims.add(String.valueOf(dim));
+                        } catch (NumberFormatException e) {
+                            hasNonConstantDimension[0] = true;
+                            constantDims.add(1);
+                            resolvedDims.add(((ConstantNode) right).getValue().toString());
+                        }
+                    } else if (right instanceof NameNode) {
+                        String dimVarName = ((NameNode) right).getId();
+                        String dimVarId = resolveDimensionVariable(dimVarName, variableScope);
+                        if (dimVarId != null) {
+                            hasNonConstantDimension[0] = true;
+                            constantDims.add(1);
+                            resolvedDims.add(dimVarId);
+                        }
+                    }
+                }
+            }
+        } else if (elt instanceof ListNode) {
+            // Direct nested list in comprehension
+            boolean[] hasNonConstant = new boolean[]{false};
+            List<String> nestedDims = extractArrayDimensions((ListNode) elt, variableScope, constantDims, hasNonConstant);
+            resolvedDims.addAll(nestedDims);
+            if (hasNonConstant[0]) {
+                hasNonConstantDimension[0] = true;
+            }
+        }
+        // If elt is just a Constant (like 0), no more dimensions to extract
+        
+        return resolvedDims;
+    }
+    
+    /**
+     * Resolves a dimension variable name to its ID, converting MethodDataTypeAgnosticArg to Variable if needed.
+     */
+    private String resolveDimensionVariable(String dimVarName, List<String> variableScope) 
+            throws CompilationException {
+        Variable dimVar = getExistingVariable(dimVarName, variableScope);
+        if (dimVar != null) {
+            return dimVar.getId();
+        }
+        
+        MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(dimVarName, variableScope);
+        if (methodArg != null) {
+            // Convert MethodArg to Variable for use as dimension
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodArg);
+            Variable newVar = new Variable();
+            newVar.setId(methodArg.getId());
+            newVar.setName(methodArg.getName());
+            newVar.setDataType("Integer");
+            
+            ruleEngineInput.getVariables().add(newVar);
+            String scope = getScope(variableScope);
+            codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + dimVarName);
+            codeConverter.setVariable(newVar, scope);
+            
+            return newVar.getId();
+        }
+        
+        return null;
     }
 }
