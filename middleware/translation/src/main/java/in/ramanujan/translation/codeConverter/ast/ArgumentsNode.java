@@ -111,4 +111,23 @@ public class ArgumentsNode {
     public void setArgs(List<ArgNode> args) { 
         this.args = args; 
     }
+    
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("arguments(args=[");
+        for (int i = 0; i < args.size(); i++) {
+            ArgNode arg = args.get(i);
+            if (arg != null) {
+                sb.append(arg.toString());
+            } else {
+                sb.append("null");
+            }
+            if (i < args.size() - 1) {
+                sb.append(", ");
+            }
+        }
+        sb.append("])");
+        return sb.toString();
+    }
 }

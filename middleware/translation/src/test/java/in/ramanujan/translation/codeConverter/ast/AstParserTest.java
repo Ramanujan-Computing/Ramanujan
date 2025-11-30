@@ -528,4 +528,236 @@ public class AstParserTest {
         BinOpNode elseBinOp = (BinOpNode) elseAssign.getValue();
         assertEquals("Else body op should be Sub", "Sub", elseBinOp.getOp());
     }
+    
+    @Test
+    public void testSimpleFunctionDefFollowedByAssign() throws CompilationException {
+        // Simplest case: FunctionDef followed by Assign
+        String astDump = "Module(\n" +
+                "   body=[\n" +
+                "      FunctionDef(\n" +
+                "         name='test',\n" +
+                "         args=arguments(\n" +
+                "            posonlyargs=[],\n" +
+                "            args=[],\n" +
+                "            kwonlyargs=[],\n" +
+                "            kw_defaults=[],\n" +
+                "            defaults=[]),\n" +
+                "         body=[],\n" +
+                "         decorator_list=[],\n" +
+                "         type_params=[]),\n" +
+                "      Assign(\n" +
+                "         targets=[\n" +
+                "            Name(id='x', ctx=Store())],\n" +
+                "         value=Constant(value=0))],\n" +
+                "   type_ignores=[])";
+        
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+        
+        assertNotNull("Module should not be null", module);
+        assertEquals("Module should have 2 statements", 2, module.getBody().size());
+        assertTrue("First node should be FunctionDefNode", module.getBody().get(0) instanceof FunctionDefNode);
+        assertTrue("Second node should be AssignNode", module.getBody().get(1) instanceof AssignNode);
+    }
+    
+    @Test
+    public void testFunctionDefWithBodyFollowedByAssign() throws CompilationException {
+        // FunctionDef with body statements followed by module-level Assign
+        String astDump = "Module(\n" +
+                "   body=[\n" +
+                "      FunctionDef(\n" +
+                "         name='test',\n" +
+                "         args=arguments(\n" +
+                "            posonlyargs=[],\n" +
+                "            args=[],\n" +
+                "            kwonlyargs=[],\n" +
+                "            kw_defaults=[],\n" +
+                "            defaults=[]),\n" +
+                "         body=[\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='i', ctx=Store())],\n" +
+                "               value=Constant(value=0))],\n" +
+                "         decorator_list=[],\n" +
+                "         type_params=[]),\n" +
+                "      Assign(\n" +
+                "         targets=[\n" +
+                "            Name(id='x', ctx=Store())],\n" +
+                "         value=Constant(value=0))],\n" +
+                "   type_ignores=[])";
+        
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+        
+        assertNotNull("Module should not be null", module);
+        assertEquals("Module should have 2 statements", 2, module.getBody().size());
+        assertTrue("First node should be FunctionDefNode", module.getBody().get(0) instanceof FunctionDefNode);
+        
+        FunctionDefNode funcDef = (FunctionDefNode) module.getBody().get(0);
+        assertEquals("Function body should have 1 statement", 1, funcDef.getBody().size());
+        
+        assertTrue("Second node should be AssignNode", module.getBody().get(1) instanceof AssignNode);
+    }
+    
+    @Test
+    public void testFunctionDefWithTwoBodyStatementsFollowedByAssign() throws CompilationException {
+        // FunctionDef with 2 body statements followed by module-level Assign
+        String astDump = "Module(\n" +
+                "   body=[\n" +
+                "      FunctionDef(\n" +
+                "         name='test',\n" +
+                "         args=arguments(\n" +
+                "            posonlyargs=[],\n" +
+                "            args=[],\n" +
+                "            kwonlyargs=[],\n" +
+                "            kw_defaults=[],\n" +
+                "            defaults=[]),\n" +
+                "         body=[\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='i', ctx=Store())],\n" +
+                "               value=Constant(value=0)),\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='j', ctx=Store())],\n" +
+                "               value=Constant(value=0))],\n" +
+                "         decorator_list=[],\n" +
+                "         type_params=[]),\n" +
+                "      Assign(\n" +
+                "         targets=[\n" +
+                "            Name(id='x', ctx=Store())],\n" +
+                "         value=Constant(value=0))],\n" +
+                "   type_ignores=[])";
+        
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+        
+        assertNotNull("Module should not be null", module);
+        assertEquals("Module should have 2 statements", 2, module.getBody().size());
+        assertTrue("First node should be FunctionDefNode", module.getBody().get(0) instanceof FunctionDefNode);
+        
+        FunctionDefNode funcDef = (FunctionDefNode) module.getBody().get(0);
+        assertEquals("Function body should have 2 statements", 2, funcDef.getBody().size());
+        
+        assertTrue("Second node should be AssignNode", module.getBody().get(1) instanceof AssignNode);
+    }
+    
+    @Test
+    public void testFunctionDefWithArgsFollowedByAssign() throws CompilationException {
+        // FunctionDef with arguments followed by module-level Assign
+        String astDump = "Module(\n" +
+                "   body=[\n" +
+                "      FunctionDef(\n" +
+                "         name='test',\n" +
+                "         args=arguments(\n" +
+                "            posonlyargs=[],\n" +
+                "            args=[\n" +
+                "               arg(arg='outer'),\n" +
+                "               arg(arg='inner'),\n" +
+                "               arg(arg='result')],\n" +
+                "            kwonlyargs=[],\n" +
+                "            kw_defaults=[],\n" +
+                "            defaults=[]),\n" +
+                "         body=[\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='i', ctx=Store())],\n" +
+                "               value=Constant(value=0)),\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='j', ctx=Store())],\n" +
+                "               value=Constant(value=0))],\n" +
+                "         decorator_list=[],\n" +
+                "         type_params=[]),\n" +
+                "      Assign(\n" +
+                "         targets=[\n" +
+                "            Name(id='x', ctx=Store())],\n" +
+                "         value=Constant(value=0))],\n" +
+                "   type_ignores=[])";
+        
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+        
+        assertNotNull("Module should not be null", module);
+        assertEquals("Module should have 2 statements", 2, module.getBody().size());
+        assertTrue("First node should be FunctionDefNode", module.getBody().get(0) instanceof FunctionDefNode);
+        
+        FunctionDefNode funcDef = (FunctionDefNode) module.getBody().get(0);
+        assertEquals("Function should have 3 args", 3, funcDef.getArgs().getArgs().size());
+        assertEquals("Function body should have 2 statements", 2, funcDef.getBody().size());
+        
+        assertTrue("Second node should be AssignNode", module.getBody().get(1) instanceof AssignNode);
+    }
+
+    @Test
+    public void testParseFunctionDefWithDecoratorListAndTypeParams() throws CompilationException {
+        // Test parsing a FunctionDef followed by Assign and Expr (function call) at module level
+        // This is the exact format from Python's AST dump with decorator_list and type_params
+        String astDump = "Module(\n" +
+                "   body=[\n" +
+                "      FunctionDef(\n" +
+                "         name='nestedWhileTest',\n" +
+                "         args=arguments(\n" +
+                "            posonlyargs=[],\n" +
+                "            args=[\n" +
+                "               arg(arg='outer'),\n" +
+                "               arg(arg='inner'),\n" +
+                "               arg(arg='result')],\n" +
+                "            kwonlyargs=[],\n" +
+                "            kw_defaults=[],\n" +
+                "            defaults=[]),\n" +
+                "         body=[\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='i', ctx=Store())],\n" +
+                "               value=Constant(value=0)),\n" +
+                "            Assign(\n" +
+                "               targets=[\n" +
+                "                  Name(id='j', ctx=Store())],\n" +
+                "               value=Constant(value=0))],\n" +
+                "         decorator_list=[],\n" +
+                "         type_params=[]),\n" +
+                "      Assign(\n" +
+                "         targets=[\n" +
+                "            Name(id='testResult', ctx=Store())],\n" +
+                "         value=Constant(value=0)),\n" +
+                "      Expr(\n" +
+                "         value=Call(\n" +
+                "            func=Name(id='nestedWhileTest', ctx=Load()),\n" +
+                "            args=[\n" +
+                "               Constant(value=3),\n" +
+                "               Constant(value=4),\n" +
+                "               Name(id='testResult', ctx=Load())],\n" +
+                "            keywords=[]))],\n" +
+                "   type_ignores=[])";
+        
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+        
+        assertNotNull("Module should not be null", module);
+        assertEquals("Module should have 3 statements (FunctionDef, Assign, Expr)", 3, module.getBody().size());
+        
+        // Check first is FunctionDef
+        assertTrue("First node should be FunctionDefNode", module.getBody().get(0) instanceof FunctionDefNode);
+        FunctionDefNode funcDef = (FunctionDefNode) module.getBody().get(0);
+        assertEquals("Function name should be 'nestedWhileTest'", "nestedWhileTest", funcDef.getName());
+        assertEquals("Function should have 3 arguments", 3, funcDef.getArgs().getArgs().size());
+        assertEquals("First arg should be 'outer'", "outer", funcDef.getArgs().getArgs().get(0).getArg());
+        assertEquals("Function body should have 2 statements", 2, funcDef.getBody().size());
+        
+        // Check second is Assign (testResult = 0)
+        assertTrue("Second node should be AssignNode", module.getBody().get(1) instanceof AssignNode);
+        AssignNode assign = (AssignNode) module.getBody().get(1);
+        assertEquals("Assign target should be 'testResult'", "testResult", 
+            ((NameNode) assign.getTargets().get(0)).getId());
+        
+        // Check third is Expr with Call
+        assertTrue("Third node should be ExprNode", module.getBody().get(2) instanceof ExprNode);
+        ExprNode expr = (ExprNode) module.getBody().get(2);
+        assertTrue("Expr value should be CallNode", expr.getValue() instanceof CallNode);
+        CallNode call = (CallNode) expr.getValue();
+        assertEquals("Call function should be 'nestedWhileTest'", "nestedWhileTest", 
+            ((NameNode) call.getFunc()).getId());
+        assertEquals("Call should have 3 arguments", 3, call.getArgs().size());
+    }
 }

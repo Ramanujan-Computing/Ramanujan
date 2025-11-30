@@ -842,7 +842,15 @@ public class PythonCodeRunTest {
         // Execute using NativeProcessor
         if (!commands.isEmpty()) {
             NativeProcessor processor = new NativeProcessor();
-            processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), commands.get(0).getId());
+            String jsonInput = new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
+            
+            // Write JSON to file for debugging (since crash kills JVM before stdout is flushed)
+//            java.nio.file.Files.writeString(java.nio.file.Path.of("/tmp/rule_engine_input.json"), jsonInput);
+//            java.nio.file.Files.writeString(java.nio.file.Path.of("/tmp/command_id.txt"), commands.get(0).getId());
+            
+            System.out.println("========== JSON written to /tmp/rule_engine_input.json ==========");
+            System.out.flush();
+            processor.process(jsonInput, commands.get(0).getId());
             
             // Resolve variables from native processor result
             resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);

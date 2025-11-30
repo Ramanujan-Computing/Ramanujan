@@ -108,4 +108,17 @@ public class ConstantNode extends AstNode {
     public void setValue(Object value) { 
         this.value = value; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        String valueStr;
+        if (value instanceof String) {
+            valueStr = "'" + value + "'";
+        } else if (value == null) {
+            valueStr = "None";
+        } else {
+            valueStr = String.valueOf(value);
+        }
+        return getIndent(indent) + "Constant(value=" + valueStr + ")";
+    }
 }

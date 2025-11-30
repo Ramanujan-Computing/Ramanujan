@@ -147,16 +147,29 @@ public class CodeConverter {
             PythonAstInvoker invoker = new PythonAstInvoker();
             String astDump = invoker.invokeAst(pythonCode);
             
+            // Debug: Print AST dump from Python
+            System.out.println("========== AST DUMP FROM PYTHON ==========");
+            System.out.println(astDump);
+            System.out.println("==========================================");
+            
             // Step 2: Parse AST dump into Java AST objects
             AstParser parser = new AstParser();
             ModuleNode module = parser.parse(astDump);
             
+            // Debug: Print parsed Module toString
+            System.out.println("========== PARSED MODULE (toString) ==========");
+            System.out.println(module.toString());
+            System.out.println("===============================================");
+            
             // Step 3: Convert AST to RuleEngineInput
+            System.out.println("========== STARTING AST TO RULE ENGINE CONVERSION ==========");
             PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
                 this, ruleEngineInput, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId
             );
             
             List<Command> commands = converter.convert(module, variableScope);
+            System.out.println("========== AST TO RULE ENGINE CONVERSION COMPLETE ==========");
+            System.out.println("Commands created: " + commands.size());
             
             return commands;
             

@@ -177,4 +177,33 @@ public class CallNode extends AstNode {
     public void setArgs(List<AstNode> args) { 
         this.args = args; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("Call(\n");
+        sb.append(getIndent(indent + 1)).append("func=\n");
+        if (func != null) {
+            sb.append(func.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append(",\n");
+        sb.append(getIndent(indent + 1)).append("args=[\n");
+        for (int i = 0; i < args.size(); i++) {
+            AstNode arg = args.get(i);
+            if (arg != null) {
+                sb.append(arg.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < args.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("]\n");
+        sb.append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

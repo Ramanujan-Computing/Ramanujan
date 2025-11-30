@@ -224,4 +224,21 @@ public class AttributeNode extends AstNode {
     public void setCtx(String ctx) { 
         this.ctx = ctx; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("Attribute(\n");
+        sb.append(getIndent(indent + 1)).append("value=\n");
+        if (value != null) {
+            sb.append(value.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append(",\n");
+        sb.append(getIndent(indent + 1)).append("attr='").append(attr).append("',\n");
+        sb.append(getIndent(indent + 1)).append("ctx=").append(ctx).append("()\n");
+        sb.append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

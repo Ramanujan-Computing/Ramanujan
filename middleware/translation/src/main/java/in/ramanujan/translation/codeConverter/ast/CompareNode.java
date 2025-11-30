@@ -147,4 +147,41 @@ public class CompareNode extends AstNode {
     public void setComparators(List<AstNode> comparators) { 
         this.comparators = comparators; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("Compare(\n");
+        sb.append(getIndent(indent + 1)).append("left=\n");
+        if (left != null) {
+            sb.append(left.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append(",\n");
+        sb.append(getIndent(indent + 1)).append("ops=[");
+        for (int i = 0; i < ops.size(); i++) {
+            sb.append(ops.get(i)).append("()");
+            if (i < ops.size() - 1) {
+                sb.append(", ");
+            }
+        }
+        sb.append("],\n");
+        sb.append(getIndent(indent + 1)).append("comparators=[\n");
+        for (int i = 0; i < comparators.size(); i++) {
+            AstNode comp = comparators.get(i);
+            if (comp != null) {
+                sb.append(comp.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < comparators.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("]\n");
+        sb.append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

@@ -100,4 +100,9 @@ public class NameNode extends AstNode {
     public void setCtx(String ctx) { 
         this.ctx = ctx; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        return getIndent(indent) + "Name(id='" + id + "', ctx=" + ctx + "())";
+    }
 }

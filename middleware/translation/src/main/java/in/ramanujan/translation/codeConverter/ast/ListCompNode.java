@@ -61,4 +61,33 @@ public class ListCompNode extends AstNode {
     public void setGenerators(List<ComprehensionNode> generators) { 
         this.generators = generators; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("ListComp(\n");
+        sb.append(getIndent(indent + 1)).append("elt=\n");
+        if (elt != null) {
+            sb.append(elt.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append(",\n");
+        sb.append(getIndent(indent + 1)).append("generators=[\n");
+        for (int i = 0; i < generators.size(); i++) {
+            ComprehensionNode gen = generators.get(i);
+            if (gen != null) {
+                sb.append(gen.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < generators.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("]\n");
+        sb.append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

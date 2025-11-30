@@ -152,4 +152,18 @@ public class ExprNode extends AstNode {
     public void setValue(AstNode value) { 
         this.value = value; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("Expr(\n");
+        sb.append(getIndent(indent + 1)).append("value=\n");
+        if (value != null) {
+            sb.append(value.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append("\n").append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

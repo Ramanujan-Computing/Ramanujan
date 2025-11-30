@@ -177,4 +177,27 @@ public class ListNode extends AstNode {
     public void setCtx(String ctx) { 
         this.ctx = ctx; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("List(\n");
+        sb.append(getIndent(indent + 1)).append("elts=[\n");
+        for (int i = 0; i < elts.size(); i++) {
+            AstNode elt = elts.get(i);
+            if (elt != null) {
+                sb.append(elt.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < elts.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("],\n");
+        sb.append(getIndent(indent + 1)).append("ctx=").append(ctx).append("()\n");
+        sb.append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

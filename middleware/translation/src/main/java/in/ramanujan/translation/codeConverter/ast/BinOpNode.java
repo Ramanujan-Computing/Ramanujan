@@ -133,4 +133,26 @@ public class BinOpNode extends AstNode {
     public void setRight(AstNode right) { 
         this.right = right; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("BinOp(\n");
+        sb.append(getIndent(indent + 1)).append("left=\n");
+        if (left != null) {
+            sb.append(left.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append(",\n");
+        sb.append(getIndent(indent + 1)).append("op=").append(op).append("(),\n");
+        sb.append(getIndent(indent + 1)).append("right=\n");
+        if (right != null) {
+            sb.append(right.toString(indent + 2));
+        } else {
+            sb.append(getIndent(indent + 2)).append("null");
+        }
+        sb.append("\n").append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

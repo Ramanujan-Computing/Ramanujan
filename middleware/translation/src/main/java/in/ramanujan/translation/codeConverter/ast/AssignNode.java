@@ -97,4 +97,32 @@ public class AssignNode extends AstNode {
     public void setValue(AstNode value) { 
         this.value = value; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("Assign(\n");
+        sb.append(getIndent(indent + 1)).append("targets=[\n");
+        for (int i = 0; i < targets.size(); i++) {
+            AstNode target = targets.get(i);
+            if (target != null) {
+                sb.append(target.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < targets.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("],\n");
+        sb.append(getIndent(indent + 1)).append("value=");
+        if (value != null) {
+            sb.append("\n").append(value.toString(indent + 2));
+        } else {
+            sb.append("null");
+        }
+        sb.append("\n").append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

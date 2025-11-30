@@ -108,7 +108,7 @@ public class AstParser {
             String line = lines[currentLine].trim();
             if (line.startsWith("body=[")) {
                 currentLine++;
-                module.setBody(parseBodyList());
+                module.setBody(parseBodyList(true)); // true = parsing module body
                 break;
             }
             currentLine++;
@@ -138,6 +138,17 @@ public class AstParser {
      * @throws CompilationException If statement parsing fails
      */
     private List<AstNode> parseBodyList() throws CompilationException {
+        return parseBodyList(false);
+    }
+    
+    /**
+     * Parses a list of statements within a body block with context awareness.
+     * 
+     * @param isModuleBody true if parsing the module's body, false for other contexts
+     * @return List of AstNode objects representing statements in the body
+     * @throws CompilationException If statement parsing fails
+     */
+    private List<AstNode> parseBodyList(boolean isModuleBody) throws CompilationException {
         List<AstNode> body = new ArrayList<>();
         
         while (currentLine < lines.length) {
@@ -149,20 +160,170 @@ public class AstParser {
                 break;
             }
             
-            // Check if current line is not a valid body element (like orelse=[ or other structural elements)
-            // These indicate we've passed the end of this body
-            if (line.startsWith("orelse=[") || line.startsWith("decorator_list=[") || 
-                line.startsWith("type_ignores=[")) {
+            // Check for structural elements that indicate end of this body
+            // For module body: type_ignores=[ signals end
+            // For function/if/while body: orelse=[, decorator_list=[, type_params=[ signal end
+            if (line.startsWith("orelse=[")) {
+                break;
+            }
+            if (isModuleBody && line.startsWith("type_ignores=[")) {
+                break;
+            }
+            if (!isModuleBody && (line.startsWith("decorator_list=[") || line.startsWith("type_params=["))) {
                 break;
             }
             
+            int lineBeforeParsing = currentLine;
             AstNode node = parseNode(line);
             if (node != null) {
                 body.add(node);
             }
+            
+            // After parsing a node, check if the line that ended the node also closed the body list
+            // This handles cases like: right=Constant(value=1)))]),
+            // where the Assign ends with ]) or ]), which also closes the body
+            // IMPORTANT: Only check this for non-module bodies (function/if/while bodies)
+            // Module body should continue parsing until it sees explicit end markers
+            boolean isNestedStructure = (node instanceof WhileNode) || 
+                                         (node instanceof IfNode) || 
+                                         (node instanceof FunctionDefNode);
+            if (!isModuleBody && currentLine > lineBeforeParsing && currentLine > 0) {
+                String lastConsumedLine = lines[currentLine - 1].trim();
+                
+                if (isNestedStructure) {
+                    // For nested structures (While, If, FunctionDef), their closing line closes THEM.
+                    // But if the line has MULTIPLE ]) patterns, it also closes the outer body.
+                    // Pattern: ])]) or ])])] means: inner ]), outer ])
+                    int bodyClosingCount = countBodyClosingPatterns(lastConsumedLine);
+                    if (bodyClosingCount >= 2) {
+                        // Multiple bodies are closed, including the outer one
+                        break;
+                    }
+                } else {
+                    // For simple statements, check if this line contains the pattern ]) which closes body and parent structure
+                    // Look for pattern: )...]) at the end, meaning closing parens followed by ]
+                    if (lineClosesBodyAndParent(lastConsumedLine)) {
+                        break;
+                    }
+                }
+            }
         }
         
         return body;
+    }
+    
+    /**
+     * Checks if a line closes both the body list and a parent structure.
+     * This happens when a line ends with patterns like:
+     * - "...)])," - closes body ] and parent ) - where ] closes the body list
+     * - "...)])"  - closes body ] and parent )
+     * - "...))]),"-closes inner ), body ], parent )
+     * 
+     * Key distinction:
+     * - ])), means: args], Call), Expr), comma - body NOT closed
+     * - )])], means: args], Call), Expr), body], parent) - body IS closed
+     * 
+     * The pattern we're looking for is ] that closes the body, followed by )
+     * Not ] that closes an args list followed by ))
+     */
+    private boolean lineClosesBodyAndParent(String line) {
+        // Look for ])] pattern - this closes body] then parent)
+        // The key is finding ]...] pattern where second ] closes body
+        // or ])], which is body] followed by ,
+        
+        // Check for ]) at end which closes body] and parent) 
+        // But NOT ])), which is args], Call), Expr)
+        if (line.endsWith("]),") || line.endsWith("])")) {
+            // Count ) after the last ]
+            int lastBracket = line.lastIndexOf(']');
+            int parenCount = 0;
+            for (int i = lastBracket + 1; i < line.length(); i++) {
+                if (line.charAt(i) == ')') parenCount++;
+            }
+            // If only one ) after ], it's body] parent) - body closed
+            // If two or more ) after ], it could be args] Call) Expr) - need to check more
+            if (parenCount == 1) {
+                return true;
+            }
+        }
+        
+        // Check for ])])  pattern - args], Call), body], parent)
+        // or )])], pattern
+        if (line.contains("])],") || line.contains("])])") || line.contains(")])]")) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Counts the number of body-closing patterns in a line.
+     * A body-closing pattern is ]) which closes a body ] and its parent structure ).
+     * 
+     * <p>Example: "right=Constant(value=1)))])])," contains:
+     * - First ]): closes inner While body and While
+     * - Second ]): closes outer FunctionDef body and FunctionDef
+     * Result: 2
+     * 
+     * @param line The line to check
+     * @return Number of ]) patterns that close body+parent structures
+     */
+    private int countBodyClosingPatterns(String line) {
+        int count = 0;
+        int index = 0;
+        
+        // Count occurrences of ]) pattern
+        while ((index = line.indexOf("])", index)) != -1) {
+            count++;
+            index += 2; // Move past ]) to find next occurrence
+        }
+        
+        return count;
+    }
+    
+    /**
+     * Skips a bracketed section like "decorator_list=[]," or "type_params=[])".
+     * Handles both single-line and multi-line cases.
+     * 
+     * <p><b>Examples:</b></p>
+     * <pre>
+     * decorator_list=[],
+     * decorator_list=[
+     *   Name(id='decorator1')],
+     * type_params=[])
+     * </pre>
+     */
+    private void skipBracketedSection() {
+        String line = lines[currentLine].trim();
+        
+        // Check if the section is complete on a single line (e.g., "decorator_list=[]," or "type_params=[])")
+        int bracketStart = line.indexOf('[');
+        if (bracketStart >= 0) {
+            int depth = 0;
+            for (int i = bracketStart; i < line.length(); i++) {
+                if (line.charAt(i) == '[') depth++;
+                else if (line.charAt(i) == ']') {
+                    depth--;
+                    if (depth == 0) {
+                        // Found matching bracket on same line
+                        currentLine++;
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // Multi-line section, consume until we find the closing ]
+        currentLine++;
+        int depth = 1;
+        while (currentLine < lines.length && depth > 0) {
+            line = lines[currentLine].trim();
+            for (int i = 0; i < line.length(); i++) {
+                if (line.charAt(i) == '[') depth++;
+                else if (line.charAt(i) == ']') depth--;
+            }
+            currentLine++;
+        }
     }
     
     /**
@@ -282,10 +443,16 @@ public class AstParser {
         // )) - same without comma
         // )], - closes Assign AND the containing body list
         // )] - same without comma
+        // ]), - closes body list ] then FunctionDef ) with comma
+        // ]) - closes body list ] then FunctionDef )
         // )])], - closes Assign, body list, and more
+        // )]))  - closes Assign in nested structure (e.g. ListComp)
+        // )])), - closes Assign with ListComp inside
         return line.endsWith(")),") || line.endsWith("))") ||
                line.endsWith(")],") || line.endsWith(")]") ||
-               line.endsWith("))],") || line.endsWith("))]");
+               line.endsWith("))],") || line.endsWith("))]") ||
+               line.endsWith("]),") || line.endsWith("])") ||
+               line.endsWith(")])),") || line.endsWith(")]))");
     }
     
     /**
@@ -322,10 +489,11 @@ public class AstParser {
                     break;
                 }
             } else if (line.startsWith("Subscript(")) {
+                currentLine++;  // Move past "Subscript(" line before calling parseSubscript
                 targets.add(parseSubscript());
                 // Check if the previous line ended the list
                 String prevLine = lines[currentLine - 1].trim();
-                if (prevLine.endsWith("],")) {
+                if (prevLine.endsWith("],") || prevLine.endsWith("])")) {
                     break;
                 }
             } else {
@@ -505,6 +673,10 @@ public class AstParser {
         } else if (line.contains("Call(")) {
             currentLine++;
             return parseCall();
+        } else if (line.contains("ListComp(")) {
+            // ListComp must be checked before List( since ListComp contains "List"
+            currentLine++;
+            return parseListComp();
         } else if (line.contains("List(")) {
             currentLine++;
             return parseList();
@@ -734,7 +906,7 @@ public class AstParser {
                 binOp.setLeft(parseValue(line));
                 // If parseValue didn't advance, we need to do so
                 // (Name parsing from line doesn't advance)
-                if (lines[currentLine].trim().equals(line)) {
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
                     currentLine++;
                 }
             } else if (line.startsWith("op=")) {
@@ -743,7 +915,7 @@ public class AstParser {
             } else if (line.startsWith("right=")) {
                 binOp.setRight(parseValue(line));
                 // If parseValue didn't advance, we need to do so
-                if (lines[currentLine].trim().equals(line)) {
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
                     currentLine++;
                 }
                 // After parsing right, BinOp is done
@@ -835,7 +1007,7 @@ public class AstParser {
             if (line.startsWith("left=")) {
                 compare.setLeft(parseValue(line));
                 // If parseValue didn't advance (inline Name), we need to advance
-                if (lines[currentLine].trim().equals(line)) {
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
                     currentLine++;
                 }
             } else if (line.startsWith("ops=[")) {
@@ -1116,6 +1288,17 @@ public class AstParser {
             } else if (line.startsWith("body=[")) {
                 currentLine++;
                 whileNode.setBody(parseBodyList());
+                // Check if body parsing also closed the While (no orelse follows)
+                // This happens when the line before currentLine ends with ]),
+                // meaning body] and While) are closed
+                if (currentLine > 0) {
+                    String lastLine = lines[currentLine - 1].trim();
+                    // Pattern ]), means body closed ] and While closed ) - no orelse
+                    // But ])) means body closed, something else closed - might have orelse
+                    if (lastLine.endsWith("]),") || lastLine.endsWith("])")) {
+                        break;
+                    }
+                }
             } else if (line.startsWith("orelse=[")) {
                 currentLine++;
                 whileNode.setOrelse(parseBodyList());
@@ -1128,6 +1311,19 @@ public class AstParser {
         }
         
         return whileNode;
+    }
+    
+    /**
+     * Counts the number of closing parens after the last ] in a line.
+     */
+    private int countClosingParensAfterLastBracket(String line) {
+        int lastBracket = line.lastIndexOf(']');
+        if (lastBracket < 0) return 0;
+        int count = 0;
+        for (int i = lastBracket + 1; i < line.length(); i++) {
+            if (line.charAt(i) == ')') count++;
+        }
+        return count;
     }
     
     /**
@@ -1188,23 +1384,51 @@ public class AstParser {
             } else if (line.startsWith("body=[")) {
                 currentLine++;
                 funcDef.setBody(parseBodyList());
-            } else if (line.equals(")") || line.startsWith("),") || line.startsWith("decorator_list=[")) {
-                if (line.startsWith("decorator_list=[")) {
-                    // Skip decorator_list, we don't parse it
-                    while (currentLine < lines.length && !lines[currentLine].trim().endsWith("],")) {
-                        currentLine++;
+                // After parsing body, check if the body parsing also closed the FunctionDef
+                // This handles AST patterns like: body=[...])], where ]) closes body and FunctionDef
+                if (currentLine > 0) {
+                    String lastLine = lines[currentLine - 1].trim();
+                    if (lineClosesBodyAndParent(lastLine)) {
+                        break;
                     }
-                    currentLine++;
-                } else {
+                }
+            } else if (line.startsWith("decorator_list=[")) {
+                // Skip decorator_list - we don't parse it but must consume it
+                // Check if the FunctionDef closes on this line (e.g., "decorator_list=[])")
+                if (isFunctionDefClosedOnLine(line)) {
                     currentLine++;
                     break;
                 }
+                skipBracketedSection();
+            } else if (line.startsWith("type_params=[")) {
+                // Skip type_params - we don't parse it but must consume it
+                // Check if the FunctionDef closes on this line (e.g., "type_params=[])")
+                if (isFunctionDefClosedOnLine(line)) {
+                    currentLine++;
+                    break;
+                }
+                skipBracketedSection();
+            } else if (line.equals(")") || line.startsWith("),")) {
+                currentLine++;
+                break;
             } else {
                 currentLine++;
             }
         }
         
         return funcDef;
+    }
+    
+    /**
+     * Checks if a FunctionDef is closed on the given line.
+     * This happens when the line ends with ]) or ]), indicating the bracketed section
+     * and the FunctionDef closing paren are on the same line.
+     * Note: ], (bracket + comma) does NOT close FunctionDef, only ]) (bracket + paren) does.
+     */
+    private boolean isFunctionDefClosedOnLine(String line) {
+        // Look for pattern like "...[])" or "...])," at the end of line
+        // Must have ] followed by ) - not just ] followed by ,
+        return line.endsWith("[])") || line.endsWith("[]),");
     }
     
     /**
@@ -1228,12 +1452,26 @@ public class AstParser {
             
             if (line.startsWith("args=[")) {
                 // Check if args are inline (e.g., "args=[arg(arg='a'), arg(arg='b')],")
-                if (line.contains("],")) {
+                // or if it also closes arguments() (e.g., "args=[arg(arg='a')]),")
+                if (line.contains("]),") || line.contains("])")) {
+                    // This line closes both args array and arguments()
+                    arguments.setArgs(parseInlineArgs(line));
+                    currentLine++;
+                    break; // arguments() is closed on this line
+                } else if (line.contains("],")) {
                     arguments.setArgs(parseInlineArgs(line));
                     currentLine++;
                 } else {
                     currentLine++;
                     arguments.setArgs(parseArgsList());
+                    // After parseArgsList returns, check if arguments() was also closed
+                    // by looking at the previous line that parseArgsList ended on
+                    if (currentLine > 0) {
+                        String prevLine = lines[currentLine - 1].trim();
+                        if (prevLine.endsWith("]),") || prevLine.endsWith("])")) {
+                            break; // arguments() was closed
+                        }
+                    }
                 }
             } else if (line.equals(")") || line.startsWith("),") || line.endsWith("),")) {
                 currentLine++;
@@ -1278,7 +1516,12 @@ public class AstParser {
         while (currentLine < lines.length) {
             String line = lines[currentLine].trim();
             
-            if (line.startsWith("]")) {
+            // Check for end of args list - handle various closing patterns
+            // "]" - just closing bracket
+            // "]," - closing bracket with comma
+            // "])," - closing bracket, paren, comma (closes both args array and arguments())
+            // "])" - closing bracket, paren (closes both args array and arguments())
+            if (line.startsWith("]") || line.equals("],") || line.equals("]),") || line.equals("])")) {
                 currentLine++;
                 break;
             }
@@ -1291,6 +1534,13 @@ public class AstParser {
                     arg.setArg(matcher.group(1));
                 }
                 args.add(arg);
+                
+                // Check if this line ends the args list
+                // Handle: "arg(arg='x')]," or "arg(arg='x')]),", "arg(arg='x')])"
+                if (line.endsWith("],") || line.endsWith("]),") || line.endsWith("])")) {
+                    currentLine++;
+                    break;
+                }
             }
             
             currentLine++;
@@ -1330,7 +1580,7 @@ public class AstParser {
             if (line.startsWith("func=")) {
                 call.setFunc(parseValue(line));
                 // If parseValue didn't advance (inline Name), we need to advance
-                if (lines[currentLine].trim().equals(line)) {
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
                     currentLine++;
                 }
             } else if (line.startsWith("args=[")) {
@@ -1341,8 +1591,24 @@ public class AstParser {
                 } else {
                     currentLine++;
                     call.setArgs(parseCallArgsList());
+                    // Check if args parsing already consumed the Call close
+                    if (currentLine > 0) {
+                        String prevLine = lines[currentLine - 1].trim();
+                        // If prev line ends with ]) or ])) patterns, the Call is closed
+                        // ])),  - closes args ], Call ), Expr )
+                        // ]),   - closes args ], Call )
+                        // ])    - closes args ], Call ) (no comma)
+                        // ]))   - closes args ], Call ), Expr ) (no comma)
+                        // ])])  - closes args ], Call ), another ] and )
+                        if (prevLine.endsWith("]),") || prevLine.endsWith("])") ||
+                            prevLine.endsWith("])),") || prevLine.endsWith("]))") ||
+                            prevLine.contains("])")) {
+                            break;
+                        }
+                    }
                 }
-            } else if (line.equals(")") || line.startsWith("),") || line.endsWith(")),") || line.endsWith("))")) {
+            } else if (line.equals(")") || line.startsWith("),")) {
+                // Only match simple close patterns, not compound ones like )])),
                 currentLine++;
                 break;
             } else {
@@ -1399,16 +1665,57 @@ public class AstParser {
         while (currentLine < lines.length) {
             String line = lines[currentLine].trim();
             
-            if (line.startsWith("]")) {
+            // Check for empty or simple end of args list - only if there's no content to parse
+            if (line.startsWith("]") && !line.contains("Constant(") && !line.contains("Name(") && !line.contains("BinOp(") && !line.contains("Subscript(")) {
                 currentLine++;
                 break;
             }
             
-            if (line.startsWith("Name(") || line.startsWith("Constant(") || 
-                line.startsWith("BinOp(") || line.startsWith("Subscript(")) {
-                AstNode arg = parseNode(line);
-                if (arg != null) {
-                    args.add(arg);
+            // Parse different expression types - check for actual content first
+            if (line.contains("Name(") && !line.startsWith("]")) {
+                // Check if Name is inline in this line (e.g., "Name(id='x')]),")
+                if (line.startsWith("Name(")) {
+                    args.add(parseName());
+                } else {
+                    // Name is after some prefix - extract it
+                    args.add(parseNameFromLine(line));
+                    currentLine++;
+                }
+                // Check if the list ended on this line
+                String prevLine = lines[currentLine - 1].trim();
+                // Check for various patterns that close the args list:
+                // ],   - just closes args
+                // ]),  - closes args ] and Call )
+                // ])   - same without comma
+                // ])), - closes args ], Call ), Expr )
+                // ]))  - same without comma
+                if (prevLine.endsWith("],") || prevLine.endsWith("]),") || prevLine.endsWith("])") ||
+                    prevLine.endsWith("])),") || prevLine.endsWith("]))")) {
+                    break;
+                }
+            } else if (line.contains("Constant(")) {
+                args.add(parseConstant(line));
+                // Check if the list ended on this line
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("],") || prevLine.endsWith("]),") || prevLine.endsWith("])") ||
+                    prevLine.endsWith("])),") || prevLine.endsWith("]))")) {
+                    break;
+                }
+            } else if (line.startsWith("BinOp(")) {
+                currentLine++;
+                args.add(parseBinOp());
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("],") || prevLine.endsWith("]),") || prevLine.endsWith("])") ||
+                    prevLine.endsWith("])),") || prevLine.endsWith("]))")) {
+                    break;
+                }
+            } else if (line.startsWith("Subscript(")) {
+                currentLine++;
+                args.add(parseSubscript());
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("],") || prevLine.endsWith("]),") || prevLine.endsWith("])") ||
+                    prevLine.endsWith("])),") || prevLine.endsWith("]))")) {
+                    break;
                 }
             } else {
                 currentLine++;
@@ -1453,9 +1760,18 @@ public class AstParser {
             } else if (line.contains("ctx=Store()")) {
                 subscript.setCtx("Store");
                 currentLine++;
+                // Check if this line also closes the Subscript
+                // e.g., "ctx=Store())],", "ctx=Store())"
+                if (line.endsWith(")],") || line.endsWith(")]") || line.endsWith("))") || line.endsWith(")),")) {
+                    break;
+                }
             } else if (line.contains("ctx=Load()")) {
                 subscript.setCtx("Load");
                 currentLine++;
+                // Check if this line also closes the Subscript
+                if (line.endsWith(")],") || line.endsWith(")]") || line.endsWith("))") || line.endsWith(")),")) {
+                    break;
+                }
             } else if (line.equals(")") || line.startsWith("),")) {
                 currentLine++;
                 break;
@@ -1577,6 +1893,202 @@ public class AstParser {
     }
     
     /**
+     * Parses a list comprehension.
+     * 
+     * <p><b>Python Examples:</b></p>
+     * <pre>
+     * [0 for _ in range(5)]          # ListComp(elt=Constant(0), generators=[comprehension(...)])
+     * [x*2 for x in range(10)]       # ListComp(elt=BinOp(...), generators=[comprehension(...)])
+     * [x for x in range(10) if x%2]  # ListComp with condition in comprehension
+     * </pre>
+     * 
+     * <p><b>AST Format:</b></p>
+     * <pre>
+     * ListComp(
+     *   elt=Constant(value=0),
+     *   generators=[
+     *     comprehension(
+     *       target=Name(id='_', ctx=Store()),
+     *       iter=Call(func=Name(id='range'), args=[Constant(value=5)]),
+     *       ifs=[],
+     *       is_async=0)])
+     * </pre>
+     * 
+     * @return ListCompNode representing the list comprehension
+     * @throws CompilationException If parsing fails
+     */
+    private ListCompNode parseListComp() throws CompilationException {
+        ListCompNode listComp = new ListCompNode();
+        
+        while (currentLine < lines.length) {
+            String line = lines[currentLine].trim();
+            
+            if (line.startsWith("elt=")) {
+                // Parse the element expression
+                listComp.setElt(parseValue(line));
+                // If parseValue didn't advance (inline Constant/Name), we need to advance
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
+            } else if (line.startsWith("generators=[")) {
+                currentLine++;
+                listComp.setGenerators(parseGeneratorsList());
+                // Check if the generators parsing already consumed the ListComp close
+                // This happens when a line like "is_async=0)])),", ends everything
+                if (currentLine > 0) {
+                    String prevLine = lines[currentLine - 1].trim();
+                    // If prev line ends with )), or ])),, the ListComp is already closed
+                    if (prevLine.endsWith(")),") || prevLine.endsWith("))") ||
+                        prevLine.endsWith("])),") || prevLine.endsWith("]))")) {
+                        break;
+                    }
+                }
+            } else if (line.equals(")") || line.startsWith("),") || line.endsWith("])") || line.endsWith("]),")) {
+                // End of ListComp - check for various closing patterns
+                currentLine++;
+                break;
+            } else {
+                currentLine++;
+            }
+        }
+        
+        return listComp;
+    }
+    
+    /**
+     * Parses the generators list in a list comprehension.
+     * 
+     * @return List of ComprehensionNode objects
+     * @throws CompilationException If parsing fails
+     */
+    private List<ComprehensionNode> parseGeneratorsList() throws CompilationException {
+        List<ComprehensionNode> generators = new ArrayList<>();
+        
+        while (currentLine < lines.length) {
+            String line = lines[currentLine].trim();
+            
+            if (line.startsWith("]") || line.equals("],") || line.equals("])") || line.equals("]),")) {
+                currentLine++;
+                break;
+            }
+            
+            if (line.startsWith("comprehension(")) {
+                currentLine++;
+                generators.add(parseComprehension());
+                // Check if the comprehension parsing already consumed the generators list close
+                // This happens when a line like "is_async=0)])),", "is_async=0)])," ends both
+                // the comprehension and the generators list
+                if (currentLine > 0) {
+                    String prevLine = lines[currentLine - 1].trim();
+                    // If prev line ends with ])), or ]),, etc., the list is already closed
+                    if (prevLine.endsWith("])),") || prevLine.endsWith("]),") || 
+                        prevLine.endsWith("])") || prevLine.endsWith("]))")) {
+                        break;
+                    }
+                }
+            } else {
+                currentLine++;
+            }
+        }
+        
+        return generators;
+    }
+    
+    /**
+     * Parses a comprehension clause.
+     * 
+     * <p><b>AST Format:</b></p>
+     * <pre>
+     * comprehension(
+     *   target=Name(id='_', ctx=Store()),
+     *   iter=Call(func=Name(id='range'), args=[Constant(value=5)]),
+     *   ifs=[],
+     *   is_async=0)
+     * </pre>
+     * 
+     * @return ComprehensionNode representing the comprehension clause
+     * @throws CompilationException If parsing fails
+     */
+    private ComprehensionNode parseComprehension() throws CompilationException {
+        ComprehensionNode comp = new ComprehensionNode();
+        
+        while (currentLine < lines.length) {
+            String line = lines[currentLine].trim();
+            
+            if (line.startsWith("target=")) {
+                // Parse target (usually a Name node)
+                comp.setTarget(parseValue(line));
+                // If parseValue didn't advance (inline Name), we need to advance
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
+            } else if (line.startsWith("iter=")) {
+                // Parse the iterable expression (usually a Call to range, etc.)
+                comp.setIter(parseValue(line));
+                // If parseValue didn't advance (inline value), we need to advance
+                if (currentLine < lines.length && lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
+            } else if (line.startsWith("ifs=[")) {
+                // Parse the conditions list (usually empty)
+                if (line.contains("],")) {
+                    // Empty or inline ifs
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    comp.setIfs(parseIfsList());
+                }
+            } else if (line.startsWith("is_async=")) {
+                // Parse is_async flag
+                Pattern pattern = Pattern.compile("is_async=(\\d+)");
+                Matcher matcher = pattern.matcher(line);
+                if (matcher.find()) {
+                    comp.setIsAsync(Integer.parseInt(matcher.group(1)));
+                }
+                currentLine++;
+                // Check if this line also closes the comprehension
+                // e.g., "is_async=0)])),", "is_async=0)]),"
+                if (line.endsWith(")])),") || line.endsWith(")]),") || line.endsWith(")])")  || line.endsWith("))")) {
+                    break;
+                }
+            } else if (line.equals(")") || line.startsWith("),") || line.endsWith("])") || line.endsWith("]),")) {
+                currentLine++;
+                break;
+            } else {
+                currentLine++;
+            }
+        }
+        
+        return comp;
+    }
+    
+    /**
+     * Parses the ifs list in a comprehension (for conditional comprehensions).
+     * 
+     * @return List of condition nodes
+     * @throws CompilationException If parsing fails
+     */
+    private List<AstNode> parseIfsList() throws CompilationException {
+        List<AstNode> ifs = new ArrayList<>();
+        
+        while (currentLine < lines.length) {
+            String line = lines[currentLine].trim();
+            
+            if (line.startsWith("]") || line.equals("],")) {
+                currentLine++;
+                break;
+            }
+            
+            AstNode ifNode = parseNode(line);
+            if (ifNode != null) {
+                ifs.add(ifNode);
+            }
+        }
+        
+        return ifs;
+    }
+
+    /**
      * Parses an expression statement.
      * 
      * <p><b>Python Examples:</b></p>
@@ -1607,6 +2119,19 @@ public class AstParser {
             
             if (line.startsWith("value=")) {
                 expr.setValue(parseValue(line));
+                // Check if parseValue's Call consumed the Expr close
+                if (currentLine > 0) {
+                    String prevLine = lines[currentLine - 1].trim();
+                    // Check for patterns that indicate Expr is closed:
+                    // )),  - closes Call ), Expr )
+                    // ))   - same without comma
+                    // )])  - closes args ], Call ), Expr ) - when body closing follows
+                    // ])]  - closes args ], Call ), Expr ), body ]
+                    if (prevLine.endsWith(")),") || prevLine.endsWith("))") ||
+                        prevLine.contains("])") || prevLine.contains(")]")) {
+                        break;
+                    }
+                }
             } else if (line.equals(")") || line.startsWith("),")) {
                 currentLine++;
                 break;

@@ -167,4 +167,18 @@ public class ReturnNode extends AstNode {
     public void setValue(AstNode value) { 
         this.value = value; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("Return(");
+        if (value != null) {
+            sb.append("\n").append(getIndent(indent + 1)).append("value=\n");
+            sb.append(value.toString(indent + 2));
+            sb.append("\n").append(getIndent(indent)).append(")");
+        } else {
+            sb.append("value=None)");
+        }
+        return sb.toString();
+    }
 }

@@ -194,4 +194,34 @@ public class FunctionDefNode extends AstNode {
     public void setBody(List<AstNode> body) { 
         this.body = body; 
     }
+    
+    @Override
+    public String toString(int indent) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getIndent(indent)).append("FunctionDef(\n");
+        sb.append(getIndent(indent + 1)).append("name='").append(name).append("',\n");
+        sb.append(getIndent(indent + 1)).append("args=");
+        if (args != null) {
+            sb.append(args.toString());
+        } else {
+            sb.append("null");
+        }
+        sb.append(",\n");
+        sb.append(getIndent(indent + 1)).append("body=[\n");
+        for (int i = 0; i < body.size(); i++) {
+            AstNode node = body.get(i);
+            if (node != null) {
+                sb.append(node.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < body.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("]\n");
+        sb.append(getIndent(indent)).append(")");
+        return sb.toString();
+    }
 }

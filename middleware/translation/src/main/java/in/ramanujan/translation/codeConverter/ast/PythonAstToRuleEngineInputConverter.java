@@ -1398,9 +1398,10 @@ public class PythonAstToRuleEngineInputConverter {
     private String convertConstantToCommand(ConstantNode constant) {
         Constant c = new Constant();
         c.setId(UUID.randomUUID().toString());
-        c.setValue(String.valueOf(constant.getValue()));
         
         Object value = constant.getValue();
+        // Set the actual value (numeric or string), not a string conversion
+        c.setValue(value);
         if (value instanceof Integer) {
             c.setDataType("Integer");
         } else if (value instanceof Double) {
@@ -1488,6 +1489,10 @@ public class PythonAstToRuleEngineInputConverter {
     
     /**
      * Converts a subscript expression and wraps it in a Command.
+     * 
+     * <p>Handles both declared arrays and function parameters that are arrays.
+     * Function parameters are stored as MethodDataTypeAgnosticArg and can be
+     * used as arrays when accessed with subscript notation.</p>
      */
     private String convertSubscriptToCommand(SubscriptNode subscript, List<String> variableScope) 
             throws CompilationException {
@@ -1499,19 +1504,31 @@ public class PythonAstToRuleEngineInputConverter {
         NameNode arrayName = (NameNode) subscript.getValue();
         String arrayVarName = arrayName.getId();
         
+        // First check if it's a declared array
         Array array = getExistingArray(arrayVarName, variableScope);
-        if (array == null) {
-            throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
+        if (array != null) {
+            Command command = new Command();
+            command.setId("command_" + UUID.randomUUID().toString());
+            ArrayCommand arrayCommand = new ArrayCommand();
+            arrayCommand.setArrayId(array.getId());
+            command.setArrayCommand(arrayCommand);
+            ruleEngineInput.getCommands().add(command);
+            return command.getId();
         }
         
-        Command command = new Command();
-        command.setId("command_" + UUID.randomUUID().toString());
-        ArrayCommand arrayCommand = new ArrayCommand();
-        arrayCommand.setArrayId(array.getId());
-        command.setArrayCommand(arrayCommand);
-        ruleEngineInput.getCommands().add(command);
+        // Check if it's a function parameter (MethodDataTypeAgnosticArg) used as array
+        MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(arrayVarName, variableScope);
+        if (methodArg != null) {
+            Command command = new Command();
+            command.setId("command_" + UUID.randomUUID().toString());
+            ArrayCommand arrayCommand = new ArrayCommand();
+            arrayCommand.setArrayId(methodArg.getId());
+            command.setArrayCommand(arrayCommand);
+            ruleEngineInput.getCommands().add(command);
+            return command.getId();
+        }
         
-        return command.getId();
+        throw new CompilationException(null, null, "Array or array parameter " + arrayVarName + " not found");
     }
     
     /**
@@ -1559,19 +1576,24 @@ public class PythonAstToRuleEngineInputConverter {
     // ============================================================================
     
     /**
-     * Gets the ID of an argument expression (variable, array, or methodArg).
+     * Gets the ID of an argument expression (variable, array, methodArg, or constant).
      * 
      * <p>Used for function call arguments where we need just the entity ID,
      * not wrapped in a Command.</p>
      * 
-     * @param arg The argument expression node (expected to be a NameNode)
+     * @param arg The argument expression node (NameNode or ConstantNode)
      * @param variableScope Current scope stack for variable resolution
-     * @return The ID of the variable, array, or methodArg
-     * @throws CompilationException If argument is not a simple name or not found
+     * @return The ID of the variable, array, methodArg, or newly created constant
+     * @throws CompilationException If argument type is not supported or variable not found
      */
     private String getArgumentId(AstNode arg, List<String> variableScope) throws CompilationException {
+        // Handle constant literals as arguments (e.g., func(3, x))
+        if (arg instanceof ConstantNode) {
+            return createConstantForArgument((ConstantNode) arg);
+        }
+        
         if (!(arg instanceof NameNode)) {
-            throw new CompilationException(null, null, "Function argument must be a simple variable name");
+            throw new CompilationException(null, null, "Function argument must be a variable name or constant literal");
         }
         
         NameNode nameNode = (NameNode) arg;
@@ -1593,6 +1615,34 @@ public class PythonAstToRuleEngineInputConverter {
         }
         
         throw new CompilationException(null, null, "Argument " + varName + " not found");
+    }
+    
+    /**
+     * Creates a Constant for use as a function argument.
+     * 
+     * <p>This creates a Constant entity without wrapping it in a Command,
+     * since the constant is being used as an argument to a function call.</p>
+     * 
+     * @param constant The ConstantNode containing the literal value
+     * @return The ID of the created Constant
+     */
+    private String createConstantForArgument(ConstantNode constant) {
+        Constant c = new Constant();
+        c.setId("const_" + UUID.randomUUID().toString());
+        
+        Object value = constant.getValue();
+        // Set the actual value (numeric or string), not a string conversion
+        c.setValue(value);
+        if (value instanceof Integer) {
+            c.setDataType("Integer");
+        } else if (value instanceof Double) {
+            c.setDataType("Double");
+        } else {
+            c.setDataType("String");
+        }
+        
+        ruleEngineInput.getConstants().add(c);
+        return c.getId();
     }
     
     /**
