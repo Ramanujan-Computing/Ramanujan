@@ -510,6 +510,14 @@ public class PythonAstToRuleEngineInputConverter {
                 String dataType = inferDataType(value);
                 
                 if ("array".equals(dataType)) {
+                    // Arrays can ONLY be defined using list comprehension form:
+                    // [[0 for _ in range(DIM_SIZE)] ...] or [0 for _ in range(DIM_SIZE)]
+                    // and must be initialized with 0
+                    if (!(value instanceof ListCompNode)) {
+                        throw new CompilationException(null, null, 
+                            "Arrays can only be defined using list comprehension form: [0 for _ in range(size)] or nested comprehensions");
+                    }
+                    
                     Array array = new Array();
                     array.setId(getScopedId(variableScope) + UUID.randomUUID().toString());
                     array.setName(varName);
@@ -519,24 +527,13 @@ public class PythonAstToRuleEngineInputConverter {
                     List<Integer> constantDims = new ArrayList<>();
                     List<String> resolvedDims = new ArrayList<>();
                     
-                    if (value instanceof ListNode) {
-                        boolean[] hasNonConstant = new boolean[]{false};
-                        resolvedDims = extractArrayDimensions((ListNode) value, variableScope, constantDims, hasNonConstant);
-                        hasNonConstantDimension = hasNonConstant[0];
-                        
-                        // Only set dimension if all dimensions are constant
-                        if (!hasNonConstantDimension) {
-                            array.setDimension(constantDims);
-                        }
-                    } else if (value instanceof ListCompNode) {
-                        boolean[] hasNonConstant = new boolean[]{false};
-                        resolvedDims = extractArrayDimensionsFromListComp((ListCompNode) value, variableScope, constantDims, hasNonConstant);
-                        hasNonConstantDimension = hasNonConstant[0];
-                        
-                        // Only set dimension if all dimensions are constant
-                        if (!hasNonConstantDimension) {
-                            array.setDimension(constantDims);
-                        }
+                    boolean[] hasNonConstant = new boolean[]{false};
+                    resolvedDims = extractArrayDimensionsFromListComp((ListCompNode) value, variableScope, constantDims, hasNonConstant);
+                    hasNonConstantDimension = hasNonConstant[0];
+                    
+                    // Only set dimension if all dimensions are constant
+                    if (!hasNonConstantDimension) {
+                        array.setDimension(constantDims);
                     }
                     
                     ruleEngineInput.getArrays().add(array);
@@ -551,10 +548,6 @@ public class PythonAstToRuleEngineInputConverter {
                         redefineCmd.setArrayId(array.getId());
                         redefineCmd.setNewDimensions(resolvedDims);
                         command.setRedefineArrayCommand(redefineCmd);
-                    } else {
-                        ArrayCommand arrayCommand = new ArrayCommand();
-                        arrayCommand.setArrayId(array.getId());
-                        command.setArrayCommand(arrayCommand);
                     }
                     
                     // Track array in function frame if inside a function
@@ -1624,7 +1617,7 @@ public class PythonAstToRuleEngineInputConverter {
      * x = 42          → "Integer"
      * y = 3.14        → "Double"
      * name = "Alice"  → "String"
-     * arr = [1, 2, 3] → "array"
+     * arr = [0 for _ in range(3)] → "array"
      * sum = a + b     → "Double" (assumes arithmetic produces floating point)
      * </pre>
      * 
@@ -1640,6 +1633,7 @@ public class PythonAstToRuleEngineInputConverter {
         } else if (value instanceof ListNode) {
             return "array";
         } else if (value instanceof ListCompNode) {
+            // Only ListCompNode is valid for arrays
             return "array";
         } else if (value instanceof BinOpNode) {
             return "Double";
@@ -1923,8 +1917,14 @@ public class PythonAstToRuleEngineInputConverter {
     
     /**
      * Extracts array dimensions from a ListComp (list comprehension), detecting both constant and variable dimensions.
-     * Handles patterns like [[0] * 10 for _ in range(10)] for 2D arrays with variable dimensions.
-     * Supports n-dimensional arrays with nested comprehensions: [[[0] * p for _ in range(m)] for _ in range(n)]
+     * Only accepts arrays initialized with 0.
+     * Handles patterns like [[0 for _ in range(10)] for _ in range(10)] for 2D arrays.
+     * Supports n-dimensional arrays with nested comprehensions.
+     * 
+     * Valid forms:
+     * - 1D: [0 for _ in range(n)]
+     * - 2D: [[0 for _ in range(m)] for _ in range(n)]
+     * - nD: nested comprehensions with 0 as the innermost element
      */
     private List<String> extractArrayDimensionsFromListComp(ListCompNode listComp, List<String> variableScope,
                                                             List<Integer> constantDims, boolean[] hasNonConstantDimension) 
@@ -1940,43 +1940,56 @@ public class PythonAstToRuleEngineInputConverter {
         AstNode iter = generator.getIter();
         
         // Expect: Call(func=Name('range'), args=[...])
-        if (iter instanceof CallNode) {
-            CallNode rangeCall = (CallNode) iter;
-            if (rangeCall.getFunc() instanceof NameNode && 
-                "range".equals(((NameNode) rangeCall.getFunc()).getId())) {
-                
-                if (!rangeCall.getArgs().isEmpty()) {
-                    AstNode rangeArg = rangeCall.getArgs().get(0);
-                    
-                    if (rangeArg instanceof ConstantNode) {
-                        // Constant dimension: range(10)
-                        try {
-                            int dim = Integer.parseInt(((ConstantNode) rangeArg).getValue().toString());
-                            constantDims.add(dim);
-                            resolvedDims.add(String.valueOf(dim));
-                        } catch (NumberFormatException e) {
-                            hasNonConstantDimension[0] = true;
-                            constantDims.add(1);
-                            resolvedDims.add(((ConstantNode) rangeArg).getValue().toString());
-                        }
-                    } else if (rangeArg instanceof NameNode) {
-                        // Variable dimension: range(n)
-                        String dimVarName = ((NameNode) rangeArg).getId();
-                        String dimVarId = resolveDimensionVariable(dimVarName, variableScope);
-                        if (dimVarId != null) {
-                            hasNonConstantDimension[0] = true;
-                            constantDims.add(1); // Placeholder
-                            resolvedDims.add(dimVarId);
-                        }
-                    }
-                }
+        if (!(iter instanceof CallNode)) {
+            throw new CompilationException(null, null, 
+                "Array comprehension must use range() for iteration");
+        }
+        
+        CallNode rangeCall = (CallNode) iter;
+        if (!(rangeCall.getFunc() instanceof NameNode) || 
+            !"range".equals(((NameNode) rangeCall.getFunc()).getId())) {
+            throw new CompilationException(null, null, 
+                "Array comprehension must use range() for iteration");
+        }
+        
+        if (rangeCall.getArgs().isEmpty()) {
+            throw new CompilationException(null, null, 
+                "range() must have a size argument");
+        }
+        
+        AstNode rangeArg = rangeCall.getArgs().get(0);
+        
+        if (rangeArg instanceof ConstantNode) {
+            // Constant dimension: range(10)
+            try {
+                int dim = Integer.parseInt(((ConstantNode) rangeArg).getValue().toString());
+                constantDims.add(dim);
+                resolvedDims.add(String.valueOf(dim));
+            } catch (NumberFormatException e) {
+                throw new CompilationException(null, null, 
+                    "range() argument must be an integer");
             }
+        } else if (rangeArg instanceof NameNode) {
+            // Variable dimension: range(n)
+            String dimVarName = ((NameNode) rangeArg).getId();
+            String dimVarId = resolveDimensionVariable(dimVarName, variableScope);
+            if (dimVarId != null) {
+                hasNonConstantDimension[0] = true;
+                constantDims.add(1); // Placeholder
+                resolvedDims.add(dimVarId);
+            } else {
+                throw new CompilationException(null, null, 
+                    "Dimension variable '" + dimVarName + "' not found");
+            }
+        } else {
+            throw new CompilationException(null, null, 
+                "range() argument must be a constant integer or variable name");
         }
         
         // Extract inner dimensions from the element expression
         AstNode elt = listComp.getElt();
         
-        // Handle nested list comprehension: [[[0] * p for _ in range(m)] for _ in range(n)]
+        // Handle nested list comprehension: [[0 for _ in range(m)] for _ in range(n)]
         if (elt instanceof ListCompNode) {
             // Recursively extract dimensions from nested comprehension
             boolean[] hasNonConstant = new boolean[]{false};
@@ -1986,46 +1999,20 @@ public class PythonAstToRuleEngineInputConverter {
                 hasNonConstantDimension[0] = true;
             }
         }
-        // Handle: [0] * 10 (BinOp with Mult)
-        else if (elt instanceof BinOpNode) {
-            BinOpNode binOp = (BinOpNode) elt;
-            if ("Mult".equals(binOp.getOp())) {
-                // Left side should be a list: [0]
-                if (binOp.getLeft() instanceof ListNode) {
-                    // Right side is the dimension: 10 or variable
-                    AstNode right = binOp.getRight();
-                    
-                    if (right instanceof ConstantNode) {
-                        try {
-                            int dim = Integer.parseInt(((ConstantNode) right).getValue().toString());
-                            constantDims.add(dim);
-                            resolvedDims.add(String.valueOf(dim));
-                        } catch (NumberFormatException e) {
-                            hasNonConstantDimension[0] = true;
-                            constantDims.add(1);
-                            resolvedDims.add(((ConstantNode) right).getValue().toString());
-                        }
-                    } else if (right instanceof NameNode) {
-                        String dimVarName = ((NameNode) right).getId();
-                        String dimVarId = resolveDimensionVariable(dimVarName, variableScope);
-                        if (dimVarId != null) {
-                            hasNonConstantDimension[0] = true;
-                            constantDims.add(1);
-                            resolvedDims.add(dimVarId);
-                        }
-                    }
-                }
+        // Innermost element must be 0
+        else if (elt instanceof ConstantNode) {
+            Object value = ((ConstantNode) elt).getValue();
+            if (!(value instanceof Integer) || ((Integer) value) != 0) {
+                throw new CompilationException(null, null, 
+                    "Arrays must be initialized with 0. Found: " + value);
             }
-        } else if (elt instanceof ListNode) {
-            // Direct nested list in comprehension
-            boolean[] hasNonConstant = new boolean[]{false};
-            List<String> nestedDims = extractArrayDimensions((ListNode) elt, variableScope, constantDims, hasNonConstant);
-            resolvedDims.addAll(nestedDims);
-            if (hasNonConstant[0]) {
-                hasNonConstantDimension[0] = true;
-            }
+            // No more dimensions to add - this is the innermost level
         }
-        // If elt is just a Constant (like 0), no more dimensions to extract
+        else {
+            throw new CompilationException(null, null, 
+                "Arrays must be initialized with 0 using form: [0 for _ in range(size)] or nested comprehensions. " +
+                "Unsupported element type: " + elt.getClass().getSimpleName());
+        }
         
         return resolvedDims;
     }

@@ -425,7 +425,7 @@ public class TranslateUtil {
                 + getCommaSeperatedArgs(arguments) + ") {");
         debugCodeCreator.addIndentation();
         debugCodeCreator.nextLine();
-        List<Command> functionCommandList = codeConverter.interpret(functionCode, ruleEngineInput, variableScope, debugCodeCreator, variableFrameMap, );
+        List<Command> functionCommandList = codeConverter.interpret(functionCode, ruleEngineInput, variableScope, debugCodeCreator, variableFrameMap, counterId);
         RuleEngineUtils.addFunctionCall(ruleEngineInput, functionName, arguments, codeConverter, functionCommandList, variableScope, variableFrameMap);
         functionCallsRuleEngineInputMap.put(functionName, ruleEngineInput);
         debugCodeCreator.decrementIndentation();

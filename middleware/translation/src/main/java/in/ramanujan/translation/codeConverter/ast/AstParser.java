@@ -143,8 +143,16 @@ public class AstParser {
         while (currentLine < lines.length) {
             String line = lines[currentLine].trim();
             
-            if (line.startsWith("]")) {
+            // Check for end of body list - line starts with ] or is just ],
+            if (line.startsWith("]") || line.equals("],") || line.equals("])") || line.equals("]),")) {
                 currentLine++;
+                break;
+            }
+            
+            // Check if current line is not a valid body element (like orelse=[ or other structural elements)
+            // These indicate we've passed the end of this body
+            if (line.startsWith("orelse=[") || line.startsWith("decorator_list=[") || 
+                line.startsWith("type_ignores=[")) {
                 break;
             }
             
@@ -236,10 +244,23 @@ public class AstParser {
             String line = lines[currentLine].trim();
             
             if (line.startsWith("targets=[")) {
-                currentLine++;
-                assign.setTargets(parseTargetsList());
+                // Check if targets are inline (e.g., "targets=[Name(...)]," on same line)
+                if (line.contains("],")) {
+                    // Parse inline targets
+                    assign.setTargets(parseInlineTargets(line));
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    assign.setTargets(parseTargetsList());
+                }
             } else if (line.startsWith("value=")) {
                 assign.setValue(parseValue(line));
+                // Check if the value line ended the Assign node
+                // The Assign is closed if the line ends with )), )) , )], or )]
+                String valueLine = lines[currentLine - 1].trim();
+                if (isAssignClosedOnLine(valueLine)) {
+                    break;
+                }
             } else if (line.equals(")") || line.startsWith("),")) {
                 currentLine++;
                 break;
@@ -249,6 +270,22 @@ public class AstParser {
         }
         
         return assign;
+    }
+    
+    /**
+     * Checks if an Assign node is closed on the given line.
+     * The Assign is closed if the line ends with enough closing syntax.
+     */
+    private boolean isAssignClosedOnLine(String line) {
+        // Check for patterns that close an Assign:
+        // )), - closes Assign after single-depth value
+        // )) - same without comma
+        // )], - closes Assign AND the containing body list
+        // )] - same without comma
+        // )])], - closes Assign, body list, and more
+        return line.endsWith(")),") || line.endsWith("))") ||
+               line.endsWith(")],") || line.endsWith(")]") ||
+               line.endsWith("))],") || line.endsWith("))]");
     }
     
     /**
@@ -270,18 +307,80 @@ public class AstParser {
         while (currentLine < lines.length) {
             String line = lines[currentLine].trim();
             
-            if (line.startsWith("]")) {
+            // Check if we've reached the end of the targets list
+            if (line.startsWith("]") || line.equals("],")) {
                 currentLine++;
                 break;
             }
             
             if (line.startsWith("Name(")) {
                 targets.add(parseName());
+                // Check if the previous line ended the list (e.g., "Name(...)],")
+                // parseName already advanced currentLine, so check the line we just processed
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("],")) {
+                    break;
+                }
             } else if (line.startsWith("Subscript(")) {
                 targets.add(parseSubscript());
+                // Check if the previous line ended the list
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("],")) {
+                    break;
+                }
             } else {
                 currentLine++;
             }
+        }
+        
+        return targets;
+    }
+    
+    /**
+     * Parses inline targets from a line like "targets=[Name(id='x', ctx=Store())],".
+     * @param line The line containing inline targets
+     * @return List of parsed target nodes
+     */
+    private List<AstNode> parseInlineTargets(String line) throws CompilationException {
+        List<AstNode> targets = new ArrayList<>();
+        
+        // Extract content between targets=[ and ],
+        int start = line.indexOf("targets=[") + "targets=[".length();
+        int end = line.lastIndexOf("]");
+        if (end < start) return targets;
+        
+        String content = line.substring(start, end);
+        
+        // Parse Name nodes from the content
+        int idx = 0;
+        while (idx < content.length()) {
+            int nameStart = content.indexOf("Name(", idx);
+            if (nameStart < 0) break;
+            
+            // Find the matching close paren for Name(
+            int depth = 0;
+            int nameEnd = nameStart;
+            for (int i = nameStart; i < content.length(); i++) {
+                if (content.charAt(i) == '(') depth++;
+                else if (content.charAt(i) == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        nameEnd = i + 1;
+                        break;
+                    }
+                }
+            }
+            
+            String nameContent = content.substring(nameStart, nameEnd);
+            NameNode node = new NameNode();
+            // Extract id from Name(id='x', ctx=...)
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("id='([^']+)'").matcher(nameContent);
+            if (m.find()) {
+                node.setId(m.group(1));
+            }
+            targets.add(node);
+            
+            idx = nameEnd;
         }
         
         return targets;
@@ -328,13 +427,21 @@ public class AstParser {
             name.setCtx("Load");
         }
         
-        // Skip closing parenthesis if on same line
-        if (!line.endsWith(")") && !line.endsWith("),")) {
+        // Check if Name node is complete on this line
+        // A complete Name(...) has balanced parentheses
+        boolean isComplete = isNameComplete(line);
+        
+        if (!isComplete) {
             currentLine++;
-            // Find closing paren
+            // Find closing paren for multi-line Name nodes
             while (currentLine < lines.length) {
                 line = lines[currentLine].trim();
-                if (line.equals(")") || line.startsWith("),")) {
+                if (line.contains("ctx=Store()")) {
+                    name.setCtx("Store");
+                } else if (line.contains("ctx=Load()")) {
+                    name.setCtx("Load");
+                }
+                if (line.startsWith(")") || line.startsWith("),")) {
                     break;
                 }
                 currentLine++;
@@ -342,6 +449,24 @@ public class AstParser {
         }
         currentLine++;
         return name;
+    }
+    
+    /**
+     * Checks if a Name(...) expression is complete (balanced parens) on the given line.
+     */
+    private boolean isNameComplete(String line) {
+        int nameStart = line.indexOf("Name(");
+        if (nameStart < 0) return false;
+        
+        int depth = 0;
+        for (int i = nameStart; i < line.length(); i++) {
+            if (line.charAt(i) == '(') depth++;
+            else if (line.charAt(i) == ')') {
+                depth--;
+                if (depth == 0) return true;
+            }
+        }
+        return false;
     }
     
     /**
@@ -366,11 +491,17 @@ public class AstParser {
         if (line.contains("Constant(")) {
             return parseConstant(line);
         } else if (line.contains("BinOp(")) {
+            // Check if BinOp is complete on this line (single-line format)
+            // or if it spans multiple lines
+            if (isSingleLineBinOp(line)) {
+                return parseSingleLineBinOp(line);
+            }
             currentLine++;
             return parseBinOp();
         } else if (line.contains("Name(")) {
-            currentLine++;
-            return parseName();
+            // Name can be inline (e.g., "left=Name(id='a', ctx=Load()),")
+            // or on its own line
+            return parseNameFromLine(line);
         } else if (line.contains("Call(")) {
             currentLine++;
             return parseCall();
@@ -387,6 +518,125 @@ public class AstParser {
         
         currentLine++;
         return null;
+    }
+    
+    /**
+     * Checks if a BinOp is complete on a single line.
+     */
+    private boolean isSingleLineBinOp(String line) {
+        // Count opening and closing parens after BinOp(
+        int binOpStart = line.indexOf("BinOp(");
+        if (binOpStart < 0) return false;
+        
+        int depth = 0;
+        for (int i = binOpStart; i < line.length(); i++) {
+            if (line.charAt(i) == '(') depth++;
+            else if (line.charAt(i) == ')') {
+                depth--;
+                if (depth == 0) return true; // Found matching close paren
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Parses a BinOp that's complete on a single line.
+     */
+    private BinOpNode parseSingleLineBinOp(String line) throws CompilationException {
+        BinOpNode binOp = new BinOpNode();
+        
+        // Extract operator
+        Pattern opPattern = Pattern.compile("op=([A-Za-z]+)\\(\\)");
+        Matcher opMatcher = opPattern.matcher(line);
+        if (opMatcher.find()) {
+            binOp.setOp(opMatcher.group(1));
+        }
+        
+        // Extract left operand
+        int leftStart = line.indexOf("left=");
+        if (leftStart >= 0) {
+            String afterLeft = line.substring(leftStart + 5);
+            if (afterLeft.startsWith("Name(")) {
+                binOp.setLeft(parseNameFromLine(afterLeft));
+            } else if (afterLeft.startsWith("Constant(")) {
+                binOp.setLeft(parseConstant(afterLeft));
+            }
+        }
+        
+        // Extract right operand
+        int rightStart = line.indexOf("right=");
+        if (rightStart >= 0) {
+            String afterRight = line.substring(rightStart + 6);
+            if (afterRight.startsWith("Name(")) {
+                binOp.setRight(parseNameFromLine(afterRight));
+            } else if (afterRight.startsWith("Constant(")) {
+                binOp.setRight(parseConstant(afterRight));
+            }
+        }
+        
+        currentLine++;
+        return binOp;
+    }
+    
+    /**
+     * Parses a Name node from within a line (not necessarily at the start).
+     * Used for inline Names like "left=Name(id='a', ctx=Load()),".
+     */
+    private NameNode parseNameFromLine(String line) throws CompilationException {
+        NameNode name = new NameNode();
+        
+        // Extract id from the line containing Name(id='varName', ...)
+        Pattern pattern = Pattern.compile("id='([^']+)'");
+        Matcher matcher = pattern.matcher(line);
+        if (matcher.find()) {
+            name.setId(matcher.group(1));
+        }
+        
+        if (line.contains("ctx=Store()")) {
+            name.setCtx("Store");
+        } else if (line.contains("ctx=Load()")) {
+            name.setCtx("Load");
+        }
+        
+        // If the Name is complete on this line, advance currentLine
+        // Check if the line has a complete Name(...) by looking for matching parens
+        int nameStart = line.indexOf("Name(");
+        if (nameStart >= 0) {
+            int depth = 0;
+            boolean found = false;
+            for (int i = nameStart; i < line.length(); i++) {
+                if (line.charAt(i) == '(') depth++;
+                else if (line.charAt(i) == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (found) {
+                currentLine++;
+                return name;
+            }
+        }
+        
+        // Multi-line Name, continue reading
+        currentLine++;
+        while (currentLine < lines.length) {
+            String nextLine = lines[currentLine].trim();
+            if (nextLine.contains("ctx=Store()")) {
+                name.setCtx("Store");
+            } else if (nextLine.contains("ctx=Load()")) {
+                name.setCtx("Load");
+            }
+            if (nextLine.startsWith(")") || nextLine.startsWith("),")) {
+                currentLine++;
+                break;
+            }
+            currentLine++;
+        }
+        
+        return name;
     }
     
     /**
@@ -413,11 +663,24 @@ public class AstParser {
     private ConstantNode parseConstant(String line) {
         ConstantNode constant = new ConstantNode();
         
-        // Extract value from "Constant(value=123)" or "value=Constant(value=123)"
-        Pattern pattern = Pattern.compile("value=([^),]+)");
-        Matcher matcher = pattern.matcher(line);
-        if (matcher.find()) {
-            String valueStr = matcher.group(1).trim();
+        // Extract value from "Constant(value=123)" format
+        // Look specifically for the pattern inside Constant(...)
+        Pattern constantPattern = Pattern.compile("Constant\\(value=([^)]+)\\)");
+        Matcher constantMatcher = constantPattern.matcher(line);
+        
+        String valueStr = null;
+        if (constantMatcher.find()) {
+            valueStr = constantMatcher.group(1).trim();
+        } else {
+            // Fallback: try simple value= pattern for cases like "value=123"
+            Pattern simplePattern = Pattern.compile("value=([^),]+)");
+            Matcher simpleMatcher = simplePattern.matcher(line);
+            if (simpleMatcher.find()) {
+                valueStr = simpleMatcher.group(1).trim();
+            }
+        }
+        
+        if (valueStr != null) {
             try {
                 if (valueStr.contains(".")) {
                     constant.setValue(Double.parseDouble(valueStr));
@@ -469,11 +732,22 @@ public class AstParser {
             
             if (line.startsWith("left=")) {
                 binOp.setLeft(parseValue(line));
+                // If parseValue didn't advance, we need to do so
+                // (Name parsing from line doesn't advance)
+                if (lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
             } else if (line.startsWith("op=")) {
                 binOp.setOp(extractOp(line));
                 currentLine++;
             } else if (line.startsWith("right=")) {
                 binOp.setRight(parseValue(line));
+                // If parseValue didn't advance, we need to do so
+                if (lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
+                // After parsing right, BinOp is done
+                break;
             } else if (line.equals(")") || line.startsWith("),")) {
                 currentLine++;
                 break;
@@ -483,6 +757,22 @@ public class AstParser {
         }
         
         return binOp;
+    }
+    
+    /**
+     * Checks if a BinOp is closed on the given line (has enough closing parens).
+     */
+    private boolean isBinOpClosedOnLine(String line) {
+        // Count closing parens after the last significant content
+        int closeCount = 0;
+        for (int i = line.length() - 1; i >= 0; i--) {
+            char c = line.charAt(i);
+            if (c == ')') closeCount++;
+            else if (c == '(') closeCount--;
+            else if (c != ',' && c != ']' && c != ' ') break;
+        }
+        // If we have 2+ closing parens at the end, BinOp is likely closed
+        return closeCount >= 2;
     }
     
     /**
@@ -544,12 +834,36 @@ public class AstParser {
             
             if (line.startsWith("left=")) {
                 compare.setLeft(parseValue(line));
+                // If parseValue didn't advance (inline Name), we need to advance
+                if (lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
             } else if (line.startsWith("ops=[")) {
-                currentLine++;
-                compare.setOps(parseOpsList());
+                // Check if ops are inline (e.g., "ops=[Gt()],")
+                if (line.contains("],")) {
+                    compare.setOps(parseInlineOps(line));
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    compare.setOps(parseOpsList());
+                }
             } else if (line.startsWith("comparators=[")) {
-                currentLine++;
-                compare.setComparators(parseComparatorsList());
+                // Check if comparators are inline
+                if (line.contains("]),") || line.endsWith("])")) {
+                    compare.setComparators(parseInlineComparators(line));
+                    currentLine++;
+                    break; // Compare is definitely closed if comparators are inline with ])
+                } else {
+                    currentLine++;
+                    compare.setComparators(parseComparatorsList());
+                    // After parsing comparators, check if the Compare is closed
+                    if (currentLine > 0) {
+                        String prevLine = lines[currentLine - 1].trim();
+                        if (prevLine.endsWith("]),") || prevLine.endsWith("])")) {
+                            break;
+                        }
+                    }
+                }
             } else if (line.equals(")") || line.startsWith("),")) {
                 currentLine++;
                 break;
@@ -578,22 +892,74 @@ public class AstParser {
         while (currentLine < lines.length) {
             String line = lines[currentLine].trim();
             
-            if (line.startsWith("]")) {
+            // Check for end of ops list
+            if (line.startsWith("]") || line.equals("],")) {
                 currentLine++;
                 break;
             }
             
-            // Extract "Lt()" -> "Lt"
+            // Extract operator like "Lt()" -> "Lt", "Gt()" -> "Gt"
+            // Handle cases like "Gt()]," where the list ends on the same line
             Pattern pattern = Pattern.compile("([A-Za-z]+)\\(\\)");
             Matcher matcher = pattern.matcher(line);
             if (matcher.find()) {
                 ops.add(matcher.group(1));
             }
             
+            // Check if this line ends the ops list
+            if (line.endsWith("],")) {
+                currentLine++;
+                break;
+            }
+            
             currentLine++;
         }
         
         return ops;
+    }
+    
+    /**
+     * Parses inline ops from a line like "ops=[Gt()],".
+     */
+    private List<String> parseInlineOps(String line) {
+        List<String> ops = new ArrayList<>();
+        Pattern pattern = Pattern.compile("([A-Za-z]+)\\(\\)");
+        Matcher matcher = pattern.matcher(line);
+        while (matcher.find()) {
+            String op = matcher.group(1);
+            // Skip context types like Load(), Store(), Del()
+            if (!op.equals("Load") && !op.equals("Store") && !op.equals("Del")) {
+                ops.add(op);
+            }
+        }
+        return ops;
+    }
+    
+    /**
+     * Parses inline comparators from a line like "comparators=[Constant(value=5)]),".
+     */
+    private List<AstNode> parseInlineComparators(String line) throws CompilationException {
+        List<AstNode> comparators = new ArrayList<>();
+        
+        // Find Constant nodes
+        Pattern constPattern = Pattern.compile("Constant\\(value=([^)]+)\\)");
+        Matcher constMatcher = constPattern.matcher(line);
+        while (constMatcher.find()) {
+            ConstantNode node = new ConstantNode();
+            node.setValue(constMatcher.group(1));
+            comparators.add(node);
+        }
+        
+        // Find Name nodes
+        Pattern namePattern = Pattern.compile("Name\\(id='([^']+)'");
+        Matcher nameMatcher = namePattern.matcher(line);
+        while (nameMatcher.find()) {
+            NameNode node = new NameNode();
+            node.setId(nameMatcher.group(1));
+            comparators.add(node);
+        }
+        
+        return comparators;
     }
     
     /**
@@ -615,15 +981,25 @@ public class AstParser {
         while (currentLine < lines.length) {
             String line = lines[currentLine].trim();
             
-            if (line.startsWith("]")) {
+            // Check for end of comparators list
+            if (line.startsWith("]") || line.equals("],") || line.equals("]),")) {
                 currentLine++;
                 break;
             }
             
             if (line.startsWith("Name(")) {
                 comparators.add(parseName());
+                // Check if the previous line ended the list
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("]),") || prevLine.endsWith("]")) {
+                    break;
+                }
             } else if (line.startsWith("Constant(")) {
                 comparators.add(parseConstant(line));
+                // Check if the line ended the list
+                if (line.endsWith("]),") || line.endsWith("])")) {
+                    break;
+                }
             } else {
                 currentLine++;
             }
@@ -794,28 +1170,35 @@ public class AstParser {
      */
     private FunctionDefNode parseFunctionDef() throws CompilationException {
         FunctionDefNode funcDef = new FunctionDefNode();
-        String line = lines[currentLine].trim();
-        
-        // Extract name
-        Pattern namePattern = Pattern.compile("name='([^']+)'");
-        Matcher nameMatcher = namePattern.matcher(line);
-        if (nameMatcher.find()) {
-            funcDef.setName(nameMatcher.group(1));
-        }
-        
-        currentLine++;
+        currentLine++; // Skip the "FunctionDef(" line
         
         while (currentLine < lines.length) {
-            line = lines[currentLine].trim();
+            String line = lines[currentLine].trim();
             
-            if (line.startsWith("args=arguments(")) {
+            if (line.startsWith("name='")) {
+                // Extract name from line like "name='add',"
+                Pattern namePattern = Pattern.compile("name='([^']+)'");
+                Matcher nameMatcher = namePattern.matcher(line);
+                if (nameMatcher.find()) {
+                    funcDef.setName(nameMatcher.group(1));
+                }
+                currentLine++;
+            } else if (line.startsWith("args=arguments(")) {
                 funcDef.setArgs(parseArguments());
             } else if (line.startsWith("body=[")) {
                 currentLine++;
                 funcDef.setBody(parseBodyList());
-            } else if (line.equals(")") || line.startsWith("),")) {
-                currentLine++;
-                break;
+            } else if (line.equals(")") || line.startsWith("),") || line.startsWith("decorator_list=[")) {
+                if (line.startsWith("decorator_list=[")) {
+                    // Skip decorator_list, we don't parse it
+                    while (currentLine < lines.length && !lines[currentLine].trim().endsWith("],")) {
+                        currentLine++;
+                    }
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    break;
+                }
             } else {
                 currentLine++;
             }
@@ -844,9 +1227,15 @@ public class AstParser {
             String line = lines[currentLine].trim();
             
             if (line.startsWith("args=[")) {
-                currentLine++;
-                arguments.setArgs(parseArgsList());
-            } else if (line.equals(")") || line.startsWith("),")) {
+                // Check if args are inline (e.g., "args=[arg(arg='a'), arg(arg='b')],")
+                if (line.contains("],")) {
+                    arguments.setArgs(parseInlineArgs(line));
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    arguments.setArgs(parseArgsList());
+                }
+            } else if (line.equals(")") || line.startsWith("),") || line.endsWith("),")) {
                 currentLine++;
                 break;
             } else {
@@ -855,6 +1244,21 @@ public class AstParser {
         }
         
         return arguments;
+    }
+    
+    /**
+     * Parses inline arguments from a line like "args=[arg(arg='a'), arg(arg='b')],".
+     */
+    private List<ArgNode> parseInlineArgs(String line) {
+        List<ArgNode> args = new ArrayList<>();
+        Pattern pattern = Pattern.compile("arg\\(arg='([^']+)'\\)");
+        Matcher matcher = pattern.matcher(line);
+        while (matcher.find()) {
+            ArgNode arg = new ArgNode();
+            arg.setArg(matcher.group(1));
+            args.add(arg);
+        }
+        return args;
     }
     
     /**
@@ -925,10 +1329,20 @@ public class AstParser {
             
             if (line.startsWith("func=")) {
                 call.setFunc(parseValue(line));
+                // If parseValue didn't advance (inline Name), we need to advance
+                if (lines[currentLine].trim().equals(line)) {
+                    currentLine++;
+                }
             } else if (line.startsWith("args=[")) {
-                currentLine++;
-                call.setArgs(parseCallArgsList());
-            } else if (line.equals(")") || line.startsWith("),")) {
+                // Check if args are inline
+                if (line.contains("],")) {
+                    call.setArgs(parseInlineCallArgs(line));
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    call.setArgs(parseCallArgsList());
+                }
+            } else if (line.equals(")") || line.startsWith("),") || line.endsWith(")),") || line.endsWith("))")) {
                 currentLine++;
                 break;
             } else {
@@ -937,6 +1351,33 @@ public class AstParser {
         }
         
         return call;
+    }
+    
+    /**
+     * Parses inline call arguments from a line like "args=[Name(id='x', ctx=Load()), Name(id='y', ctx=Load())],".
+     */
+    private List<AstNode> parseInlineCallArgs(String line) throws CompilationException {
+        List<AstNode> args = new ArrayList<>();
+        
+        // Find Name nodes
+        Pattern namePattern = Pattern.compile("Name\\(id='([^']+)'");
+        Matcher nameMatcher = namePattern.matcher(line);
+        while (nameMatcher.find()) {
+            NameNode node = new NameNode();
+            node.setId(nameMatcher.group(1));
+            args.add(node);
+        }
+        
+        // Find Constant nodes
+        Pattern constPattern = Pattern.compile("Constant\\(value=([^)]+)\\)");
+        Matcher constMatcher = constPattern.matcher(line);
+        while (constMatcher.find()) {
+            ConstantNode node = new ConstantNode();
+            node.setValue(constMatcher.group(1));
+            args.add(node);
+        }
+        
+        return args;
     }
     
     /**
@@ -1054,12 +1495,18 @@ public class AstParser {
             String line = lines[currentLine].trim();
             
             if (line.startsWith("elts=[")) {
-                currentLine++;
-                list.setElts(parseEltsList());
+                // Check if elts are inline
+                if (line.contains("],")) {
+                    list.setElts(parseInlineElts(line));
+                    currentLine++;
+                } else {
+                    currentLine++;
+                    list.setElts(parseEltsList());
+                }
             } else if (line.contains("ctx=Load()")) {
                 list.setCtx("Load");
                 currentLine++;
-            } else if (line.equals(")") || line.startsWith("),")) {
+            } else if (line.equals(")") || line.startsWith("),") || line.endsWith(")),") || line.endsWith("))")) {
                 currentLine++;
                 break;
             } else {
@@ -1068,6 +1515,33 @@ public class AstParser {
         }
         
         return list;
+    }
+    
+    /**
+     * Parses inline elements from a line like "elts=[Constant(value=1), Constant(value=2)],".
+     */
+    private List<AstNode> parseInlineElts(String line) throws CompilationException {
+        List<AstNode> elts = new ArrayList<>();
+        
+        // Find Constant nodes
+        Pattern constPattern = Pattern.compile("Constant\\(value=([^)]+)\\)");
+        Matcher constMatcher = constPattern.matcher(line);
+        while (constMatcher.find()) {
+            ConstantNode node = new ConstantNode();
+            node.setValue(constMatcher.group(1));
+            elts.add(node);
+        }
+        
+        // Find Name nodes
+        Pattern namePattern = Pattern.compile("Name\\(id='([^']+)'");
+        Matcher nameMatcher = namePattern.matcher(line);
+        while (nameMatcher.find()) {
+            NameNode node = new NameNode();
+            node.setId(nameMatcher.group(1));
+            elts.add(node);
+        }
+        
+        return elts;
     }
     
     /**

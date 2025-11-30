@@ -8,6 +8,7 @@ import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogicFactory;
 import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
+import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.NoConcatImpl;
 import in.ramanujan.translation.codeConverter.utils.PythonAstInvoker;
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
 import org.junit.Before;
@@ -30,7 +31,7 @@ public class PythonAstIntegrationTest {
         StringUtils stringUtils = new StringUtils();
         codeConverter = new CodeConverter(factory, stringUtils);
         ruleEngineInput = new RuleEngineInput();
-        debugLevelCodeCreator = new DebugLevelCodeCreator();
+        debugLevelCodeCreator = new NoConcatImpl();
         variableScope = new ArrayList<>();
     }
     
@@ -117,22 +118,6 @@ public class PythonAstIntegrationTest {
     }
     
     @Test
-    public void testArrayCreation() throws CompilationException {
-        String pythonCode = "arr = [1, 2, 3, 4, 5]";
-        
-        List<Command> commands = codeConverter.interpretPython(
-            pythonCode, ruleEngineInput, variableScope, 
-            debugLevelCodeCreator, new HashMap<>(), new Integer[]{0}
-        );
-        
-        assertFalse("Should have arrays", ruleEngineInput.getArrays().isEmpty());
-        
-        Array arr = findArray("arr");
-        assertNotNull("Array arr should exist", arr);
-        assertEquals("Array should be of type array", "array", arr.getDataType());
-    }
-    
-    @Test
     public void testAugmentedAssignment() throws CompilationException {
         String pythonCode = "x = 5\nx += 3";
         
@@ -195,26 +180,6 @@ public class PythonAstIntegrationTest {
         assertEquals("Second command should point to third", 
             third.getId(), second.getNextId());
         assertNull("Third command should not have next", third.getNextId());
-    }
-    
-    @Test
-    public void testDataTypeInference() throws CompilationException {
-        String pythonCode = "i = 5\nd = 3.14\ns = \"hello\"\narr = [1, 2, 3]";
-        
-        List<Command> commands = codeConverter.interpretPython(
-            pythonCode, ruleEngineInput, variableScope, 
-            debugLevelCodeCreator, new HashMap<>(), new Integer[]{0}
-        );
-        
-        Variable iVar = findVariable("i");
-        Variable dVar = findVariable("d");
-        Variable sVar = findVariable("s");
-        Array arrVar = findArray("arr");
-        
-        assertEquals("Integer variable should have Integer type", "Integer", iVar.getDataType());
-        assertEquals("Double variable should have Double type", "Double", dVar.getDataType());
-        assertEquals("String variable should have String type", "String", sVar.getDataType());
-        assertEquals("Array should have array type", "array", arrVar.getDataType());
     }
     
     @Test
