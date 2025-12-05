@@ -1607,6 +1607,15 @@ public class AstParser {
                         }
                     }
                 }
+            } else if (line.startsWith("keywords=[")) {
+                // Skip the keywords list (we don't parse it but must consume it properly)
+                // Check if the Call closes on this line (e.g., "keywords=[])," or "keywords=[])")
+                if (isCallClosedOnKeywordsLine(line)) {
+                    currentLine++;
+                    break;
+                }
+                // Multi-line keywords - skip until we find the closing bracket
+                skipBracketedSection();
             } else if (line.equals(")") || line.startsWith("),")) {
                 // Only match simple close patterns, not compound ones like )])),
                 currentLine++;
@@ -1617,6 +1626,19 @@ public class AstParser {
         }
         
         return call;
+    }
+    
+    /**
+     * Checks if a Call is closed on the keywords line.
+     * This happens when the line ends with ]), or ]) indicating the keywords list
+     * and the Call closing paren are on the same line.
+     */
+    private boolean isCallClosedOnKeywordsLine(String line) {
+        // Look for pattern like "keywords=[])," or "keywords=[])" at the end
+        // Also handle "keywords=[])),", "keywords=[]))" for nested cases
+        return line.endsWith("[]),") || line.endsWith("[])") ||
+               line.endsWith("[])),") || line.endsWith("[]))") ||
+               line.endsWith("[])]),") || line.endsWith("[])])");
     }
     
     /**
