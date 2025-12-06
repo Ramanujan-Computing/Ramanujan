@@ -1,0 +1,268 @@
+@startuml Ramanujan Interpreter Flow
+
+title Ramanujan Native Interpreter - Execution Flow
+
+skinparam backgroundColor #FEFEFE
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam maxMessageSize 200
+skinparam sequenceParticipant underline
+
+' Define participants
+participant "Caller\n(JNI/Native)" as Caller
+participant "Processor" as Processor
+participant "RuleEngineInput" as REI
+participant "ID Map\n(unordered_map)" as IDMap
+participant "CommandRE" as CommandRE
+participant "RuleEngineInputUnits" as REIU
+participant "OperationRE" as OperationRE
+participant "ConditionRE" as ConditionRE
+participant "IfRE" as IfRE
+participant "WhileRE" as WhileRE
+participant "FunctionCommandRE" as FuncRE
+participant "OperationFunctioning" as OpFunc
+participant "ConditionFunctioning" as CondFunc
+
+== Initialization Phase ==
+
+Caller -> Processor: process(ruleEngineInput, firstCommandId)
+activate Processor
+
+note right of REI
+  RuleEngineInput contains:
+  - variables
+  - commands
+  - operations
+  - conditions
+  - ifBlocks
+  - whileBlocks
+  - arrays
+  - constants
+  - functionCalls
+  - redefineArrayCommands
+end note
+
+Processor -> Processor: createMap(ruleEngineInput)
+activate Processor #LightBlue
+note right
+  Creates ID -> RuleEngineInputUnits map
+  by calling getInternalAnalogy() on each
+  input element to create RE (Rule Engine) 
+  objects from input JSON objects
+end note
+
+Processor -> IDMap: store all RE objects by ID
+IDMap --> Processor: map<string, RuleEngineInputUnits*>
+deactivate Processor
+
+== Graph Fixing Phase ==
+
+Processor -> Processor: fixGraph(map)
+activate Processor #LightGreen
+loop for each RuleEngineInputUnits in map
+    Processor -> REIU: setFields(map)
+    activate REIU
+    note right
+      Each RE object resolves its
+      references from string IDs 
+      to actual object pointers
+    end note
+    REIU --> Processor
+    deactivate REIU
+end
+deactivate Processor
+
+Processor -> Processor: fixOperator(map, operations)
+activate Processor #LightPink
+loop for each Operation
+    Processor -> OperationRE: setCachedOperationFunctioning()
+    activate OperationRE
+    OperationRE -> OperationRE: getFunctioning()
+    note right
+      Creates appropriate impl:
+      - AddImpl (+)
+      - MinusImpl (-)
+      - MultiplyImpl (*)
+      - DivideImpl (/)
+      - AssignImpl (=)
+    end note
+    OperationRE -> OpFunc: getOperationFunctioning(operand1, operand2)
+    OpFunc --> OperationRE: CachedOperationFunctioning
+    OperationRE --> Processor
+    deactivate OperationRE
+end
+deactivate Processor
+
+Processor -> Processor: fixConditions(map, conditions)
+activate Processor #LightYellow
+loop for each Condition
+    Processor -> ConditionRE: setCachedConditionFunctioning()
+    activate ConditionRE
+    ConditionRE -> ConditionRE: getFunctioning()
+    note right
+      Creates appropriate impl:
+      - LessThanImpl (<)
+      - GreaterThanImpl (>)
+      - IsEqualImpl (==)
+      - NotEqualImpl (!=)
+      - AndImpl (&&)
+      - OrImpl (||)
+      - NotImpl (!)
+    end note
+    ConditionRE -> CondFunc: getConditionFunctioning(operand1, operand2)
+    CondFunc --> ConditionRE: CachedConditionFunctioning
+    ConditionRE --> Processor
+    deactivate ConditionRE
+end
+deactivate Processor
+
+== Memory Tracking Setup ==
+
+Processor -> Processor: Store original variable values
+note right
+  Saves original values of all variables
+  and array elements for change tracking
+  (varChangeMap, arrChangeMap)
+end note
+
+Processor -> FuncRE: setMemMaintainer(memMaintainer)
+note right
+  Injects memory pool for efficient
+  function call stack management
+end note
+
+== Command Execution Loop ==
+
+Processor -> IDMap: get(firstCommandId)
+IDMap --> Processor: CommandRE*
+Processor -> CommandRE: get()
+activate CommandRE
+
+loop while command != nullptr
+
+    CommandRE -> CommandRE: Determine unit type
+    
+    alt If Command has IfRE
+        CommandRE -> IfRE: process()
+        activate IfRE
+        IfRE -> CondFunc: operate()
+        CondFunc --> IfRE: bool result
+        alt condition is true
+            IfRE -> CommandRE: get() [ifCommandRE chain]
+            note right
+              Executes if-block commands
+              in a nested command loop
+            end note
+        else condition is false
+            IfRE -> CommandRE: get() [elseCommandRE chain]
+            note right
+              Executes else-block commands
+              in a nested command loop
+            end note
+        end
+        IfRE --> CommandRE
+        deactivate IfRE
+        
+    else If Command has WhileRE
+        CommandRE -> WhileRE: process()
+        activate WhileRE
+        loop while condition is true
+            WhileRE -> CondFunc: operate()
+            CondFunc --> WhileRE: bool
+            WhileRE -> CommandRE: get() [whileCommandRE chain]
+            note right
+              Executes while-block commands
+              in nested command loop until
+              condition becomes false
+            end note
+        end
+        WhileRE --> CommandRE
+        deactivate WhileRE
+        
+    else If Command has OperationRE
+        CommandRE -> OperationRE: process()
+        activate OperationRE
+        OperationRE -> OpFunc: set()
+        note right
+          CachedOperationFunctioning
+          performs the operation:
+          - Gets operand values
+          - Applies operator
+          - Stores result
+        end note
+        OpFunc --> OperationRE
+        OperationRE --> CommandRE
+        deactivate OperationRE
+        
+    else If Command has FunctionCommandRE
+        CommandRE -> FuncRE: process()
+        activate FuncRE
+        
+        alt Built-in Function (NINF, PINF, RAND, SIN, COS, etc.)
+            FuncRE -> FuncRE: Execute built-in logic
+            note right
+              Built-in functions have
+              direct implementations:
+              - Math functions
+              - Random generation
+              - Infinity assignment
+            end note
+        else User-defined Function
+            FuncRE -> FuncRE: Phase 1: Save context\n& setup parameters
+            note right
+              - Save calling context values
+              - Copy arguments to parameters
+              - Save local variable state
+            end note
+            
+            FuncRE -> CommandRE: get() [firstCommand in function]
+            note right
+              Execute function body
+              commands in nested loop
+            end note
+            
+            FuncRE -> FuncRE: Phase 2: Restore context\n& propagate results
+            note right
+              - Restore local variables
+              - Propagate final values back
+                (call-by-reference semantics)
+            end note
+        end
+        
+        FuncRE --> CommandRE
+        deactivate FuncRE
+        
+    else Default (variable/constant access)
+        CommandRE -> CommandRE: DefaultRuleEngineUnits.process()
+        note right: No-op for simple value access
+    end
+    
+    CommandRE -> CommandRE: return nextCommandRE
+    note right
+      Returns pointer to next command
+      in the execution chain, or
+      nullptr if execution complete
+    end note
+end
+
+CommandRE --> Processor: nullptr (execution complete)
+deactivate CommandRE
+
+== Results Collection ==
+
+Processor -> Processor: varChangeMap()
+note right
+  Collects all changed variable values
+  by comparing current vs original
+end note
+
+Processor -> Processor: arrChangeMap()
+note right
+  Collects all changed array element values
+  by comparing current vs original
+end note
+
+Processor --> Caller: ProcessingResult
+deactivate Processor
+
+@enduml
