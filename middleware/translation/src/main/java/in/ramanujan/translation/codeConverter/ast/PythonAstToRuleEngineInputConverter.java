@@ -317,8 +317,17 @@ public class PythonAstToRuleEngineInputConverter {
     public List<Command> convert(ModuleNode module, List<String> variableScope) throws CompilationException {
         List<Command> commands = new ArrayList<>();
         Command previousCommand = null;
-        
+        List<AstNode> nonFunctionDefNodes = new ArrayList<>();
+        List<AstNode> functionDefNodes = new ArrayList<>();
         for (AstNode node : module.getBody()) {
+            if (node instanceof FunctionDefNode) {
+                functionDefNodes.add(node);
+            } else {
+                nonFunctionDefNodes.add(node);
+            }
+        }
+        
+        for (AstNode node : nonFunctionDefNodes) {
             // Top-level code is not inside a function, so pass null for variableFrameMap and counter
             Command command = convertStatement(node, variableScope, null, null);
             if (command != null) {
@@ -328,6 +337,12 @@ public class PythonAstToRuleEngineInputConverter {
                 }
                 previousCommand = command;
             }
+        }
+
+        // Process function definitions after top-level code
+        for (AstNode node : functionDefNodes) {
+            // Top-level code is not inside a function, so pass null for variableFrameMap and counter
+            convertStatement(node, variableScope, null, null);
         }
         
         return commands;
@@ -954,12 +969,14 @@ public class PythonAstToRuleEngineInputConverter {
      * @param command The Command object (unused, function returns null from convertStatement)
      * @param variableScope Current scope stack (unused for functions currently)
      */
-    private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScope) throws CompilationException {
+    private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScopeNotUsed) throws CompilationException {
         debugLevelCodeCreator.concat("def " + funcDef.getName() + "(");
         List<String> paramNames = new ArrayList<>();
         List<String> paramIds = new ArrayList<>();
         int[] counter = new int[]{0};
         Map<Integer, RuleEngineInputUnits> variableFrameMap = new HashMap<>();
+        List<String> variableScope = new ArrayList<>();
+        variableScope.add("func_" + funcDef.getName() + "_");
         for (ArgNode arg : funcDef.getArgs().getArgs()) {
             String argStr = arg.getArg();
             MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
@@ -984,6 +1001,7 @@ public class PythonAstToRuleEngineInputConverter {
         }
 
         functionCall.setArguments(paramIds);
+        functionCall.setId(funcDef.getName());
 
         List<String> variablesInFunction = new ArrayList<>();
         int frameCounter = 0;
@@ -1381,6 +1399,8 @@ public class PythonAstToRuleEngineInputConverter {
             return convertNameToCommand((NameNode) expr, variableScope);
         } else if (expr instanceof BinOpNode) {
             return convertBinOpToCommand((BinOpNode) expr, variableScope);
+        } else if (expr instanceof UnaryOpNode) {
+            return convertUnaryOpToCommand((UnaryOpNode) expr, variableScope).getId();
         } else if (expr instanceof SubscriptNode) {
             return convertSubscriptToCommand((SubscriptNode) expr, variableScope);
         } else if (expr instanceof CallNode) {
@@ -1449,9 +1469,21 @@ public class PythonAstToRuleEngineInputConverter {
         
         MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(varName, variableScope);
         if (methodArg != null) {
+            // Convert MethodArg to Variable when first used
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodArg);
+            Variable newVar = new Variable();
+            newVar.setId(methodArg.getId());
+            newVar.setName(methodArg.getName());
+            newVar.setDataType("Integer"); // Default type, will be refined during operations
+            
+            ruleEngineInput.getVariables().add(newVar);
+            String scope = getScope(variableScope);
+            codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + varName);
+            codeConverter.setVariable(newVar, scope);
+            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
-            command.setVariableId(methodArg.getId());
+            command.setVariableId(newVar.getId());
             ruleEngineInput.getCommands().add(command);
             return command.getId();
         }
@@ -1488,11 +1520,60 @@ public class PythonAstToRuleEngineInputConverter {
     }
     
     /**
+     * Converts a unary operation and wraps it in a Command.
+     * 
+     * <p>Currently only handles negation of constants (-5, -3.14, etc.).
+     * For constants, creates a negative constant and returns its ID.
+     * Other unary operations are not yet supported.</p>
+     * 
+     * @param unaryOp The UnaryOpNode to convert
+     * @param variableScope Current scope stack for operand resolution
+     * @return Command containing the constant.
+     * @throws CompilationException If operand is not a constant or operation is not supported
+     */
+    private Command  convertUnaryOpToCommand(UnaryOpNode unaryOp, List<String> variableScope) 
+            throws CompilationException {
+        
+        // For now, only handle negation of constants
+        if ("USub".equals(unaryOp.getOp())) {
+            AstNode operand = unaryOp.getOperand();
+            
+            if (operand instanceof ConstantNode) {
+                ConstantNode constantNode = (ConstantNode) operand;
+                Object value = constantNode.getValue();
+                Constant c = new Constant();
+                
+                // Create a negative constant
+                if (value instanceof Integer) {
+                    c.setId("const_" + UUID.randomUUID().toString());
+                    c.setValue(-((Integer) value));
+                    c.setDataType("Integer");
+                    ruleEngineInput.getConstants().add(c);
+                } else if (value instanceof Double) {
+                    c.setId("const_" + UUID.randomUUID().toString());
+                    c.setValue(-((Double) value));
+                    c.setDataType("Double");
+                    ruleEngineInput.getConstants().add(c);
+                }
+
+                Command command = new Command();
+                command.setId("command_" + UUID.randomUUID().toString());
+                command.setConstant(c.getId());
+                ruleEngineInput.getCommands().add(command);
+                return command;
+            }
+        }
+        
+        // TODO: Support other unary operations (!, ~) and non-constant operands
+        throw new CompilationException(null, null, "Unary operation " + unaryOp.getOp() + " on non-constants not yet supported");
+    }
+    
+    /**
      * Converts a subscript expression and wraps it in a Command.
      * 
      * <p>Handles both declared arrays and function parameters that are arrays.
-     * Function parameters are stored as MethodDataTypeAgnosticArg and can be
-     * used as arrays when accessed with subscript notation.</p>
+     * Function parameters are stored as MethodDataTypeAgnosticArg and are converted
+     * to Array when accessed with subscript notation.</p>
      */
     private String convertSubscriptToCommand(SubscriptNode subscript, List<String> variableScope) 
             throws CompilationException {
@@ -1516,13 +1597,25 @@ public class PythonAstToRuleEngineInputConverter {
             return command.getId();
         }
         
-        // Check if it's a function parameter (MethodDataTypeAgnosticArg) used as array
+        // Check if it's a function parameter (MethodDataTypeAgnosticArg) - convert to Array
         MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(arrayVarName, variableScope);
         if (methodArg != null) {
+            // Convert MethodArg to Array when used with subscript
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodArg);
+            Array newArray = new Array();
+            newArray.setId(methodArg.getId());
+            newArray.setName(methodArg.getName());
+            newArray.setDataType("array");
+            
+            ruleEngineInput.getArrays().add(newArray);
+            String scope = getScope(variableScope);
+            codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + arrayVarName);
+            codeConverter.setArray(newArray, scope);
+            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
             ArrayCommand arrayCommand = new ArrayCommand();
-            arrayCommand.setArrayId(methodArg.getId());
+            arrayCommand.setArrayId(newArray.getId());
             command.setArrayCommand(arrayCommand);
             ruleEngineInput.getCommands().add(command);
             return command.getId();
@@ -1576,14 +1669,14 @@ public class PythonAstToRuleEngineInputConverter {
     // ============================================================================
     
     /**
-     * Gets the ID of an argument expression (variable, array, methodArg, or constant).
+     * Gets the ID of an argument expression (variable, array, methodArg, constant, or unary op).
      * 
      * <p>Used for function call arguments where we need just the entity ID,
      * not wrapped in a Command.</p>
      * 
-     * @param arg The argument expression node (NameNode or ConstantNode)
+     * @param arg The argument expression node (NameNode, ConstantNode, UnaryOpNode, etc.)
      * @param variableScope Current scope stack for variable resolution
-     * @return The ID of the variable, array, methodArg, or newly created constant
+     * @return The ID of the variable, array, methodArg, constant, or unary operation
      * @throws CompilationException If argument type is not supported or variable not found
      */
     private String getArgumentId(AstNode arg, List<String> variableScope) throws CompilationException {
@@ -1592,8 +1685,13 @@ public class PythonAstToRuleEngineInputConverter {
             return createConstantForArgument((ConstantNode) arg);
         }
         
+        // Handle unary operations as arguments (e.g., func(-x, ~y))
+        if (arg instanceof UnaryOpNode) {
+            return convertUnaryOpToCommand((UnaryOpNode) arg, variableScope).getConstant();
+        }
+        
         if (!(arg instanceof NameNode)) {
-            throw new CompilationException(null, null, "Function argument must be a variable name or constant literal");
+            throw new CompilationException(null, null, "Function argument must be a variable name, constant literal, or unary operation");
         }
         
         NameNode nameNode = (NameNode) arg;

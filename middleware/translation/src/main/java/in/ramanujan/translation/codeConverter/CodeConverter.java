@@ -15,7 +15,7 @@ import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
 import in.ramanujan.translation.codeConverter.pojo.IndexWrapper;
 import in.ramanujan.translation.codeConverter.utils.CodeConversionUtils;
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
-import in.ramanujan.translation.codeConverter.ast.AstParser;
+// import in.ramanujan.translation.codeConverter.ast.AstParser;
 import in.ramanujan.translation.codeConverter.ast.ModuleNode;
 import in.ramanujan.translation.codeConverter.ast.PythonAstToRuleEngineInputConverter;
 import in.ramanujan.translation.codeConverter.utils.PythonAstInvoker;
@@ -143,18 +143,18 @@ public class CodeConverter {
                                         Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
                                         Integer[] frameVariableCounterId) throws CompilationException {
         try {
-            // Step 1: Invoke Python AST to get AST dump
+            // Step 1: Invoke Python ast2json to get AST JSON
             PythonAstInvoker invoker = new PythonAstInvoker();
-            String astDump = invoker.invokeAst(pythonCode);
-            
-            // Debug: Print AST dump from Python
-            System.out.println("========== AST DUMP FROM PYTHON ==========");
-            System.out.println(astDump);
+            String astJson = invoker.invokeAstJson(pythonCode);
+
+            // Debug: Print AST JSON from Python
+            System.out.println("========== AST JSON FROM PYTHON ==========");
+            System.out.println(astJson);
             System.out.println("==========================================");
-            
-            // Step 2: Parse AST dump into Java AST objects
-            AstParser parser = new AstParser();
-            ModuleNode module = parser.parse(astDump);
+
+            // Step 2: Parse AST JSON into Java AST objects
+            in.ramanujan.translation.codeConverter.ast.JsonAstParser parser = new in.ramanujan.translation.codeConverter.ast.JsonAstParser();
+            ModuleNode module = parser.parseJson(astJson);
             
             // Debug: Print parsed Module toString
             System.out.println("========== PARSED MODULE (toString) ==========");
