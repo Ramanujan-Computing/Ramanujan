@@ -1,6 +1,7 @@
 package in.ramanujan.translation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
@@ -14,6 +15,10 @@ import in.ramanujan.translation.codeConverter.utils.StringUtils;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 /**
@@ -28,7 +33,7 @@ public class PythonCodeRunTest {
      * Tests nested while loops with accumulation logic in Python.
      * Equivalent to testNestedWhileLoops() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonNestedWhileLoops() throws Exception {
         String pythonCode = 
             "def nestedWhileTest(outer, inner, result):\n" +
@@ -61,7 +66,7 @@ public class PythonCodeRunTest {
      * Tests nested if-else blocks in Python.
      * Equivalent to testNestedIfElseBlocks() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonNestedIfElseBlocks() throws Exception {
         String pythonCode = 
             "def nestedIfElseTest(x, y, result):\n" +
@@ -108,7 +113,7 @@ public class PythonCodeRunTest {
      * Tests recursive factorial calculation in Python.
      * Equivalent to testRecursiveFactorial() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonRecursiveFactorial() throws Exception {
         String pythonCode = 
             "def factorial(n, result):\n" +
@@ -143,7 +148,7 @@ public class PythonCodeRunTest {
      * Tests function chaining in Python.
      * Equivalent to testFunctionChaining() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonFunctionChaining() throws Exception {
         String pythonCode = 
             "def addOne(input, output):\n" +
@@ -181,7 +186,7 @@ public class PythonCodeRunTest {
     /**
      * Tests recursive Fibonacci calculation in Python.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonRecursiveFibonacci() throws Exception {
         String pythonCode = 
             "arr = [0 for _ in range(8)]\n" +
@@ -239,7 +244,7 @@ public class PythonCodeRunTest {
      * Tests bubble sort with arrays in Python.
      * Equivalent to testComplexWhileWithArrays() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonBubbleSort() throws Exception {
         String pythonCode = 
             "sortArray = [0 for _ in range(5)]\n" +
@@ -292,7 +297,7 @@ public class PythonCodeRunTest {
      * Tests recursive array sum in Python.
      * Equivalent to testRecursiveArraySum() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonRecursiveArraySum() throws Exception {
         String pythonCode = 
             "testArray = [0 for _ in range(5)]\n" +
@@ -330,7 +335,7 @@ public class PythonCodeRunTest {
      * Tests complex nested structures in Python.
      * Equivalent to testComplexNestedStructures() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonComplexNestedStructures() throws Exception {
         String pythonCode = 
             "matrix = [0 for _ in range(9)]\n" +
@@ -389,7 +394,7 @@ public class PythonCodeRunTest {
      * Tests mutual recursion between functions in Python.
      * Equivalent to testMutualRecursion() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonMutualRecursion() throws Exception {
         String pythonCode = 
             "def isEvenMutual(n, result):\n" +
@@ -436,7 +441,7 @@ public class PythonCodeRunTest {
      * Tests complex state transitions in Python.
      * Equivalent to testComplexStateTransition() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonComplexStateTransition() throws Exception {
         String pythonCode = 
             "eventSequence = [0 for _ in range(6)]\n" +
@@ -521,7 +526,7 @@ public class PythonCodeRunTest {
      * Tests dynamic single-dimension array in Python.
      * Equivalent to testDynamicSingleDimensionArray() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonDynamicSingleDimensionArray() throws Exception {
         String pythonCode = 
             "def processDynamicArray(size, multiplier, sum, processedCount):\n" +
@@ -558,7 +563,7 @@ public class PythonCodeRunTest {
      * Tests dynamic 2D array with nested loops in Python.
      * Equivalent to testDynamic2DArrayWithNestedLoops() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonDynamic2DArrayWithNestedLoops() throws Exception {
         String pythonCode = 
             "maxCoords = [0 for _ in range(10)]\n" +
@@ -615,7 +620,7 @@ public class PythonCodeRunTest {
      * Tests merge and sort in Python.
      * Equivalent to testComplexArrayOperations() in BigCodeRunTest.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonMergeAndSort() throws Exception {
         String pythonCode = 
             "array1 = [0 for _ in range(3)]\n" +
@@ -682,7 +687,7 @@ public class PythonCodeRunTest {
     /**
      * Simple test for basic variable assignment and arithmetic.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonSimpleArithmetic() throws Exception {
         String pythonCode = 
             "x = 5\n" +
@@ -706,7 +711,7 @@ public class PythonCodeRunTest {
     /**
      * Tests simple if-else in Python.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonSimpleIfElse() throws Exception {
         String pythonCode = 
             "a = 10\n" +
@@ -730,7 +735,7 @@ public class PythonCodeRunTest {
     /**
      * Tests simple while loop in Python.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonSimpleWhileLoop() throws Exception {
         String pythonCode = 
             "sum = 0\n" +
@@ -753,7 +758,7 @@ public class PythonCodeRunTest {
     /**
      * Tests simple array operations in Python.
      */
-    @Test
+    @Test(timeout = 5000)
     public void testPythonSimpleArrayOperations() throws Exception {
         String pythonCode = 
             "arr = [0 for _ in range(5)]\n" +
@@ -841,15 +846,21 @@ public class PythonCodeRunTest {
         
         // Execute using NativeProcessor
         if (!commands.isEmpty()) {
-            NativeProcessor processor = new NativeProcessor();
-            String jsonInput = new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
-            
-            // Write JSON to file for debugging (since crash kills JVM before stdout is flushed)
-//            java.nio.file.Files.writeString(java.nio.file.Path.of("/tmp/rule_engine_input.json"), jsonInput);
-//            java.nio.file.Files.writeString(java.nio.file.Path.of("/tmp/command_id.txt"), commands.get(0).getId());
-            
-            System.out.println("========== JSON written to /tmp/rule_engine_input.json ==========");
-            System.out.flush();
+                NativeProcessor processor = new NativeProcessor();
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonInput = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
+
+                // Write combined payload (firstCommandId + ruleEngineInput) to a stable tmp file for native debugging
+                ObjectNode wrapper = mapper.createObjectNode();
+                wrapper.put("firstCommandId", commands.get(0).getId());
+                wrapper.set("ruleEngineInput", mapper.valueToTree(ruleEngineInput));
+                    Path tmpPath = Paths.get("/tmp", "rule_engine_debug.json");
+                    Files.write(tmpPath,
+                        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper)
+                            .getBytes(StandardCharsets.UTF_8));
+
+                System.out.println("========== Debug payload written to /tmp/rule_engine_debug.json ==========");
+                System.out.flush();
             processor.process(jsonInput, commands.get(0).getId());
             
             // Resolve variables from native processor result

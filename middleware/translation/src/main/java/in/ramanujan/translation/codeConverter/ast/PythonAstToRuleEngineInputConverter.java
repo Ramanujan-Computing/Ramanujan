@@ -737,23 +737,111 @@ public class PythonAstToRuleEngineInputConverter {
     private void convertArrayAssignment(SubscriptNode target, AstNode value, Command command, 
                                        List<String> variableScope) throws CompilationException {
         
-        if (!(target.getValue() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex array indexing not yet supported");
+        // Extract array name and all indices (handles nested subscripts like arr[x1][y1])
+        SubscriptExtractionResult extractionResult = extractArrayNameAndIndices(target, variableScope);
+        String arrayVarName = extractionResult.arrayName;
+        List<String> indices = extractionResult.indices;
+
+        Array array = null;
+        MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(arrayVarName, variableScope);
+        if (methodArg != null) {
+            array = new Array();
+            array.setId(methodArg.getId());
+            array.setName(methodArg.getName());
+            array.setDataType("array");
+            ruleEngineInput.getArrays().add(array);
+            String scope = getScope(variableScope);
+            codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + arrayVarName);
+            codeConverter.setArray(array, scope);
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodArg);
+
+
+        } else {
+            array = getExistingArray(arrayVarName, variableScope);
         }
-        
-        NameNode arrayName = (NameNode) target.getValue();
-        String arrayVarName = arrayName.getId();
-        
-        Array array = getExistingArray(arrayVarName, variableScope);
         if (array == null) {
             throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
         }
+        
+        // Create assignment operation (which creates ArrayCommand with indices internally)
+        Operation operation = createAssignmentOperation(array.getId(), value, variableScope, indices);
+        command.setOperation(operation.getId());
         
         debugLevelCodeCreator.concat(arrayVarName + "[");
         appendValueToDebug(target.getSlice());
         debugLevelCodeCreator.concat("] = ");
         appendValueToDebug(value);
         debugLevelCodeCreator.nextLine();
+    }
+    
+    /**
+     * Extracts array name and all indices from nested subscripts.
+     * 
+     * <p>Handles both simple indexing (arr[i]) and nested indexing (arr[x1][y1])
+     * by recursively unwrapping SubscriptNodes.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Input: arr[x1][y1]
+     * 
+     * AST Structure:
+     *   Subscript(
+     *     value=Subscript(value=Name('arr'), slice=x1),
+     *     slice=y1)
+     * 
+     * Returns:
+     *   arrayName: "arr"
+     *   indices: [x1_commandId, y1_commandId]
+     * </pre>
+     * 
+     * @param target The SubscriptNode to extract from
+     * @param variableScope Current scope stack for variable resolution
+     * @return SubscriptExtractionResult containing array name and list of indices
+     * @throws CompilationException If the base is not a simple array name
+     */
+    private SubscriptExtractionResult extractArrayNameAndIndices(SubscriptNode target, 
+                                                                 List<String> variableScope) throws CompilationException {
+        List<String> indices = new ArrayList<>();
+        AstNode current = target;
+        
+        // Recursively unwrap nested subscripts
+        while (current instanceof SubscriptNode) {
+            SubscriptNode subscript = (SubscriptNode) current;
+            
+            // TODO: interpreter doesn't yet support operations as array indices
+            AstNode sliceNode = subscript.getSlice();
+            if (sliceNode instanceof BinOpNode || sliceNode instanceof UnaryOpNode) {
+                throw new CompilationException(null, null, "Array index expressions are not yet supported");
+            }
+
+            // Convert the slice to the direct entity ID (variable/constant), not a command ID
+            String indexId = getArgumentId(sliceNode, variableScope);
+            indices.add(0, indexId); // Add at front to maintain left-to-right order
+            
+            current = subscript.getValue();
+        }
+        
+        // Verify base is a simple name node
+        if (!(current instanceof NameNode)) {
+            throw new CompilationException(null, null, "Complex array indexing: base must be a simple array name");
+        }
+        
+        NameNode arrayName = (NameNode) current;
+        
+        return new SubscriptExtractionResult(arrayName.getId(), indices);
+    }
+    
+    /**
+     * Helper class to return array name and indices from subscript extraction.
+     */
+    private static class SubscriptExtractionResult {
+        String arrayName;
+        List<String> indices;
+        
+        SubscriptExtractionResult(String arrayName, List<String> indices) {
+            this.arrayName = arrayName;
+            this.indices = indices;
+        }
     }
     
     /**
@@ -1317,15 +1405,32 @@ public class PythonAstToRuleEngineInputConverter {
      * @return The created Operation object
      * @throws CompilationException If value expression cannot be converted
      */
-    private Operation createAssignmentOperation(String targetId, AstNode value, 
+    private Operation createAssignmentOperation(String targetId, AstNode value,
                                                List<String> variableScope) throws CompilationException {
+        return createAssignmentOperation(targetId, value, variableScope, null);
+    }
+    
+    /**
+     * Creates an Operation object for assignment with optional array indices.
+     * 
+     * @param targetId The ID of the target Variable or Array
+     * @param value The value expression node to assign
+     * @param variableScope Current scope stack for expression conversion
+     * @param arrayIndices Optional list of indices for array assignments (e.g., arr[i][j])
+     * @return The created Operation object
+     * @throws CompilationException If value expression cannot be converted
+     */
+    private Operation createAssignmentOperation(String targetId, AstNode value,
+                                               List<String> variableScope, List<String> arrayIndices) 
+            throws CompilationException {
         
         Operation operation = new Operation();
         operation.setId(UUID.randomUUID().toString());
         operation.setOperatorType("=");
         
         // Create command for operand1 (target variable/array)
-        Command operand1Command = createCommandForVariableOrArray(targetId);
+        // Pass indices if this is an array assignment
+        Command operand1Command = createCommandForVariableOrArray(targetId, arrayIndices);
         operation.setOperand1(operand1Command.getId());
         
         // Create command for operand2 (value expression)
@@ -1338,8 +1443,21 @@ public class PythonAstToRuleEngineInputConverter {
     
     /**
      * Creates a Command object that wraps a variable or array by its ID.
+     * If array indices are provided, they are set on the ArrayCommand.
      */
     private Command createCommandForVariableOrArray(String entityId) {
+        return createCommandForVariableOrArray(entityId, null);
+    }
+    
+    /**
+     * Creates a Command object that wraps a variable or array by its ID with optional indices.
+     * 
+     * @param entityId The ID of the variable or array
+     * @param indices Optional list of array indices; if provided and entityId is an array,
+     *                these indices are set on the ArrayCommand
+     * @return The created Command
+     */
+    private Command createCommandForVariableOrArray(String entityId, List<String> indices) {
         Command command = new Command();
         command.setId("command_" + UUID.randomUUID().toString());
         
@@ -1352,6 +1470,10 @@ public class PythonAstToRuleEngineInputConverter {
             if (array != null) {
                 ArrayCommand arrayCommand = new ArrayCommand();
                 arrayCommand.setArrayId(array.getId());
+                // Set indices if provided
+                if (indices != null && !indices.isEmpty()) {
+                    arrayCommand.setIndex(indices);
+                }
                 command.setArrayCommand(arrayCommand);
             } else {
                 // Could be a method arg - set as variableId
@@ -1458,13 +1580,10 @@ public class PythonAstToRuleEngineInputConverter {
         
         Array array = getExistingArray(varName, variableScope);
         if (array != null) {
-            Command command = new Command();
-            command.setId("command_" + UUID.randomUUID().toString());
-            ArrayCommand arrayCommand = new ArrayCommand();
-            arrayCommand.setArrayId(array.getId());
-            command.setArrayCommand(arrayCommand);
-            ruleEngineInput.getCommands().add(command);
-            return command.getId();
+            throw new CompilationException(null, null, 
+                "Bare array reference '" + varName + "' without subscripting is not supported. " +
+                "Array indices must be explicitly specified (e.g., arr[0], arr[i][j]). " +
+                "If you need to pass the entire array, use array subscript notation.");
         }
         
         MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(varName, variableScope);
@@ -1588,10 +1707,18 @@ public class PythonAstToRuleEngineInputConverter {
         // First check if it's a declared array
         Array array = getExistingArray(arrayVarName, variableScope);
         if (array != null) {
+            // Extract indices from the subscript
+            SubscriptExtractionResult extractionResult = extractArrayNameAndIndices(subscript, variableScope);
+            List<String> indices = extractionResult.indices;
+            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
             ArrayCommand arrayCommand = new ArrayCommand();
             arrayCommand.setArrayId(array.getId());
+            // Set indices from subscript
+            if (indices != null && !indices.isEmpty()) {
+                arrayCommand.setIndex(indices);
+            }
             command.setArrayCommand(arrayCommand);
             ruleEngineInput.getCommands().add(command);
             return command.getId();
@@ -1612,10 +1739,18 @@ public class PythonAstToRuleEngineInputConverter {
             codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + arrayVarName);
             codeConverter.setArray(newArray, scope);
             
+            // Extract indices from the subscript
+            SubscriptExtractionResult extractionResult = extractArrayNameAndIndices(subscript, variableScope);
+            List<String> indices = extractionResult.indices;
+            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
             ArrayCommand arrayCommand = new ArrayCommand();
             arrayCommand.setArrayId(newArray.getId());
+            // Set indices from subscript
+            if (indices != null && !indices.isEmpty()) {
+                arrayCommand.setIndex(indices);
+            }
             command.setArrayCommand(arrayCommand);
             ruleEngineInput.getCommands().add(command);
             return command.getId();

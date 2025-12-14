@@ -147,19 +147,19 @@ public class CodeConverter {
             PythonAstInvoker invoker = new PythonAstInvoker();
             String astJson = invoker.invokeAstJson(pythonCode);
 
-            // Debug: Print AST JSON from Python
-            System.out.println("========== AST JSON FROM PYTHON ==========");
-            System.out.println(astJson);
-            System.out.println("==========================================");
+//            // Debug: Print AST JSON from Python
+//            System.out.println("========== AST JSON FROM PYTHON ==========");
+//            System.out.println(astJson);
+//            System.out.println("==========================================");
 
             // Step 2: Parse AST JSON into Java AST objects
             in.ramanujan.translation.codeConverter.ast.JsonAstParser parser = new in.ramanujan.translation.codeConverter.ast.JsonAstParser();
             ModuleNode module = parser.parseJson(astJson);
             
-            // Debug: Print parsed Module toString
-            System.out.println("========== PARSED MODULE (toString) ==========");
-            System.out.println(module.toString());
-            System.out.println("===============================================");
+//            // Debug: Print parsed Module toString
+//            System.out.println("========== PARSED MODULE (toString) ==========");
+//            System.out.println(module.toString());
+//            System.out.println("===============================================");
             
             // Step 3: Convert AST to RuleEngineInput
             System.out.println("========== STARTING AST TO RULE ENGINE CONVERSION ==========");
