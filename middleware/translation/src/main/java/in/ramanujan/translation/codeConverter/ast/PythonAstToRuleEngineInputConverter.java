@@ -1055,7 +1055,6 @@ public class PythonAstToRuleEngineInputConverter {
      * 
      * @param funcDef The FunctionDefNode to process
      * @param command The Command object (unused, function returns null from convertStatement)
-     * @param variableScope Current scope stack (unused for functions currently)
      */
     private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScopeNotUsed) throws CompilationException {
         debugLevelCodeCreator.concat("def " + funcDef.getName() + "(");
@@ -1064,6 +1063,7 @@ public class PythonAstToRuleEngineInputConverter {
         int[] counter = new int[]{0};
         Map<Integer, RuleEngineInputUnits> variableFrameMap = new HashMap<>();
         List<String> variableScope = new ArrayList<>();
+        variableScope.add("");
         variableScope.add("func_" + funcDef.getName() + "_");
         for (ArgNode arg : funcDef.getArgs().getArgs()) {
             String argStr = arg.getArg();

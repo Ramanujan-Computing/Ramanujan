@@ -166,7 +166,9 @@ public class CodeConverter {
             PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
                 this, ruleEngineInput, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId
             );
-            
+
+            variableScope.add("");
+
             List<Command> commands = converter.convert(module, variableScope);
             System.out.println("========== AST TO RULE ENGINE CONVERSION COMPLETE ==========");
             System.out.println("Commands created: " + commands.size());
