@@ -464,6 +464,18 @@ Dockerfile is provided to containerize all the necessary services.
 For executing code file:
 ```java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>```
 
+## Python Dependencies for Translation Module
+
+The translation module (middleware-translation) currently requires the following Python dependencies to convert Python code to Ramanujan intermediate code:
+
+- **Python 3.x**: Required for AST generation
+- **ast2json** _(may be removed in future versions)_: BSD-licensed library for converting Python AST to JSON format
+  - Install: `pip install ast2json`
+  - Repository: https://github.com/YoloSwagTeam/ast2json
+  - License: BSD-3-Clause
+
+For more information about third-party licenses, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
 ## Installing Ramanujan Console for executing on-current-device (Ubuntu & macOS)
 
 To set up the Ramanujan developer console and required dependencies, run the provided installer script:
