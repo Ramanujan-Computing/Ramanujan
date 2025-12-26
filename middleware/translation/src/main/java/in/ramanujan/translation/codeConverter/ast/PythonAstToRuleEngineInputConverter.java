@@ -1947,12 +1947,42 @@ public class PythonAstToRuleEngineInputConverter {
      * @return The Variable object if found, null otherwise
      */
     private Variable getExistingVariable(String name, List<String> variableScope) {
+        // Check if we're inside a function (any scope starts with "func_")
+        boolean insideFunction = isInsideFunction(variableScope);
+        
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
+            
+            // If inside a function, skip global scope lookups
+            // (In Python, assignment in a function creates a local variable unless 'global' is used)
+            if (insideFunction && scope.isEmpty()) {
+                continue;
+            }
+            
             Variable var = codeConverter.getVariableMap().get(scope + name);
             if (var != null) return var;
         }
-        return codeConverter.getVariableMap().get(name);
+        
+        // If not inside a function, also check global scope
+        if (!insideFunction) {
+            return codeConverter.getVariableMap().get(name);
+        }
+        return null;
+    }
+    
+    /**
+     * Checks if the current scope is inside a function definition.
+     * 
+     * @param variableScope Current scope stack
+     * @return true if inside a function, false otherwise
+     */
+    private boolean isInsideFunction(List<String> variableScope) {
+        for (String scope : variableScope) {
+            if (scope.startsWith("func_")) {
+                return true;
+            }
+        }
+        return false;
     }
     
     /**
@@ -1965,12 +1995,26 @@ public class PythonAstToRuleEngineInputConverter {
      * @return The Array object if found, null otherwise
      */
     private Array getExistingArray(String name, List<String> variableScope) {
+        // Check if we're inside a function
+        boolean insideFunction = isInsideFunction(variableScope);
+        
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
+            
+            // If inside a function, skip global scope lookups for arrays
+            if (insideFunction && scope.isEmpty()) {
+                continue;
+            }
+            
             Array arr = codeConverter.getArrayMap().get(scope + name);
             if (arr != null) return arr;
         }
-        return codeConverter.getArrayMap().get(name);
+        
+        // If not inside a function, also check global scope
+        if (!insideFunction) {
+            return codeConverter.getArrayMap().get(name);
+        }
+        return null;
     }
     
     /**
