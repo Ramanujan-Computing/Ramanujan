@@ -456,6 +456,28 @@ public class PythonAstToRuleEngineInputConverter {
      * Routes to: convertArrayAssignment()
      * </pre>
      * 
+     * <h4>Function Call Assignment (Return Value)</h4>
+     * <pre>
+     * Python: result = calculate(x, y)
+     * AST: AssignNode(targets=[NameNode('result')], value=CallNode(...))
+     * 
+     * Creates:
+     *   - Variable {id: "result_var_id", name: "result", dataType: "Double"}
+     *   - FunctionCall {
+     *       id: "calculate",
+     *       arguments: [x_id, y_id, result_var_id]  // target variable added as return argument
+     *     }
+     *   - Command.functionCall = functionCall
+     * 
+     * Return Mechanism:
+     *   - Target variable is passed as additional argument to function
+     *   - Function assigns return value directly to target variable
+     *   - Supports single return values only (use tuple unpacking for multiple returns)
+     *   - Default return type: "Double"
+     * 
+     * Note: Arrays cannot be assigned from function call results directly
+     * </pre>
+     * 
      * @param assign The AssignNode to convert
      * @param command The Command object to populate
      * @param variableScope Current scope stack for variable registration
@@ -511,8 +533,15 @@ public class PythonAstToRuleEngineInputConverter {
                     codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + varName);
                     codeConverter.setVariable(variable, scope);
                     
-                    Operation operation = createAssignmentOperation(variable.getId(), value, variableScope);
-                    command.setOperation(operation.getId());
+                    // Check if value is a function call
+                    if (value instanceof CallNode) {
+                        FunctionCall functionCall = convertFunctionCallWithReturnTargets(
+                            (CallNode) value, variableScope, Arrays.asList(variable.getId()));
+                        command.setFunctionCall(functionCall);
+                    } else {
+                        Operation operation = createAssignmentOperation(variable.getId(), value, variableScope);
+                        command.setOperation(operation.getId());
+                    }
                 }
                 
                 debugLevelCodeCreator.concat(varName + " = ");
@@ -586,13 +615,28 @@ public class PythonAstToRuleEngineInputConverter {
                         variableFrameMap.put(counter[0]++, variable);
                     }
                     
-                    Operation operation = createAssignmentOperation(variable.getId(), value, variableScope);
-                    command.setOperation(operation.getId());
+                    // Check if value is a function call
+                    if (value instanceof CallNode) {
+                        FunctionCall functionCall = convertFunctionCallWithReturnTargets(
+                            (CallNode) value, variableScope, Arrays.asList(variable.getId()));
+                        command.setFunctionCall(functionCall);
+                    } else {
+                        Operation operation = createAssignmentOperation(variable.getId(), value, variableScope);
+                        command.setOperation(operation.getId());
+                    }
                 }
             } else {
                 String targetId = existingVar != null ? existingVar.getId() : existingArray.getId();
-                Operation operation = createAssignmentOperation(targetId, value, variableScope);
-                command.setOperation(operation.getId());
+                
+                // Check if value is a function call - only for variables, not arrays
+                if (value instanceof CallNode && existingVar != null) {
+                    FunctionCall functionCall = convertFunctionCallWithReturnTargets(
+                        (CallNode) value, variableScope, Arrays.asList(targetId));
+                    command.setFunctionCall(functionCall);
+                } else {
+                    Operation operation = createAssignmentOperation(targetId, value, variableScope);
+                    command.setOperation(operation.getId());
+                }
             }
             
             debugLevelCodeCreator.concat(varName + " = ");
@@ -601,6 +645,8 @@ public class PythonAstToRuleEngineInputConverter {
             
         } else if (target instanceof SubscriptNode) {
             convertArrayAssignment((SubscriptNode) target, value, command, variableScope);
+        } else if (target instanceof TupleNode) {
+            convertTupleUnpackingAssignment((TupleNode) target, value, command, variableScope, variableFrameMap, counter);
         }
     }
     
@@ -842,6 +888,135 @@ public class PythonAstToRuleEngineInputConverter {
             this.arrayName = arrayName;
             this.indices = indices;
         }
+    }
+    
+    /**
+     * Converts tuple unpacking assignment from function call results.
+     * 
+     * <p>Handles assignments like: a, b = func()</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python:
+     *   def get_coords():
+     *       return 10, 20
+     *   
+     *   a, b = get_coords()
+     * 
+     * AST:
+     *   AssignNode(
+     *     targets=[TupleNode(elts=[Name('a'), Name('b')])],
+     *     value=CallNode(func=Name('get_coords'), args=[]))
+     * 
+     * Implementation:
+     *   1. Create variables for each tuple element (a, b)
+     *   2. Pass these variables as additional arguments to the function
+     *   3. Function will assign return values to these variables
+     * </pre>
+     * 
+     * <h4>TODO</h4>
+     * <ul>
+     *   <li>Arrays cannot be returned in tuple unpacking (only scalar values supported)</li>
+     * </ul>
+     * 
+     * @param target The TupleNode containing target variable names
+     * @param value The value expression (expected to be CallNode)
+     * @param command The Command object to populate
+     * @param variableScope Current scope stack for variable resolution
+     * @param variableFrameMap Map to track variables/arrays created in function body
+     * @param counter Array containing current frame counter
+     * @throws CompilationException If value is not a CallNode or conversion fails
+     */
+    private void convertTupleUnpackingAssignment(TupleNode target, AstNode value, Command command,
+                                                  List<String> variableScope,
+                                                  Map<Integer, RuleEngineInputUnits> variableFrameMap,
+                                                  int[] counter) throws CompilationException {
+        
+        // Tuple unpacking currently only supported for function calls
+        if (!(value instanceof CallNode)) {
+            throw new CompilationException(null, null,
+                "Tuple unpacking currently only supported for function call results: a, b = func()");
+        }
+        
+        CallNode callNode = (CallNode) value;
+        List<AstNode> tupleElements = target.getElts();
+        
+        if (tupleElements == null || tupleElements.isEmpty()) {
+            throw new CompilationException(null, null,
+                "Tuple unpacking requires at least one target variable");
+        }
+        
+        // TODO: Arrays cannot be returned in tuple unpacking - only scalar values are supported
+        
+        // Create or get variables for each tuple element
+        List<String> targetVariableIds = new ArrayList<>();
+        StringBuilder debugStr = new StringBuilder();
+        
+        for (int i = 0; i < tupleElements.size(); i++) {
+            AstNode element = tupleElements.get(i);
+            
+            if (!(element instanceof NameNode)) {
+                throw new CompilationException(null, null,
+                    "Tuple unpacking only supports simple variable names, not: " + element.getClass().getSimpleName());
+            }
+            
+            NameNode nameNode = (NameNode) element;
+            String varName = nameNode.getId();
+            
+            if (i > 0) {
+                debugStr.append(", ");
+            }
+            debugStr.append(varName);
+            
+            // Check if variable already exists
+            Variable existingVar = getExistingVariable(varName, variableScope);
+            MethodDataTypeAgnosticArg existingMethodArg = getExistingMethodArg(varName, variableScope);
+            
+            if (existingMethodArg != null) {
+                // Convert MethodArg to Variable (assume scalar return from function)
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(existingMethodArg);
+                Variable variable = new Variable();
+                variable.setId(existingMethodArg.getId());
+                variable.setName(existingMethodArg.getName());
+                variable.setDataType("Double"); // Default for return values
+                
+                ruleEngineInput.getVariables().add(variable);
+                String scope = getScope(variableScope);
+                codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + varName);
+                codeConverter.setVariable(variable, scope);
+                
+                targetVariableIds.add(variable.getId());
+            } else if (existingVar != null) {
+                // Use existing variable
+                targetVariableIds.add(existingVar.getId());
+            } else {
+                // Create new variable
+                Variable variable = new Variable();
+                variable.setId(getScopedId(variableScope) + UUID.randomUUID().toString());
+                variable.setName(varName);
+                variable.setDataType("Double"); // Default for return values
+                
+                ruleEngineInput.getVariables().add(variable);
+                codeConverter.setVariable(variable, getScope(variableScope));
+                inferredTypes.put(varName, "Double");
+                
+                // Track variable in function frame if inside a function
+                if (variableFrameMap != null && counter != null) {
+                    variable.setFrameCount(counter[0]);
+                    variableFrameMap.put(counter[0]++, variable);
+                }
+                
+                targetVariableIds.add(variable.getId());
+            }
+        }
+        
+        // Convert the function call with additional return target arguments
+        FunctionCall functionCall = convertFunctionCallWithReturnTargets(callNode, variableScope, targetVariableIds);
+        command.setFunctionCall(functionCall);
+        
+        debugLevelCodeCreator.concat(debugStr.toString() + " = ");
+        appendValueToDebug(value);
+        debugLevelCodeCreator.nextLine();
     }
     
     /**
@@ -1246,6 +1421,60 @@ public class PythonAstToRuleEngineInputConverter {
         functionCall.setArguments(argumentIds);
         
         command.setFunctionCall(functionCall);
+    }
+    
+    /**
+     * Converts a function call with return target variables for tuple unpacking.
+     * 
+     * <p>Similar to convertFunctionCall but adds return target variable IDs as additional
+     * arguments so the function can assign its return values directly to these variables.</p>
+     * 
+     * <h4>Example</h4>
+     * <pre>
+     * Python: a, b = get_coords(x, y)
+     * 
+     * Creates FunctionCall with:
+     *   - Regular arguments: [x_id, y_id]
+     *   - Return targets: [a_id, b_id]
+     *   - Combined arguments: [x_id, y_id, a_id, b_id]
+     * </pre>
+     * 
+     * @param call The CallNode representing the function call
+     * @param variableScope Current scope stack for argument resolution
+     * @param returnTargetIds List of variable IDs that will receive return values
+     * @return The created FunctionCall object with all arguments
+     * @throws CompilationException If function reference is complex
+     */
+    private FunctionCall convertFunctionCallWithReturnTargets(CallNode call, List<String> variableScope,
+                                                               List<String> returnTargetIds) 
+            throws CompilationException {
+        
+        if (!(call.getFunc() instanceof NameNode)) {
+            throw new CompilationException(null, null, "Complex function calls not yet supported");
+        }
+        
+        NameNode funcName = (NameNode) call.getFunc();
+        String functionName = funcName.getId();
+        
+        FunctionCall functionCall = new FunctionCall();
+        functionCall.setId(functionName);
+        
+        List<String> argumentIds = new ArrayList<>();
+        
+        // Add regular arguments first
+        for (AstNode arg : call.getArgs()) {
+            String argumentId = getArgumentId(arg, variableScope);
+            argumentIds.add(argumentId);
+        }
+        
+        // Add return target variables as additional arguments
+        argumentIds.addAll(returnTargetIds);
+        
+        functionCall.setArguments(argumentIds);
+        
+        ruleEngineInput.getFunctionCalls().add(functionCall);
+        
+        return functionCall;
     }
     
     /**

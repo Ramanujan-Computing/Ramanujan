@@ -9,6 +9,7 @@
 #include "dataContainer/DataContainerRE.h"
 #include "CommandTypeProcessingDefinition.h"
 #include "RedefineArrayCommandRE.h"
+#include "ReturnRE.h"
 
 class OperationRE;
 class IfRE;
@@ -32,6 +33,7 @@ private:
     ArrayCommandRE* arrayCommandRE = nullptr;
     Command * command;
     RedefineArrayCommandRE* redefineArrayCommandRE = nullptr;
+    ReturnRE* returnRE = nullptr;
 
     RuleEngineInputUnits* unit;
 

@@ -11,8 +11,18 @@ import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogicFactory;
 import in.ramanujan.translation.codeConverter.CodeSnippetElement;
 import in.ramanujan.translation.codeConverter.DagElement;
+import in.ramanujan.translation.codeConverter.ast.JsonAstParser;
+import in.ramanujan.translation.codeConverter.ast.ModuleNode;
+import in.ramanujan.translation.codeConverter.ast.ReturnNode;
+import in.ramanujan.translation.codeConverter.ast.TupleNode;
+import in.ramanujan.translation.codeConverter.ast.AstNode;
+import in.ramanujan.translation.codeConverter.ast.AssignNode;
+import in.ramanujan.translation.codeConverter.ast.FunctionDefNode;
+import in.ramanujan.translation.codeConverter.ast.PythonAstToRuleEngineInputConverter;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.ActualDebugCodeCreator;
 import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
+import in.ramanujan.translation.codeConverter.utils.PythonAstInvoker;
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 import org.junit.Test;
@@ -234,9 +244,9 @@ public class PythonCodeRunTest {
         variablesToAssert.put("fib2", 1d); // fib(2) = 1
         variablesToAssert.put("fib3", 2d); // fib(3) = 2
         variablesToAssert.put("fib4", 3d); // fib(4) = 3
-//        variablesToAssert.put("fib5", 5d); // fib(5) = 5
-//        variablesToAssert.put("fib6", 8d); // fib(6) = 8
-//        variablesToAssert.put("fib7", 13d); // fib(7) = 13
+        variablesToAssert.put("fib5", 5d); // fib(5) = 5
+        variablesToAssert.put("fib6", 8d); // fib(6) = 8
+        variablesToAssert.put("fib7", 13d); // fib(7) = 13
         
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
@@ -793,6 +803,271 @@ public class PythonCodeRunTest {
         arrayIndexToAssert.put("arr", expectedArray);
         
         analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
+    // ========== AST PARSING TESTS ==========
+
+    /**
+     * Tests parsing of return statements in Python AST.
+     * Verifies that single and multiple return values are correctly parsed.
+     */
+    @Test(timeout = 5000)
+    public void testPythonReturnStatementAstParsing() throws Exception {
+        // Test 1: Single return value
+        String pythonCodeSingle = 
+            "def get_value(x):\n" +
+            "    return x\n";
+        
+        PythonAstInvoker invoker = new PythonAstInvoker();
+        JsonAstParser parser = new JsonAstParser();
+        
+        try {
+            String astJsonSingle = invoker.invokeAstJson(pythonCodeSingle);
+            System.out.println("=== Single Return AST JSON ===");
+            System.out.println(astJsonSingle);
+            
+            ModuleNode moduleSingle = parser.parseJson(astJsonSingle);
+            assertNotNull("Module should be parsed", moduleSingle);
+            assertNotNull("Module body should not be null", moduleSingle.getBody());
+            assertFalse("Module body should not be empty", moduleSingle.getBody().isEmpty());
+            
+            // Check function definition
+            AstNode firstStmt = moduleSingle.getBody().get(0);
+            assertTrue("First statement should be FunctionDef", firstStmt instanceof FunctionDefNode);
+            
+            FunctionDefNode funcDef = (FunctionDefNode) firstStmt;
+            assertEquals("Function name should be get_value", "get_value", funcDef.getName());
+            assertNotNull("Function body should not be null", funcDef.getBody());
+            assertFalse("Function body should not be empty", funcDef.getBody().isEmpty());
+            
+            // Check return statement
+            AstNode returnStmt = funcDef.getBody().get(0);
+            assertTrue("First statement in function should be Return", returnStmt instanceof ReturnNode);
+            
+            ReturnNode returnNode = (ReturnNode) returnStmt;
+            assertNotNull("Return value should not be null", returnNode.getValue());
+            
+            System.out.println("✓ Single return statement parsed successfully");
+            
+        } catch (CompilationException e) {
+            System.err.println("Failed to parse single return: " + e.getMessage());
+            throw e;
+        }
+        
+        // Test 2: Multiple return values (tuple)
+        String pythonCodeMultiple = 
+            "def get_coords(x, y):\n" +
+            "    return x, y\n";
+        
+        try {
+            String astJsonMultiple = invoker.invokeAstJson(pythonCodeMultiple);
+            System.out.println("\n=== Multiple Return (Tuple) AST JSON ===");
+            System.out.println(astJsonMultiple);
+            
+            ModuleNode moduleMultiple = parser.parseJson(astJsonMultiple);
+            assertNotNull("Module should be parsed", moduleMultiple);
+            assertNotNull("Module body should not be null", moduleMultiple.getBody());
+            assertFalse("Module body should not be empty", moduleMultiple.getBody().isEmpty());
+            
+            // Check function definition
+            AstNode firstStmt = moduleMultiple.getBody().get(0);
+            assertTrue("First statement should be FunctionDef", firstStmt instanceof FunctionDefNode);
+            
+            FunctionDefNode funcDef = (FunctionDefNode) firstStmt;
+            assertEquals("Function name should be get_coords", "get_coords", funcDef.getName());
+            
+            // Check return statement
+            AstNode returnStmt = funcDef.getBody().get(0);
+            assertTrue("First statement in function should be Return", returnStmt instanceof ReturnNode);
+            
+            ReturnNode returnNode = (ReturnNode) returnStmt;
+            assertNotNull("Return value should not be null", returnNode.getValue());
+            assertTrue("Return value should be a Tuple", returnNode.getValue() instanceof TupleNode);
+            
+            TupleNode tuple = (TupleNode) returnNode.getValue();
+            assertNotNull("Tuple elements should not be null", tuple.getElts());
+            assertEquals("Tuple should have 2 elements", 2, tuple.getElts().size());
+            
+            System.out.println("✓ Multiple return statement (tuple) parsed successfully");
+            
+        } catch (CompilationException e) {
+            System.err.println("Failed to parse multiple return: " + e.getMessage());
+            throw e;
+        }
+        
+        // Test 3: Empty return (returns None)
+        String pythonCodeEmpty = 
+            "def log_message(msg):\n" +
+            "    return\n";
+        
+        try {
+            String astJsonEmpty = invoker.invokeAstJson(pythonCodeEmpty);
+            System.out.println("\n=== Empty Return AST JSON ===");
+            System.out.println(astJsonEmpty);
+            
+            ModuleNode moduleEmpty = parser.parseJson(astJsonEmpty);
+            assertNotNull("Module should be parsed", moduleEmpty);
+            
+            // Check function definition
+            FunctionDefNode funcDef = (FunctionDefNode) moduleEmpty.getBody().get(0);
+            ReturnNode returnNode = (ReturnNode) funcDef.getBody().get(0);
+            
+            // Empty return should have null value
+            System.out.println("Return value: " + returnNode.getValue());
+            System.out.println("✓ Empty return statement parsed successfully");
+            
+        } catch (CompilationException e) {
+            System.err.println("Failed to parse empty return: " + e.getMessage());
+            throw e;
+        }
+        
+        System.out.println("\n=== ALL RETURN STATEMENT TESTS PASSED ===");
+    }
+
+    /**
+     * Tests parsing of tuple unpacking assignment in Python AST.
+     * Verifies that a, b = func() syntax is correctly parsed.
+     */
+    @Test(timeout = 5000)
+    public void testPythonTupleUnpackingAstParsing() throws Exception {
+        String pythonCode = 
+            "def get_coords():\n" +
+            "    return 10, 20\n" +
+            "\n" +
+            "a, b = get_coords()\n";
+        
+        PythonAstInvoker invoker = new PythonAstInvoker();
+        JsonAstParser parser = new JsonAstParser();
+        
+        try {
+            String astJson = invoker.invokeAstJson(pythonCode);
+            System.out.println("=== Tuple Unpacking Assignment AST JSON ===");
+            System.out.println(astJson);
+            
+            ModuleNode module = parser.parseJson(astJson);
+            assertNotNull("Module should be parsed", module);
+            assertNotNull("Module body should not be null", module.getBody());
+            assertTrue("Module should have at least 2 statements", module.getBody().size() >= 2);
+            
+            // Second statement should be the assignment: a, b = get_coords()
+            AstNode assignStmt = module.getBody().get(1);
+            assertTrue("Second statement should be Assign", assignStmt instanceof AssignNode);
+            
+            AssignNode assign = (AssignNode) assignStmt;
+            assertNotNull("Assignment targets should not be null", assign.getTargets());
+            assertEquals("Assignment should have 1 target", 1, assign.getTargets().size());
+            
+            // The target should be a Tuple with 2 elements (a, b)
+            AstNode target = assign.getTargets().get(0);
+            System.out.println("Target type: " + target.getClass().getSimpleName());
+            
+            if (target instanceof TupleNode) {
+                TupleNode tuple = (TupleNode) target;
+                assertNotNull("Tuple elements should not be null", tuple.getElts());
+                assertEquals("Tuple should have 2 elements", 2, tuple.getElts().size());
+                System.out.println("✓ Tuple unpacking assignment parsed successfully");
+                System.out.println("  Target is a Tuple with " + tuple.getElts().size() + " elements");
+            } else {
+                System.out.println("✗ Target is not a Tuple, it's: " + target.getClass().getSimpleName());
+                System.out.println("  Tuple unpacking may not be fully supported");
+                fail("Expected Tuple target for unpacking assignment, got: " + target.getClass().getSimpleName());
+            }
+            
+            // Check the value (should be a Call to get_coords)
+            assertNotNull("Assignment value should not be null", assign.getValue());
+            System.out.println("Value type: " + assign.getValue().getClass().getSimpleName());
+            
+        } catch (CompilationException e) {
+            System.err.println("Failed to parse tuple unpacking: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+        
+        System.out.println("\n=== TUPLE UNPACKING TEST COMPLETE ===");
+    }
+
+    /**
+     * Tests tuple unpacking from function calls in conversion.
+     * Verifies that a, b = func() properly creates variables and function call.
+     */
+    @Test(timeout = 5000)
+    public void testPythonTupleUnpackingConversion() throws Exception {
+        String pythonCode = 
+            "def get_coords():\n" +
+            "    x = 10\n" +
+            "    y = 20\n" +
+            "    return x, y\n" +
+            "\n" +
+            "a, b = get_coords()\n";
+        
+        PythonAstInvoker invoker = new PythonAstInvoker();
+        JsonAstParser parser = new JsonAstParser();
+        
+        try {
+            String astJson = invoker.invokeAstJson(pythonCode);
+            System.out.println("=== Tuple Unpacking Conversion Test ===");
+            
+            ModuleNode module = parser.parseJson(astJson);
+            assertNotNull("Module should be parsed", module);
+            
+            // Create a basic RuleEngineInput and convert
+            RuleEngineInput ruleEngineInput = new RuleEngineInput();
+            ruleEngineInput.setVariables(new ArrayList<>());
+            ruleEngineInput.setArrays(new ArrayList<>());
+            ruleEngineInput.setCommands(new ArrayList<>());
+            ruleEngineInput.setOperations(new ArrayList<>());
+            ruleEngineInput.setConstants(new ArrayList<>());
+            ruleEngineInput.setConditions(new ArrayList<>());
+            ruleEngineInput.setIfBlocks(new ArrayList<>());
+            ruleEngineInput.setWhileBlocks(new ArrayList<>());
+            ruleEngineInput.setFunctionCalls(new ArrayList<>());
+            ruleEngineInput.setMethodDataTypeAgnosticArgs(new ArrayList<>());
+            
+            CodeConverter codeConverter = new CodeConverter(new CodeConverterLogicFactory(), new StringUtils());
+            ActualDebugCodeCreator debugLevelCodeCreator = new ActualDebugCodeCreator("", 0);
+            Map<Integer, RuleEngineInputUnits> functionFrameVariableMap = new HashMap<>();
+            Integer[] frameVariableCounterId = {0};
+            List<String> variableScope = new ArrayList<>();
+            
+            PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
+                codeConverter, ruleEngineInput, debugLevelCodeCreator, 
+                functionFrameVariableMap, frameVariableCounterId);
+            
+            List<Command> commands = converter.convert(module, variableScope);
+            
+            System.out.println("Converted commands: " + commands.size());
+            System.out.println("Variables created: " + ruleEngineInput.getVariables().size());
+            System.out.println("Function calls: " + ruleEngineInput.getFunctionCalls().size());
+            
+            // Check that variables a and b were created
+            boolean foundA = false, foundB = false;
+            for (Variable v : ruleEngineInput.getVariables()) {
+                if ("a".equals(v.getName())) foundA = true;
+                if ("b".equals(v.getName())) foundB = true;
+                System.out.println("  Variable: " + v.getName() + " (id: " + v.getId() + ")");
+            }
+            
+            assertTrue("Variable 'a' should be created for tuple unpacking", foundA);
+            assertTrue("Variable 'b' should be created for tuple unpacking", foundB);
+            
+            // Check that function call was created
+            assertFalse("At least one function call should be created", ruleEngineInput.getFunctionCalls().isEmpty());
+            FunctionCall fc = ruleEngineInput.getFunctionCalls().get(0);
+            System.out.println("  Function call: " + fc.getId());
+            System.out.println("  Arguments: " + fc.getArguments().size());
+            
+            // The function call should have 2 arguments (a_id, b_id for return targets)
+            assertEquals("Function call should have 2 arguments for return targets", 2, fc.getArguments().size());
+            
+            System.out.println("✓ Tuple unpacking conversion successful");
+            
+        } catch (CompilationException e) {
+            System.err.println("Failed to convert tuple unpacking: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+        
+        System.out.println("\n=== TUPLE UNPACKING CONVERSION TEST COMPLETE ===");
     }
 
     // ========== HELPER METHODS ==========

@@ -149,6 +149,7 @@ std::unordered_map<std::string, RuleEngineInputUnits*>* Processor::createMap(Rul
     storeInIdMap(map, ruleEngineInput.whileBlocks);
     storeInIdMap(map, ruleEngineInput.commands);
     storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
+    storeInIdMap(map, ruleEngineInput.returns);
     return map;
 }
 
@@ -244,6 +245,12 @@ void Processor::fixGraph(std::unordered_map<std::string, RuleEngineInputUnits *>
 }
 
 void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<RedefineArrayCommand*>* list1) {
+    for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
+        pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+    }
+}
+
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<Return*>* list1) {
     for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
         pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
     }

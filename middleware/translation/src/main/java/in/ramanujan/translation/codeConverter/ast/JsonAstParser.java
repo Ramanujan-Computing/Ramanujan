@@ -50,6 +50,18 @@ public class JsonAstParser {
                 module.setBody(body);
             }
         }
+
+        if (node.has("type_ignores")) {
+            JsonNode tiArray = node.get("type_ignores");
+            if (tiArray.isArray()) {
+                List<TypeIgnoreNode> list = new ArrayList<>();
+                for (JsonNode ti : tiArray) {
+                    TypeIgnoreNode t = parseTypeIgnore(ti);
+                    if (t != null) list.add(t);
+                }
+                module.setTypeIgnores(list);
+            }
+        }
         
         return module;
     }
@@ -93,6 +105,8 @@ public class JsonAstParser {
                 return parseSubscript(node);
             case "List":
                 return parseList(node);
+            case "Tuple":
+                return parseTuple(node);
             case "Attribute":
                 return parseAttribute(node);
             case "UnaryOp":
@@ -420,6 +434,29 @@ public class JsonAstParser {
         setLineInfo(list, node);
         return list;
     }
+
+    private TupleNode parseTuple(JsonNode node) throws CompilationException {
+        TupleNode tuple = new TupleNode();
+        
+        if (node.has("elts")) {
+            JsonNode eltsArray = node.get("elts");
+            List<AstNode> elts = new ArrayList<>();
+            for (JsonNode elt : eltsArray) {
+                AstNode eltNode = parseNode(elt);
+                if (eltNode != null) {
+                    elts.add(eltNode);
+                }
+            }
+            tuple.setElts(elts);
+        }
+        
+        if (node.has("ctx")) {
+            tuple.setCtx(extractContext(node.get("ctx")));
+        }
+        
+        setLineInfo(tuple, node);
+        return tuple;
+    }
     
     private AttributeNode parseAttribute(JsonNode node) throws CompilationException {
         AttributeNode attr = new AttributeNode();
@@ -541,6 +578,20 @@ public class JsonAstParser {
             }
         }
         return body;
+    }
+
+    private TypeIgnoreNode parseTypeIgnore(JsonNode node) {
+        if (node == null || !node.has("_type") || !"TypeIgnore".equals(node.get("_type").asText())) {
+            return null;
+        }
+        TypeIgnoreNode ti = new TypeIgnoreNode();
+        if (node.has("lineno")) {
+            ti.setLineno(node.get("lineno").asInt());
+        }
+        if (node.has("tag") && !node.get("tag").isNull()) {
+            ti.setTag(node.get("tag").asText());
+        }
+        return ti;
     }
     
     /**

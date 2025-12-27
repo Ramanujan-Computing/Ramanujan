@@ -54,6 +54,7 @@ import java.util.*;
  */
 public class ModuleNode extends AstNode {
     private List<AstNode> body = new ArrayList<>();
+    private List<TypeIgnoreNode> typeIgnores = new ArrayList<>();
     
     public List<AstNode> getBody() { 
         return body; 
@@ -61,6 +62,14 @@ public class ModuleNode extends AstNode {
     
     public void setBody(List<AstNode> body) { 
         this.body = body; 
+    }
+    
+    public List<TypeIgnoreNode> getTypeIgnores() {
+        return typeIgnores;
+    }
+
+    public void setTypeIgnores(List<TypeIgnoreNode> typeIgnores) {
+        this.typeIgnores = typeIgnores != null ? typeIgnores : new ArrayList<>();
     }
     
     @Override
@@ -76,6 +85,20 @@ public class ModuleNode extends AstNode {
                 sb.append(getIndent(indent + 2)).append("null");
             }
             if (i < body.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+        }
+        sb.append(getIndent(indent + 1)).append("],\n");
+        sb.append(getIndent(indent + 1)).append("type_ignores=[\n");
+        for (int i = 0; i < typeIgnores.size(); i++) {
+            TypeIgnoreNode ti = typeIgnores.get(i);
+            if (ti != null) {
+                sb.append(ti.toString(indent + 2));
+            } else {
+                sb.append(getIndent(indent + 2)).append("null");
+            }
+            if (i < typeIgnores.size() - 1) {
                 sb.append(",");
             }
             sb.append("\n");
