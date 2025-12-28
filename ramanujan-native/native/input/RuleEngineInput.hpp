@@ -33,7 +33,6 @@ class RuleEngineInput {
         std::vector<FunctionCall*> *functionCalls = new std::vector<FunctionCall*>();
         std::vector<While*> *whileBlocks = new std::vector<While*>();
         std::vector<RedefineArrayCommand*> *redefineArrayCommands = new std::vector<RedefineArrayCommand*>();
-        std::vector<Return*> *returns = new std::vector<Return*>();
 
         RuleEngineInput(Json::Value* value) {
             Json::Value variables = (*value)["variables"];
@@ -88,11 +87,6 @@ class RuleEngineInput {
             Json::Value redefineArrayCommands = (*value)["redefineArrayCommands"];
             for(int i = 0; i < redefineArrayCommands.size(); i++) {
                 this->redefineArrayCommands->push_back(new RedefineArrayCommand(&redefineArrayCommands[i]));
-            }
-            
-            Json::Value returns = (*value)["returns"];
-            for(int i = 0; i < returns.size(); i++) {
-                this->returns->push_back(new Return(&returns[i]));
             }
         }
 };

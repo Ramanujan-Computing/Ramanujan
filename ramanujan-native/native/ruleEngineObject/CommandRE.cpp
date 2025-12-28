@@ -72,9 +72,9 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
         redefineArrayCommandRE->setFields(map);
     }
 
-    if(!command->returnStatement.empty()) {
-        returnRE = dynamic_cast<ReturnRE *>(getFromMap(map, command->returnStatement));
-    }
+    returnStatement = command->returnStatement;
+    returnValueIds = command->returnValueIds;
+    returnTargetIds = command->returnTargetIds;
 
     unit = nullptr;
     commandTypeProcessingDefinition = nullptr;

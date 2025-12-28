@@ -23,7 +23,9 @@ public class Command extends RuleEngineInputUnits {
     private FunctionCall functionCall;
     private String whileId;
     private RedefineArrayCommand redefineArrayCommand;
-    private String returnStatement;
+    private Boolean returnStatement;
+    private List<String> returnValueIds;
+    private List<String> returnTargetIds;
 
     public Command() {
         setClazz(Command.class);

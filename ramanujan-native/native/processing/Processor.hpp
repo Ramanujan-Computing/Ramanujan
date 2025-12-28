@@ -63,8 +63,6 @@ class Processor {
 
     void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<RedefineArrayCommand*>* list1);
 
-    void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<Return*>* list1);
-
     void fixGraph(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap);
 };
 

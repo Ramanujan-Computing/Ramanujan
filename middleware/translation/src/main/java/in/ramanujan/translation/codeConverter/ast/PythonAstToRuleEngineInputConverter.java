@@ -260,6 +260,12 @@ public class PythonAstToRuleEngineInputConverter {
     private Map<String, String> inferredTypes = new HashMap<>();
     
     /**
+     * Stores return target variable IDs from the current function call.
+     * Used in convertReturn to set variableIds on target placeholder commands.
+     */
+    private List<String> returnTargetIds;
+    
+    /**
      * Constructs a new converter for transforming Python AST to RuleEngineInput.
      * 
      * @param codeConverter The code converter managing variable/array maps and scope resolution
@@ -403,7 +409,7 @@ public class PythonAstToRuleEngineInputConverter {
         } else if (node instanceof ExprNode) {
             convertExpr((ExprNode) node, command, variableScope);
         } else if (node instanceof ReturnNode) {
-            return null; // Skip return statements in main flow
+            convertReturn((ReturnNode) node, command, variableScope);
         }
         
         return command;
@@ -1284,6 +1290,167 @@ public class PythonAstToRuleEngineInputConverter {
     }
     
     /**
+     * Converts a return statement into Command fields.
+     * 
+     * <p>Return statements in functions specify which values to return to the caller.
+     * When a function is called with return targets (e.g., a, b = func()), the return
+     * values are matched with the target variables at runtime to create assign operations.</p>
+     * 
+     * <h4>Single Return Example</h4>
+     * <pre>
+     * Python:
+     *   def get_value():
+     *       x = 10
+     *       return x
+     * 
+     * Creates:
+     *   - Command {returnValueIds: ["x_var_id"], isReturnStatement: true}
+     * </pre>
+     * 
+     * <h4>Multiple Return (Tuple) Example</h4>
+     * <pre>
+     * Python:
+     *   def get_coords():
+     *       x = 10
+     *       y = 20
+     *       return x, y
+     * 
+     * Creates:
+     *   - Command {returnValueIds: ["x_var_id", "y_var_id"], isReturnStatement: true}
+     * </pre>
+     * 
+     * <h4>Return Mechanism with Targets</h4>
+     * <pre>
+     * When called as: a, b = get_coords()
+     * 
+     * The returnValueIds [x_var_id, y_var_id] are matched with return targets [a_id, b_id]
+     * At runtime, assign operations are created:
+     *   - a = x  (Operation with operand1=a_id, operand2=x_id)
+     *   - b = y  (Operation with operand1=b_id, operand2=y_id)
+     * </pre>
+     * 
+     * @param returnNode The ReturnNode to convert
+     * @param command The Command object to populate
+     * @param variableScope Current scope stack for variable resolution
+     * @throws CompilationException If return value cannot be converted
+     */
+    private void convertReturn(ReturnNode returnNode, Command command, List<String> variableScope) 
+            throws CompilationException {
+        
+        AstNode returnValue = returnNode.getValue();
+        
+        // Handle empty return (returns None)
+        if (returnValue == null) {
+            debugLevelCodeCreator.concat("return");
+            debugLevelCodeCreator.nextLine();
+            command.setReturnStatement(true);
+            return;
+        }
+        
+        List<String> returnValueIds = new ArrayList<>();
+        
+        // Check if returning multiple values (tuple)
+        if (returnValue instanceof TupleNode) {
+            TupleNode tuple = (TupleNode) returnValue;
+            List<AstNode> elements = tuple.getElts();
+            
+            if (elements != null) {
+                for (AstNode element : elements) {
+                    String valueId = getArgumentId(element, variableScope);
+                    returnValueIds.add(valueId);
+                }
+            }
+        } else {
+            // Single return value
+            String valueId = getArgumentId(returnValue, variableScope);
+            returnValueIds.add(valueId);
+        }
+        
+        // Store the return value IDs on the command
+        command.setReturnValueIds(returnValueIds);
+        
+        // Create a placeholder for returnTargetIds - will be populated at runtime from the calling context
+        // The assign operations will be created at runtime when returnTargetIds are known
+        // For now, we create Commands with Operations that will assign returnTargetIds[i] = returnValueIds[i]
+        Command firstAssignCommand = null;
+        Command previousAssignCommand = null;
+        
+        // Create assign operation commands for each return value
+        // Note: returnTargetIds will be set at runtime from the FunctionCall
+        for (int i = 0; i < returnValueIds.size(); i++) {
+            Command assignCommand = new Command();
+            assignCommand.setId("command_" + UUID.randomUUID().toString());
+            assignCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
+            
+            // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
+            Operation operation = new Operation();
+            operation.setId(UUID.randomUUID().toString());
+            operation.setOperatorType("=");
+            
+            // operand2 is the return value - create a command wrapping it
+            String returnValueId = returnValueIds.get(i);
+            Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
+            operation.setOperand2(returnValueCommand.getId());
+            
+            // operand1 will be set at runtime from returnTargetIds[i]
+            // For now, we create a placeholder command that will be resolved later
+            Command targetPlaceholderCommand = new Command();
+            targetPlaceholderCommand.setId("command_" + UUID.randomUUID().toString());
+            targetPlaceholderCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
+            // Set the variableId from stored returnTargetIds
+            if (this.returnTargetIds != null && i < this.returnTargetIds.size()) {
+                targetPlaceholderCommand.setVariableId(this.returnTargetIds.get(i));
+            }
+            ruleEngineInput.getCommands().add(targetPlaceholderCommand);
+            
+            operation.setOperand1(targetPlaceholderCommand.getId());
+            
+            ruleEngineInput.getOperations().add(operation);
+            assignCommand.setOperation(operation.getId());
+            
+            ruleEngineInput.getCommands().add(assignCommand);
+            
+            // Link the assign commands
+            if (firstAssignCommand == null) {
+                firstAssignCommand = assignCommand;
+            }
+            if (previousAssignCommand != null) {
+                previousAssignCommand.setNextId(assignCommand.getId());
+            }
+            previousAssignCommand = assignCommand;
+        }
+        
+        // Create the final command that marks the return statement
+        Command returnCommand = new Command();
+        returnCommand.setId("command_" + UUID.randomUUID().toString());
+        returnCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
+        returnCommand.setReturnStatement(true);
+        returnCommand.setReturnValueIds(returnValueIds);
+        ruleEngineInput.getCommands().add(returnCommand);
+        
+        // Link the last assign command to the return command
+        if (previousAssignCommand != null) {
+            previousAssignCommand.setNextId(returnCommand.getId());
+        }
+        
+        // The original command should point to the first assign command (or return command if no assigns)
+        if (firstAssignCommand != null) {
+            // Replace the original command with a pointer to the assign chain
+            command.setNextId(firstAssignCommand.getId());
+            // Remove the original command from the list since we're replacing it
+            ruleEngineInput.getCommands().remove(command);
+        } else {
+            // No assign operations, just mark this command as return
+            command.setReturnStatement(true);
+            command.setReturnValueIds(returnValueIds);
+        }
+        
+        debugLevelCodeCreator.concat("return ");
+        appendValueToDebug(returnValue);
+        debugLevelCodeCreator.nextLine();
+    }
+    
+    /**
      * Converts an expression statement (function/method calls executed for side effects).
      * 
      * <p>Expression statements are expressions that appear as standalone statements rather
@@ -1467,10 +1634,16 @@ public class PythonAstToRuleEngineInputConverter {
             argumentIds.add(argumentId);
         }
         
-        // Add return target variables as additional arguments
-        argumentIds.addAll(returnTargetIds);
+        // Add return target variables as additional arguments.
+        // Currently commented, since parser is taking ownership of creating assign operations.
+        // In future when interpreter takes ownership, this will be uncommented, so that,
+        // at runtime, the function can assign return values directly to these targets.
+        //argumentIds.addAll(returnTargetIds);
         
         functionCall.setArguments(argumentIds);
+        
+        // Store return target IDs in heap memory for use in convertReturn
+        this.returnTargetIds = new ArrayList<>(returnTargetIds);
         
         ruleEngineInput.getFunctionCalls().add(functionCall);
         

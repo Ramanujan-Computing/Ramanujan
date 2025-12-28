@@ -13,6 +13,7 @@ public class FunctionCall extends RuleEngineInputUnits {
     private List<String> arguments;
     private String firstCommandId;
     private List<String> allVariablesInMethod;
+    private List<String> returnTargetIds;
 
     public FunctionCall() {
         setClazz(FunctionCall.class);
