@@ -34,8 +34,8 @@ public:
 
     }
 
-    void process() override {
-
+    CommandRE* process() override {
+        return nextCommandRE;
     }
 
     void destroy() {

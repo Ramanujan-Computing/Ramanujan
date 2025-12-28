@@ -73,8 +73,7 @@ public:
 
     }
 
-    void process() override {
-
+    CommandRE* process() override {
     }
 };
 
@@ -95,7 +94,7 @@ public:
 
     }
 
-    void process() override {
+    CommandRE* process() override {
     }
 };
 
@@ -114,7 +113,7 @@ public:
 
     }
 
-    void process() override {
+    CommandRE* process() override {
     }
 };
 

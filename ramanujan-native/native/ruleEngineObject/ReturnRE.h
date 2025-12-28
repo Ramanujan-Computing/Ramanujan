@@ -44,11 +44,9 @@ public:
         }
     }
 
-    void process() override {
-        // TODO: Implement return statement execution
-        // For now, this is a no-op placeholder
-        // Full return execution will be implemented when return statements
-        // are integrated into the function execution flow
+    CommandRE* process() override {
+        // Return statement hit - return nullptr to propagate up call stack
+        return nullptr;
     }
 
     // Placeholder for future return execution logic

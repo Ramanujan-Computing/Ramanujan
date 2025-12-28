@@ -31,7 +31,7 @@ public:
         conditionType = condition->conditionType;
     }
 
-    void process() override;
+    CommandRE* process() override;
     bool operate();
 
     ConditionFunctioning *getFunctioning();

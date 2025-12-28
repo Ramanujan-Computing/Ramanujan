@@ -16,6 +16,7 @@ class ConstantRE;
 class VariableRE;
 class ArrayCommandRE;
 class WhileRE;
+class ReturnRE;
 class Command;
 class FunctionCommandRE;
 class ConditionRE;
@@ -30,9 +31,9 @@ private:
     VariableRE* variableRE;
     ConditionRE* conditionRe;
     ArrayCommandRE* arrayCommandRE = nullptr;
+    ReturnRE* returnRE = nullptr;
     Command * command;
     RedefineArrayCommandRE* redefineArrayCommandRE = nullptr;
-    bool returnStatement = false;
     std::vector<std::string> returnValueIds;
     std::vector<std::string> returnTargetIds;
 
@@ -45,6 +46,7 @@ private:
     int line;
 
 public:
+    bool returnStatement = false;  // Made public for If/While blocks to check
     FunctionCommandRE* functionCommandRE = nullptr;
     //TODO: can we save all variables in an array and variableVal be nothing but just an index to that array?
 
@@ -54,7 +56,7 @@ public:
     CommandProcessing* defaultCommandProcessing;
     CommandRE(Command *command);
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override;
-    void process() override;
+    CommandRE* process() override;
     CommandRE* get();
     DataOperation *getDataOperation();
     DoublePtr * getVar();

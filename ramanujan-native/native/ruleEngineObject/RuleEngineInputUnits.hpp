@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include "CommandProcessing.h"
 
-
+class CommandRE;  // Forward declaration
 
 class RuleEngineInputUnits {
 protected:
@@ -19,8 +19,9 @@ protected:
 
 public:
     std::string id;
+    CommandRE* nextCommandRE = nullptr;  // Next command to execute after this unit
     virtual void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) = 0;
-    virtual void process() = 0;
+    virtual CommandRE* process() = 0;  // Returns next command (nullptr on return statement)
     std::string getId() {
         return id;
     }

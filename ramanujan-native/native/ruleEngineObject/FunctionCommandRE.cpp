@@ -161,8 +161,10 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
  * 
  * This method handles complex stack management required for proper function
  * call semantics, including recursive calls and comprehensive memory management.
+ * 
+ * Returns: nextCommandRE after function completes (return statements are handled internally)
  */
-void FunctionCommandRE::process() {
+CommandRE* FunctionCommandRE::process() {
 
     // ==================== DEBUG SETUP ====================
 #ifdef DEBUG_BUILD
@@ -321,6 +323,9 @@ void FunctionCommandRE::process() {
 
     // Deallocate the memory pool ranges
     memMaintainer->deallocateDual(totalSizeAllocated);
+    
+    // Function completed - return control to the next command after the function call
+    return nextCommandRE;
 }
 
 /**
@@ -377,7 +382,7 @@ void BuiltInFunctionsImpl::setFields(std::unordered_map<std::string, RuleEngineI
  * - NINF(variable) → variable = -∞
  * - NINF(array) → all array elements = -∞
  */
-void NINF::process() {
+CommandRE* NINF::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DataContainerValue* dataContainerValue = methodArgDataContainerAddr[0];
         
@@ -393,6 +398,7 @@ void NINF::process() {
             }
         }
     }
+    return nextCommandRE;
 }
 
 /**
@@ -405,7 +411,7 @@ void NINF::process() {
  * - PINF(variable) → variable = +∞
  * - PINF(array) → all array elements = +∞
  */
-void PINF::process() {
+CommandRE* PINF::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DataContainerValue* dataContainerValue = methodArgDataContainerAddr[0];
         
@@ -421,6 +427,7 @@ void PINF::process() {
             }
         }
     }
+    return nextCommandRE;
 }
 
 // Static random number generation components for RAND function
@@ -443,7 +450,7 @@ static std::uniform_real_distribution<> dis(0.0, 1.0); // Uniform distribution [
  * - RAND(variable) → variable = random value in [0.0, 1.0)
  * - RAND(array) → all array elements = independent random values in [0.0, 1.0)
  */
-void RAND::process() {
+CommandRE* RAND::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DataContainerValue* dataContainerValue = methodArgDataContainerAddr[0];
         
@@ -459,6 +466,7 @@ void RAND::process() {
             }
         }
     }
+    return nextCommandRE;
 }
 
 // ==================== MATHEMATICAL BUILT-IN FUNCTIONS ====================
@@ -474,11 +482,12 @@ void RAND::process() {
  * Usage: ABS(variable) → variable = |variable|
  * Example: ABS(-5.5) → variable becomes 5.5
  */
-void ABS::process() {
+CommandRE* ABS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::abs(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 // ==================== TRIGONOMETRIC BUILT-IN FUNCTIONS ====================
@@ -496,11 +505,12 @@ void ABS::process() {
  * Usage: SIN(variable) → variable = sin(variable)
  * Example: SIN(π/2) → variable becomes 1.0
  */
-void SIN::process() {
+CommandRE* SIN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::sin(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -516,11 +526,12 @@ void SIN::process() {
  * Usage: COS(variable) → variable = cos(variable)
  * Example: COS(0) → variable becomes 1.0
  */
-void COS::process() {
+CommandRE* COS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::cos(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -537,11 +548,12 @@ void COS::process() {
  * Usage: TAN(variable) → variable = tan(variable)
  * Example: TAN(π/4) → variable becomes 1.0
  */
-void TAN::process() {
+CommandRE* TAN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::tan(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 // ==================== INVERSE TRIGONOMETRIC BUILT-IN FUNCTIONS ====================
@@ -560,11 +572,12 @@ void TAN::process() {
  * Usage: ASIN(variable) → variable = asin(variable)
  * Example: ASIN(0.5) → variable becomes π/6 ≈ 0.5236
  */
-void ASIN::process() {
+CommandRE* ASIN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::asin(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -581,11 +594,12 @@ void ASIN::process() {
  * Usage: ACOS(variable) → variable = acos(variable)
  * Example: ACOS(0.5) → variable becomes π/3 ≈ 1.0472
  */
-void ACOS::process() {
+CommandRE* ACOS::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::acos(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -602,11 +616,12 @@ void ACOS::process() {
  * Usage: ATAN(variable) → variable = atan(variable)
  * Example: ATAN(1.0) → variable becomes π/4 ≈ 0.7854
  */
-void ATAN::process() {
+CommandRE* ATAN::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::atan(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 // ==================== ROUNDING AND CEILING BUILT-IN FUNCTIONS ====================
@@ -627,11 +642,12 @@ void ATAN::process() {
  * - FLOOR(3.7) → variable becomes 3.0
  * - FLOOR(-2.3) → variable becomes -3.0
  */
-void FLOOR::process() {
+CommandRE* FLOOR::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::floor(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -650,11 +666,12 @@ void FLOOR::process() {
  * - CEIL(3.2) → variable becomes 4.0
  * - CEIL(-2.8) → variable becomes -2.0
  */
-void CEIL::process() {
+CommandRE* CEIL::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::ceil(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 // ==================== EXPONENTIAL AND POWER BUILT-IN FUNCTIONS ====================
@@ -675,11 +692,12 @@ void CEIL::process() {
  * Usage: EXP(variable) → variable = e^variable
  * Example: EXP(1.0) → variable becomes e ≈ 2.71828
  */
-void EXP::process() {
+CommandRE* EXP::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::exp(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -696,11 +714,12 @@ void EXP::process() {
  * Usage: SQRT(variable) → variable = √variable
  * Example: SQRT(9.0) → variable becomes 3.0
  */
-void SQRT::process() {
+CommandRE* SQRT::process() {
     if(functionCommandInfo->argumentsSize >= 1) {
         DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         doublePtr->value = std::sqrt(doublePtr->value);
     }
+    return nextCommandRE;
 }
 
 /**
@@ -723,10 +742,11 @@ void SQRT::process() {
  * Usage: POW(base, exponent) → base = base^exponent
  * Example: POW(2.0, 3.0) → first variable becomes 8.0
  */
-void POW::process() {
+CommandRE* POW::process() {
     if(functionCommandInfo->argumentsSize >= 2) {
         DoublePtr* doublePtr1 = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
         DoublePtr* doublePtr2 = static_cast<DoublePtr*>(methodArgDataContainerAddr[1]);
         doublePtr1->value = std::pow(doublePtr1->value, doublePtr2->value);
     }
+    return nextCommandRE;
 }

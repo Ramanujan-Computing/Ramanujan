@@ -283,8 +283,10 @@ public:
      * 
      * This method handles complex stack management required for proper function
      * call semantics including recursive calls and memory management.
+     * 
+     * Returns: nextCommandRE after function completes (nullptr handled internally)
      */
-    void process();
+    CommandRE* process() override;
     
     /**
      * Alternative processing method (currently unused).
@@ -402,7 +404,7 @@ public:
      * Executes negative infinity assignment.
      * Sets the target variable or all array elements to -std::numeric_limits<double>::infinity()
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -425,7 +427,7 @@ public:
      * Executes positive infinity assignment.
      * Sets the target variable or all array elements to +std::numeric_limits<double>::infinity()
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -448,7 +450,7 @@ public:
      * Executes random number generation.
      * Uses static random engine to generate uniformly distributed random numbers.
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -471,7 +473,7 @@ public:
      * Executes absolute value computation.
      * Modifies the input variable to contain its absolute value.
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -493,7 +495,7 @@ public:
      * Executes sine computation.
      * Modifies the input variable to contain sin(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -515,7 +517,7 @@ public:
      * Executes cosine computation.
      * Modifies the input variable to contain cos(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -537,7 +539,7 @@ public:
      * Executes tangent computation.
      * Modifies the input variable to contain tan(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -560,7 +562,7 @@ public:
      * Executes arcsine computation.
      * Modifies the input variable to contain asin(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -583,7 +585,7 @@ public:
      * Executes arccosine computation.
      * Modifies the input variable to contain acos(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -606,7 +608,7 @@ public:
      * Executes arctangent computation.
      * Modifies the input variable to contain atan(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -629,7 +631,7 @@ public:
      * Executes floor computation.
      * Modifies the input variable to contain floor(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -652,7 +654,7 @@ public:
      * Executes ceiling computation.
      * Modifies the input variable to contain ceil(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -675,7 +677,7 @@ public:
      * Executes exponential computation.
      * Modifies the input variable to contain exp(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -698,7 +700,7 @@ public:
      * Executes square root computation.
      * Modifies the input variable to contain sqrt(variable).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 /**
@@ -721,7 +723,7 @@ public:
      * Executes power computation.
      * Modifies the first variable to contain pow(first_var, second_var).
      */
-    void process() override;
+    CommandRE* process() override;
 };
 
 // ==================== Factory Function for Function Command Creation ====================

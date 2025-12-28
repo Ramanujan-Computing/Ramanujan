@@ -38,7 +38,7 @@ public:
         operationType = operation->operatorType;
     }
 
-    void process() override;
+    CommandRE* process() override;
     CachedOperationFunctioning * get();
 
     void setCachedOperationFunctioning() {

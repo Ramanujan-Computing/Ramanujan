@@ -39,7 +39,7 @@ public:
         conditionRe->ifUser.insert(this);
     }
 
-    void process() override {
+    CommandRE* process() override {
 #ifdef DEBUG_BUILD
         std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
 #endif
@@ -57,6 +57,8 @@ public:
         while(commandRE != nullptr) {
             commandRE = commandRE->get();
         }
+        // Normal completion of if block
+        return nextCommandRE;
     }
 };
 

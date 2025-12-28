@@ -7,7 +7,7 @@
 #include <string>
 #include <json/json.h>
 
-void RedefineArrayCommandRE::process() {
+CommandRE* RedefineArrayCommandRE::process() {
     // 1. Compute new dimensions using the class field dims
     for (int i = 0; i < dimsCount; ++i) {
         if (isVariableDimension[i] && dimensionVariableREs[i]) {
@@ -39,4 +39,6 @@ void RedefineArrayCommandRE::process() {
         oldArrayValue->destroy();
         delete oldArrayValue;
     }
+    
+    return nextCommandRE;
 }

@@ -26,6 +26,7 @@
 #include "processingDefinition/VariableReProcessing.h"
 #include "processingDefinition/FunctionReProcessing.h"
 #include "processingDefinition/RedefineArrayCommandReProcessing.h"
+#include "ReturnRE.h"
 
 #include "DefaultRuleEngineUnits.h"
 
@@ -73,40 +74,50 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     }
 
     returnStatement = command->returnStatement;
-    returnValueIds = command->returnValueIds;
-    returnTargetIds = command->returnTargetIds;
 
     unit = nullptr;
     commandTypeProcessingDefinition = nullptr;
 
+    // If this command is a return statement, use ReturnRE as the unit
+    if (returnStatement) {
+        returnRE = new ReturnRE({});
+        unit = returnRE;
+    }
+
     if(ifCommandRE != nullptr) {
         unit = ifCommandRE;
+        ifCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to if block
         commandTypeProcessingDefinition = new IfReProcessing(ifCommandRE);
     }
 
     if(whileCommandRE != nullptr) {
         unit = whileCommandRE;
+        whileCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to while block
         commandTypeProcessingDefinition = new WhileReProcessing(whileCommandRE);
     }
 
     if(operationCommand != nullptr) {
         unit = operationCommand;
+        operationCommand->nextCommandRE = nextCommandRE;  // Pass next command to operation
         commandTypeProcessingDefinition = new OperationReProcessing(operationCommand);
     }
 
     if(functionCommandRE != nullptr) {
         unit = functionCommandRE;
+        functionCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to function
         commandTypeProcessingDefinition = new FunctionReProcessing(functionCommandRE);
     }
 
     // Set the correct unit for RedefineArrayCommandRE after all other units, before DefaultRuleEngineUnits
     if (redefineArrayCommandRE != nullptr) {
         unit = redefineArrayCommandRE;
+        redefineArrayCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to redefine array
         commandTypeProcessingDefinition = new RedefineArrayCommandReProcessing(redefineArrayCommandRE);
     }
 
     if(unit == nullptr) {
         unit = new DefaultRuleEngineUnits();
+        unit->nextCommandRE = nextCommandRE;  // Pass next command to default unit
     }
 
     if(commandTypeProcessingDefinition == nullptr) {
@@ -122,7 +133,7 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     }
 }
 
-void CommandRE::process() {
+CommandRE* CommandRE::process() {
 }
 
 CommandRE*  CommandRE::get() {
@@ -132,9 +143,9 @@ CommandRE*  CommandRE::get() {
     debugPoint->setCommandId(id);
     debugPoint->setLine(this->line);
 #endif
-    unit->process();
 
-    return nextCommandRE;
+    // Process the unit and get the next command from it
+    return unit->process();
 }
 
 bool CommandRE::evalCondition() {

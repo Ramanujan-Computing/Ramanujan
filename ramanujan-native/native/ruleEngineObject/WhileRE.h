@@ -27,7 +27,7 @@ public:
         conditionRe->whileUser.insert(this);
     }
 
-    void process() {
+    CommandRE* process() override {
 #ifdef DEBUG_BUILD
         int debugLine = debugger->getDebugPointToBeCommitted()->line;
         while(true) {
@@ -48,6 +48,8 @@ public:
                 commandRE = commandRE->get();
             }
         }
+        // Normal completion of while loop
+        return nextCommandRE;
     }
 
     void destroy() {

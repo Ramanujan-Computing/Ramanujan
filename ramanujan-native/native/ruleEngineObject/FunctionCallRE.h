@@ -52,7 +52,7 @@ public:
         setFieldDone = true;
     }
 
-    void process() override {
+    CommandRE* process() override {
     }
 
 };

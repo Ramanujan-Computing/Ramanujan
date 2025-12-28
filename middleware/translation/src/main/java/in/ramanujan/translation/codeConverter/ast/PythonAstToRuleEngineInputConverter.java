@@ -393,7 +393,6 @@ public class PythonAstToRuleEngineInputConverter {
         Command command = new Command();
         command.setId("command_" + UUID.randomUUID().toString());
         command.setCodeStrPtr(debugLevelCodeCreator.getLine());
-        ruleEngineInput.getCommands().add(command);
         
         if (node instanceof AssignNode) {
             convertAssign((AssignNode) node, command, variableScope, variableFrameMap, counter);
@@ -409,9 +408,9 @@ public class PythonAstToRuleEngineInputConverter {
         } else if (node instanceof ExprNode) {
             convertExpr((ExprNode) node, command, variableScope);
         } else if (node instanceof ReturnNode) {
-            convertReturn((ReturnNode) node, command, variableScope);
+            return convertReturn((ReturnNode) node, variableScope);
         }
-        
+        ruleEngineInput.getCommands().add(command);
         return command;
     }
     
@@ -1330,21 +1329,25 @@ public class PythonAstToRuleEngineInputConverter {
      * </pre>
      * 
      * @param returnNode The ReturnNode to convert
-     * @param command The Command object to populate
      * @param variableScope Current scope stack for variable resolution
      * @throws CompilationException If return value cannot be converted
      */
-    private void convertReturn(ReturnNode returnNode, Command command, List<String> variableScope) 
+    private Command convertReturn(ReturnNode returnNode, List<String> variableScope) 
             throws CompilationException {
         
         AstNode returnValue = returnNode.getValue();
+
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        command.setCodeStrPtr(debugLevelCodeCreator.getLine());
+        ruleEngineInput.getCommands().add(command);
         
         // Handle empty return (returns None)
         if (returnValue == null) {
             debugLevelCodeCreator.concat("return");
             debugLevelCodeCreator.nextLine();
             command.setReturnStatement(true);
-            return;
+            return command;
         }
         
         List<String> returnValueIds = new ArrayList<>();
@@ -1433,21 +1436,12 @@ public class PythonAstToRuleEngineInputConverter {
             previousAssignCommand.setNextId(returnCommand.getId());
         }
         
-        // The original command should point to the first assign command (or return command if no assigns)
-        if (firstAssignCommand != null) {
-            // Replace the original command with a pointer to the assign chain
-            command.setNextId(firstAssignCommand.getId());
-            // Remove the original command from the list since we're replacing it
-            ruleEngineInput.getCommands().remove(command);
-        } else {
-            // No assign operations, just mark this command as return
-            command.setReturnStatement(true);
-            command.setReturnValueIds(returnValueIds);
-        }
         
         debugLevelCodeCreator.concat("return ");
         appendValueToDebug(returnValue);
         debugLevelCodeCreator.nextLine();
+
+        return firstAssignCommand;
     }
     
     /**

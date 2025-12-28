@@ -805,6 +805,66 @@ public class PythonCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
 
+    // ========== RETURN EXECUTION TESTS ==========
+
+    /**
+     * Validates that a function return value flows back to the caller.
+     * Assumes call by reference works for doubles passed to functions.
+     */
+    @Test(timeout = 5000)
+    public void testPythonSimpleReturnValue() throws Exception {
+        String pythonCode = 
+            "def add(a, b):\n" +
+            "    temp = a + b\n" +
+            "    return temp\n" +
+            "\n" +
+            "def compute():\n" +
+            "    intermediate = add(2, 3)\n" +
+            "    final = intermediate * 2\n" +
+            "    return final\n" +
+            "\n" +
+            "result = 0\n" +
+            "result = compute()\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 10d); // (2 + 3) * 2
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Ensures early return stops subsequent statements and surfaces the chosen value.
+     * Assumes call by reference works for doubles passed to functions.
+     */
+    @Test(timeout = 5000)
+    public void testPythonEarlyReturnBranches() throws Exception {
+        String pythonCode = 
+            "def early(flag):\n" +
+            "    value = -1\n" +
+            "    if flag:\n" +
+            "        value = 7\n" +
+            "        return value\n" +
+            "    value = 11\n" +
+            "    return value\n" +
+            "\n" +
+            "retTrue = 0\n" +
+            "retFalse = 0\n" +
+            "retTrue = early(True)\n" +
+            "retFalse = early(False)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("retTrue", 7d);
+        variablesToAssert.put("retFalse", 11d);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     // ========== AST PARSING TESTS ==========
 
     /**
