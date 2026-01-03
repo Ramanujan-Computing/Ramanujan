@@ -260,10 +260,22 @@ public class PythonAstToRuleEngineInputConverter {
     private Map<String, String> inferredTypes = new HashMap<>();
     
     /**
-     * Stores return target variable IDs from the current function call.
-     * Used in convertReturn to set variableIds on target placeholder commands.
+     * Maps function name to the list of argument IDs in order (original args + return target args).
+     * Used in convertReturn to retrieve return target parameter IDs.
      */
-    private List<String> returnTargetIds;
+    private Map<String, List<String>> functionDefinitionArgs = new HashMap<>();
+    
+    /**
+     * Maps function name to the number of return values it returns.
+     * Used to add extra parameters to function definitions for return targets.
+     */
+    private Map<String, Integer> functionReturnCounts = new HashMap<>();
+    
+    /**
+     * Tracks the current function being defined (name).
+     * Used to associate return statements with their function.
+     */
+    private String currentFunctionName;
     
     /**
      * Constructs a new converter for transforming Python AST to RuleEngineInput.
@@ -1245,6 +1257,11 @@ public class PythonAstToRuleEngineInputConverter {
         List<String> variableScope = new ArrayList<>();
         variableScope.add("");
         variableScope.add("func_" + funcDef.getName() + "_");
+        
+        // Track the current function being defined
+        String previousFunctionName = this.currentFunctionName;
+        this.currentFunctionName = funcDef.getName();
+        
         for (ArgNode arg : funcDef.getArgs().getArgs()) {
             String argStr = arg.getArg();
             MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
@@ -1267,6 +1284,23 @@ public class PythonAstToRuleEngineInputConverter {
         if (!bodyCommands.isEmpty()) {
             functionCall.setFirstCommandId(bodyCommands.get(0).getId());
         }
+        
+        // Check if this function returns values and add return target parameters
+        Integer returnCount = functionReturnCounts.get(funcDef.getName());
+        if (returnCount != null && returnCount > 0) {
+            // Add extra parameters for return targets
+            for (int i = 0; i < returnCount; i++) {
+                MethodDataTypeAgnosticArg returnTargetArg = new MethodDataTypeAgnosticArg();
+                returnTargetArg.setName("_return_target_" + i);
+                returnTargetArg.setFrameCount(counter[0]);
+                returnTargetArg.setId("return_target_arg_" + UUID.randomUUID().toString());
+                paramIds.add(returnTargetArg.getId());
+                
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(returnTargetArg);
+                codeConverter.setMethodDataTypeAgnosticArgMap(returnTargetArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
+                variableFrameMap.put(counter[0]++, returnTargetArg);
+            }
+        }
 
         functionCall.setArguments(paramIds);
         functionCall.setId(funcDef.getName());
@@ -1284,7 +1318,12 @@ public class PythonAstToRuleEngineInputConverter {
 
         functionCall.setAllVariablesInMethod(variablesInFunction);
         ruleEngineInput.getFunctionCalls().add(functionCall);
-
+        
+        // Store the function arguments for use in convertReturn
+        functionDefinitionArgs.put(funcDef.getName(), new ArrayList<>(paramIds));
+        
+        // Restore previous function name
+        this.currentFunctionName = previousFunctionName;
 
     }
     
@@ -1372,55 +1411,62 @@ public class PythonAstToRuleEngineInputConverter {
         // Store the return value IDs on the command
         command.setReturnValueIds(returnValueIds);
         
-        // Create a placeholder for returnTargetIds - will be populated at runtime from the calling context
-        // The assign operations will be created at runtime when returnTargetIds are known
-        // For now, we create Commands with Operations that will assign returnTargetIds[i] = returnValueIds[i]
+        // Retrieve return target IDs from function arguments if this function returns values
+        List<String> returnTargetIds = null;
+        Integer returnCount = functionReturnCounts.get(currentFunctionName);
+        if (returnCount != null && returnCount > 0) {
+            List<String> functionArgs = functionDefinitionArgs.get(currentFunctionName);
+            if (functionArgs != null && functionArgs.size() >= returnCount) {
+                // The last returnCount arguments are the return targets
+                returnTargetIds = functionArgs.subList(functionArgs.size() - returnCount, functionArgs.size());
+            }
+        }
+        
+        // Create assign operation commands for each return value only if we have return targets
         Command firstAssignCommand = null;
         Command previousAssignCommand = null;
         
-        // Create assign operation commands for each return value
-        // Note: returnTargetIds will be set at runtime from the FunctionCall
-        for (int i = 0; i < returnValueIds.size(); i++) {
-            Command assignCommand = new Command();
-            assignCommand.setId("command_" + UUID.randomUUID().toString());
-            assignCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
-            
-            // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
-            Operation operation = new Operation();
-            operation.setId(UUID.randomUUID().toString());
-            operation.setOperatorType("=");
-            
-            // operand2 is the return value - create a command wrapping it
-            String returnValueId = returnValueIds.get(i);
-            Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
-            operation.setOperand2(returnValueCommand.getId());
-            
-            // operand1 will be set at runtime from returnTargetIds[i]
-            // For now, we create a placeholder command that will be resolved later
-            Command targetPlaceholderCommand = new Command();
-            targetPlaceholderCommand.setId("command_" + UUID.randomUUID().toString());
-            targetPlaceholderCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
-            // Set the variableId from stored returnTargetIds
-            if (this.returnTargetIds != null && i < this.returnTargetIds.size()) {
-                targetPlaceholderCommand.setVariableId(this.returnTargetIds.get(i));
+        if (returnTargetIds != null && !returnTargetIds.isEmpty()) {
+            // Create assign operation commands for each return value
+            for (int i = 0; i < returnValueIds.size(); i++) {
+                Command assignCommand = new Command();
+                assignCommand.setId("command_" + UUID.randomUUID().toString());
+                assignCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
+                
+                // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
+                Operation operation = new Operation();
+                operation.setId(UUID.randomUUID().toString());
+                operation.setOperatorType("=");
+                
+                // operand2 is the return value - create a command wrapping it
+                String returnValueId = returnValueIds.get(i);
+                Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
+                operation.setOperand2(returnValueCommand.getId());
+                
+                // operand1 is the return target variable from function arguments
+                String returnTargetId = returnTargetIds.get(i);
+                Command targetCommand = new Command();
+                targetCommand.setId("command_" + UUID.randomUUID().toString());
+                targetCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
+                targetCommand.setVariableId(returnTargetId);
+                ruleEngineInput.getCommands().add(targetCommand);
+                
+                operation.setOperand1(targetCommand.getId());
+                
+                ruleEngineInput.getOperations().add(operation);
+                assignCommand.setOperation(operation.getId());
+                
+                ruleEngineInput.getCommands().add(assignCommand);
+                
+                // Link the assign commands
+                if (firstAssignCommand == null) {
+                    firstAssignCommand = assignCommand;
+                }
+                if (previousAssignCommand != null) {
+                    previousAssignCommand.setNextId(assignCommand.getId());
+                }
+                previousAssignCommand = assignCommand;
             }
-            ruleEngineInput.getCommands().add(targetPlaceholderCommand);
-            
-            operation.setOperand1(targetPlaceholderCommand.getId());
-            
-            ruleEngineInput.getOperations().add(operation);
-            assignCommand.setOperation(operation.getId());
-            
-            ruleEngineInput.getCommands().add(assignCommand);
-            
-            // Link the assign commands
-            if (firstAssignCommand == null) {
-                firstAssignCommand = assignCommand;
-            }
-            if (previousAssignCommand != null) {
-                previousAssignCommand.setNextId(assignCommand.getId());
-            }
-            previousAssignCommand = assignCommand;
         }
         
         // Create the final command that marks the return statement
@@ -1629,19 +1675,279 @@ public class PythonAstToRuleEngineInputConverter {
         }
         
         // Add return target variables as additional arguments.
-        // Currently commented, since parser is taking ownership of creating assign operations.
-        // In future when interpreter takes ownership, this will be uncommented, so that,
-        // at runtime, the function can assign return values directly to these targets.
-        //argumentIds.addAll(returnTargetIds);
+        // The function will receive these as extra parameters to assign return values to.
+        argumentIds.addAll(returnTargetIds);
         
         functionCall.setArguments(argumentIds);
         
-        // Store return target IDs in heap memory for use in convertReturn
-        this.returnTargetIds = new ArrayList<>(returnTargetIds);
+        // Record the expected return count for this function (for case where function is defined later)
+        Integer existingCount = functionReturnCounts.get(functionName);
+        if (existingCount == null || existingCount < returnTargetIds.size()) {
+            functionReturnCounts.put(functionName, returnTargetIds.size());
+            
+            // If function is already defined, update its parameters to include return targets
+            updateFunctionDefinitionWithReturnTargets(functionName, returnTargetIds.size());
+        }
         
         ruleEngineInput.getFunctionCalls().add(functionCall);
         
         return functionCall;
+    }
+    
+    /**
+     * Updates an existing function definition to include return target parameters.
+     * 
+     * <p>This is called when a function is called with tuple unpacking before it's defined,
+     * or when we need to retroactively add return target parameters to an already-defined function.</p>
+     * 
+     * @param functionName The name of the function to update
+     * @param returnCount The number of return values (and thus return target parameters to add)
+     */
+    private void updateFunctionDefinitionWithReturnTargets(String functionName, int returnCount) {
+        // Find the existing FunctionCall definition
+        FunctionCall existingDef = null;
+        for (FunctionCall fc : ruleEngineInput.getFunctionCalls()) {
+            if (fc.getId().equals(functionName)) {
+                existingDef = fc;
+                break;
+            }
+        }
+        
+        if (existingDef == null) {
+            // Function not yet defined, will be handled when convertFunctionDef is called
+            return;
+        }
+        
+        // Check if return target parameters are already added
+        List<String> currentArgs = existingDef.getArguments();
+        if (currentArgs == null) {
+            currentArgs = new ArrayList<>();
+            existingDef.setArguments(currentArgs);
+        }
+        
+        // Count how many return target args already exist (they have names starting with _return_target_)
+        int existingReturnTargetCount = 0;
+        for (String argId : currentArgs) {
+            MethodDataTypeAgnosticArg methodArg = findMethodArgById(argId);
+            if (methodArg != null && methodArg.getName().startsWith("_return_target_")) {
+                existingReturnTargetCount++;
+            }
+        }
+        
+        // Add missing return target parameters
+        if (existingReturnTargetCount < returnCount) {
+            List<String> newArgIds = new ArrayList<>(currentArgs);
+            int frameCount = currentArgs.size();
+            
+            for (int i = existingReturnTargetCount; i < returnCount; i++) {
+                MethodDataTypeAgnosticArg returnTargetArg = new MethodDataTypeAgnosticArg();
+                returnTargetArg.setName("_return_target_" + i);
+                returnTargetArg.setFrameCount(frameCount++);
+                returnTargetArg.setId("return_target_arg_" + UUID.randomUUID().toString());
+                newArgIds.add(returnTargetArg.getId());
+                
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(returnTargetArg);
+                codeConverter.setMethodDataTypeAgnosticArgMap(returnTargetArg, "func_" + functionName + "_");
+            }
+            
+            existingDef.setArguments(newArgIds);
+            
+            // Update the function arguments map for use in convertReturn
+            functionDefinitionArgs.put(functionName, newArgIds);
+            
+            // Retroactively create assignments for return statements in this function
+            createReturnAssignments(functionName, returnCount);
+        }
+    }
+    
+    /**
+     * Creates return value assignments for a function that was already defined.
+     * 
+     * <p>When return target parameters are retroactively added to a function definition,
+     * we need to update any return statements that have already been processed to include
+     * the assignment operations.</p>
+     * 
+     * @param functionName The name of the function
+     * @param returnCount The number of return values to assign
+     */
+    private void createReturnAssignments(String functionName, int returnCount) {
+        List<String> functionArgs = functionDefinitionArgs.get(functionName);
+        if (functionArgs == null || functionArgs.size() < returnCount) {
+            return;
+        }
+        
+        // Get the return target parameter IDs (the last returnCount arguments)
+        List<String> returnTargetIds = functionArgs.subList(functionArgs.size() - returnCount, functionArgs.size());
+        
+        // Find the function definition to get its command chain
+        FunctionCall funcDef = null;
+        for (FunctionCall fc : ruleEngineInput.getFunctionCalls()) {
+            if (fc.getId().equals(functionName) && fc.getFirstCommandId() != null) {
+                funcDef = fc;
+                break;
+            }
+        }
+        
+        if (funcDef == null) {
+            return;
+        }
+        
+        // Walk through the function's command chain to find return statements
+        Set<String> functionCommandIds = collectFunctionCommandIds(funcDef.getFirstCommandId());
+        
+        // Find return statements that belong to this function and create assignments
+        for (Command cmd : ruleEngineInput.getCommands()) {
+            if (cmd.getReturnStatement() != null && cmd.getReturnStatement() 
+                    && cmd.getReturnValueIds() != null
+                    && functionCommandIds.contains(cmd.getId())) {
+                
+                List<String> returnValueIds = cmd.getReturnValueIds();
+                
+                // Only create assignments if this is a return with values
+                if (!returnValueIds.isEmpty() && returnValueIds.size() == returnCount) {
+                    // Create assign operations for each return value
+                    Command firstAssignCommand = null;
+                    Command previousAssignCommand = null;
+                    
+                    for (int i = 0; i < returnValueIds.size(); i++) {
+                        Command assignCommand = new Command();
+                        assignCommand.setId("command_" + UUID.randomUUID().toString());
+                        assignCommand.setCodeStrPtr(cmd.getCodeStrPtr());
+                        
+                        // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
+                        Operation operation = new Operation();
+                        operation.setId(UUID.randomUUID().toString());
+                        operation.setOperatorType("=");
+                        
+                        // operand2 is the return value - create a command wrapping it
+                        String returnValueId = returnValueIds.get(i);
+                        Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
+                        operation.setOperand2(returnValueCommand.getId());
+                        
+                        // operand1 is the return target variable from function arguments
+                        String returnTargetId = returnTargetIds.get(i);
+                        Command targetCommand = new Command();
+                        targetCommand.setId("command_" + UUID.randomUUID().toString());
+                        targetCommand.setCodeStrPtr(cmd.getCodeStrPtr());
+                        targetCommand.setVariableId(returnTargetId);
+                        ruleEngineInput.getCommands().add(targetCommand);
+                        
+                        operation.setOperand1(targetCommand.getId());
+                        
+                        ruleEngineInput.getOperations().add(operation);
+                        assignCommand.setOperation(operation.getId());
+                        
+                        ruleEngineInput.getCommands().add(assignCommand);
+                        
+                        // Link the assign commands
+                        if (firstAssignCommand == null) {
+                            firstAssignCommand = assignCommand;
+                        }
+                        if (previousAssignCommand != null) {
+                            previousAssignCommand.setNextId(assignCommand.getId());
+                        }
+                        previousAssignCommand = assignCommand;
+                    }
+                    
+                    // Link the last assign command to the return command
+                    if (previousAssignCommand != null) {
+                        previousAssignCommand.setNextId(cmd.getId());
+                    }
+                    
+                    // Find the command that was pointing to this return command and update it
+                    // to point to the first assign command instead
+                    if (firstAssignCommand != null) {
+                        for (Command prevCmd : ruleEngineInput.getCommands()) {
+                            if (cmd.getId().equals(prevCmd.getNextId())) {
+                                prevCmd.setNextId(firstAssignCommand.getId());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Collects all command IDs that belong to a function's command chain.
+     * Recursively follows nextId, if/else branches, and while loops.
+     */
+    private Set<String> collectFunctionCommandIds(String startCommandId) {
+        Set<String> commandIds = new HashSet<>();
+        collectCommandIdsRecursive(startCommandId, commandIds);
+        return commandIds;
+    }
+    
+    private void collectCommandIdsRecursive(String commandId, Set<String> visited) {
+        if (commandId == null || visited.contains(commandId)) {
+            return;
+        }
+        
+        Command cmd = findCommandById(commandId);
+        if (cmd == null) {
+            return;
+        }
+        
+        visited.add(commandId);
+        
+        // Follow nextId
+        collectCommandIdsRecursive(cmd.getNextId(), visited);
+        
+        // Follow if/else branches
+        if (cmd.getIfBlocks() != null) {
+            If ifBlock = findIfBlockById(cmd.getIfBlocks());
+            if (ifBlock != null) {
+                collectCommandIdsRecursive(ifBlock.getIfCommand(), visited);
+                collectCommandIdsRecursive(ifBlock.getElseCommandId(), visited);
+            }
+        }
+        
+        // Follow while loop body
+        if (cmd.getWhileId() != null) {
+            While whileBlock = findWhileBlockById(cmd.getWhileId());
+            if (whileBlock != null) {
+                collectCommandIdsRecursive(whileBlock.getWhileCommandId(), visited);
+            }
+        }
+    }
+    
+    private Command findCommandById(String id) {
+        for (Command cmd : ruleEngineInput.getCommands()) {
+            if (cmd.getId().equals(id)) {
+                return cmd;
+            }
+        }
+        return null;
+    }
+    
+    private If findIfBlockById(String id) {
+        for (If ifBlock : ruleEngineInput.getIfBlocks()) {
+            if (ifBlock.getId().equals(id)) {
+                return ifBlock;
+            }
+        }
+        return null;
+    }
+    
+    private While findWhileBlockById(String id) {
+        for (While whileBlock : ruleEngineInput.getWhileBlocks()) {
+            if (whileBlock.getId().equals(id)) {
+                return whileBlock;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Finds a MethodDataTypeAgnosticArg by its ID.
+     */
+    private MethodDataTypeAgnosticArg findMethodArgById(String id) {
+        for (MethodDataTypeAgnosticArg arg : ruleEngineInput.getMethodDataTypeAgnosticArgs()) {
+            if (arg.getId().equals(id)) {
+                return arg;
+            }
+        }
+        return null;
     }
     
     /**
