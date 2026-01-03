@@ -53,21 +53,26 @@ public class OperationLogicConverter implements CodeConverterLogic {
                                                              Integer[] frameVariableCounterId) throws CompilationException {
         Stack<Command> stack = new Stack<>();
         RuleEngineInputUnits lastOp = null;
+        int postFixResultLen = postFixResult.size();
+        int iter = 0;
         for(String token : postFixResult) {
             if (isOperator(token)) {
                 Command commandOp2 = stack.pop();
                 Command commandOp1 = stack.pop();
                 lastOp = getPostFixUnit(token, commandOp1.getId(), commandOp2.getId(), ruleEngineInput);
 
-                Command command = new Command();
-                command.setId(UUID.randomUUID().toString());
-                setCommandPostFixUnit(command, lastOp);
-                ruleEngineInput.getCommands().add(command);
-                stack.push(command);
+                if (iter < postFixResultLen - 1) {
+                    Command command = new Command();
+                    command.setId(UUID.randomUUID().toString());
+                    setCommandPostFixUnit(command, lastOp);
+                    ruleEngineInput.getCommands().add(command);
+                    stack.push(command);
+                }
             } else {
                 stack.push(codeConverter.interpret(token, ruleEngineInput, variableScope, new NoConcatImpl(),
                         functionFrameVariableMap, frameVariableCounterId).get(0));
             }
+            iter++;
         }
 
         return lastOp;

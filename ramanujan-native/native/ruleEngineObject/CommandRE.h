@@ -23,7 +23,6 @@ class ConditionRE;
 
 class CommandRE : public RuleEngineInputUnits {
 private:
-    CommandRE* nextCommandRE;
     WhileRE* whileCommandRE;
     OperationRE* operationCommand;
     IfRE* ifCommandRE;
