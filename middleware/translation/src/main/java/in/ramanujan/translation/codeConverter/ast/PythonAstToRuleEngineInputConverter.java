@@ -1278,12 +1278,6 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.concat(String.join(", ", paramNames));
         debugLevelCodeCreator.concat("):");
         debugLevelCodeCreator.nextLine();
-
-        FunctionCall functionCall = new FunctionCall();
-        List<Command> bodyCommands = convertBody(funcDef.getBody(), variableScope, variableFrameMap, counter);
-        if (!bodyCommands.isEmpty()) {
-            functionCall.setFirstCommandId(bodyCommands.get(0).getId());
-        }
         
         // Check if this function returns values and add return target parameters
         Integer returnCount = functionReturnCounts.get(funcDef.getName());
@@ -1300,6 +1294,12 @@ public class PythonAstToRuleEngineInputConverter {
                 codeConverter.setMethodDataTypeAgnosticArgMap(returnTargetArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
                 variableFrameMap.put(counter[0]++, returnTargetArg);
             }
+        }
+
+        FunctionCall functionCall = new FunctionCall();
+        List<Command> bodyCommands = convertBody(funcDef.getBody(), variableScope, variableFrameMap, counter);
+        if (!bodyCommands.isEmpty()) {
+            functionCall.setFirstCommandId(bodyCommands.get(0).getId());
         }
 
         functionCall.setArguments(paramIds);
@@ -1738,6 +1738,12 @@ public class PythonAstToRuleEngineInputConverter {
         if (existingReturnTargetCount < returnCount) {
             List<String> newArgIds = new ArrayList<>(currentArgs);
             int frameCount = currentArgs.size();
+
+            List<String> allVariablesInFunction = existingDef.getAllVariablesInMethod();
+            //New list in which we will have all the original arguments, then the return targets, and then the rest of variables from allVariablesInFunction
+            List<String> updatedVariablesInFunction = new ArrayList<>();
+            int startOfMethodVariables = currentArgs.size();
+
             
             for (int i = existingReturnTargetCount; i < returnCount; i++) {
                 MethodDataTypeAgnosticArg returnTargetArg = new MethodDataTypeAgnosticArg();
@@ -1751,7 +1757,12 @@ public class PythonAstToRuleEngineInputConverter {
             }
             
             existingDef.setArguments(newArgIds);
-            
+            updatedVariablesInFunction.addAll(newArgIds);
+            //Add the rest of variables from allVariablesInFunction
+            if (allVariablesInFunction != null && allVariablesInFunction.size() > startOfMethodVariables) {
+                updatedVariablesInFunction.addAll(allVariablesInFunction.subList(startOfMethodVariables, allVariablesInFunction.size()));
+            }
+            existingDef.setAllVariablesInMethod(updatedVariablesInFunction);
             // Update the function arguments map for use in convertReturn
             functionDefinitionArgs.put(functionName, newArgIds);
             
