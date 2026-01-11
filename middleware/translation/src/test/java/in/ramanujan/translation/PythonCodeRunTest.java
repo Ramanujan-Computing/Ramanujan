@@ -844,7 +844,7 @@ public class PythonCodeRunTest {
         String pythonCode = 
             "def early(flag):\n" +
             "    value = -1\n" +
-            "    if flag:\n" +
+            "    if flag == 1:\n" +
             "        value = 7\n" +
             "        return value\n" +
             "    value = 11\n" +
@@ -852,8 +852,8 @@ public class PythonCodeRunTest {
             "\n" +
             "retTrue = 0\n" +
             "retFalse = 0\n" +
-            "retTrue = early(True)\n" +
-            "retFalse = early(False)\n";
+            "retTrue = early(1)\n" +
+            "retFalse = early(0)\n";
 
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();

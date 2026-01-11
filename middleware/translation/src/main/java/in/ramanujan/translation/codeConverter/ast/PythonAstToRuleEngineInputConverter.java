@@ -1284,17 +1284,20 @@ public class PythonAstToRuleEngineInputConverter {
         if (returnCount != null && returnCount > 0) {
             // Add extra parameters for return targets
             for (int i = 0; i < returnCount; i++) {
-                MethodDataTypeAgnosticArg returnTargetArg = new MethodDataTypeAgnosticArg();
+                Variable returnTargetArg = new Variable();
                 returnTargetArg.setName("_return_target_" + i);
                 returnTargetArg.setFrameCount(counter[0]);
                 returnTargetArg.setId("return_target_arg_" + UUID.randomUUID().toString());
                 paramIds.add(returnTargetArg.getId());
                 
-                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(returnTargetArg);
-                codeConverter.setMethodDataTypeAgnosticArgMap(returnTargetArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
+                ruleEngineInput.getVariables().add(returnTargetArg);
+                codeConverter.setVariable(returnTargetArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
                 variableFrameMap.put(counter[0]++, returnTargetArg);
             }
         }
+
+        // Store the function arguments for use in convertReturn
+        functionDefinitionArgs.put(funcDef.getName(), new ArrayList<>(paramIds));
 
         FunctionCall functionCall = new FunctionCall();
         List<Command> bodyCommands = convertBody(funcDef.getBody(), variableScope, variableFrameMap, counter);
@@ -1318,9 +1321,6 @@ public class PythonAstToRuleEngineInputConverter {
 
         functionCall.setAllVariablesInMethod(variablesInFunction);
         ruleEngineInput.getFunctionCalls().add(functionCall);
-        
-        // Store the function arguments for use in convertReturn
-        functionDefinitionArgs.put(funcDef.getName(), new ArrayList<>(paramIds));
         
         // Restore previous function name
         this.currentFunctionName = previousFunctionName;
@@ -1487,7 +1487,7 @@ public class PythonAstToRuleEngineInputConverter {
         appendValueToDebug(returnValue);
         debugLevelCodeCreator.nextLine();
 
-        return firstAssignCommand;
+        return firstAssignCommand != null ? firstAssignCommand : returnCommand;
     }
     
     /**
@@ -1689,7 +1689,7 @@ public class PythonAstToRuleEngineInputConverter {
             updateFunctionDefinitionWithReturnTargets(functionName, returnTargetIds.size());
         }
         
-        ruleEngineInput.getFunctionCalls().add(functionCall);
+        //ruleEngineInput.getFunctionCalls().add(functionCall);
         
         return functionCall;
     }
@@ -1746,14 +1746,14 @@ public class PythonAstToRuleEngineInputConverter {
 
             
             for (int i = existingReturnTargetCount; i < returnCount; i++) {
-                MethodDataTypeAgnosticArg returnTargetArg = new MethodDataTypeAgnosticArg();
+                Variable returnTargetArg = new Variable();
                 returnTargetArg.setName("_return_target_" + i);
                 returnTargetArg.setFrameCount(frameCount++);
                 returnTargetArg.setId("return_target_arg_" + UUID.randomUUID().toString());
                 newArgIds.add(returnTargetArg.getId());
                 
-                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(returnTargetArg);
-                codeConverter.setMethodDataTypeAgnosticArgMap(returnTargetArg, "func_" + functionName + "_");
+                ruleEngineInput.getVariables().add(returnTargetArg);
+                codeConverter.setVariable(returnTargetArg, "func_" + functionName + "_");
             }
             
             existingDef.setArguments(newArgIds);
@@ -1807,7 +1807,8 @@ public class PythonAstToRuleEngineInputConverter {
         Set<String> functionCommandIds = collectFunctionCommandIds(funcDef.getFirstCommandId());
         
         // Find return statements that belong to this function and create assignments
-        for (Command cmd : ruleEngineInput.getCommands()) {
+        List<Command> commandList = new ArrayList<>(ruleEngineInput.getCommands());
+        for (Command cmd : commandList) {
             if (cmd.getReturnStatement() != null && cmd.getReturnStatement() 
                     && cmd.getReturnValueIds() != null
                     && functionCommandIds.contains(cmd.getId())) {
@@ -1816,61 +1817,69 @@ public class PythonAstToRuleEngineInputConverter {
                 
                 // Only create assignments if this is a return with values
                 if (!returnValueIds.isEmpty() && returnValueIds.size() == returnCount) {
-                    // Create assign operations for each return value
-                    Command firstAssignCommand = null;
-                    Command previousAssignCommand = null;
                     
-                    for (int i = 0; i < returnValueIds.size(); i++) {
-                        Command assignCommand = new Command();
-                        assignCommand.setId("command_" + UUID.randomUUID().toString());
-                        assignCommand.setCodeStrPtr(cmd.getCodeStrPtr());
+                    // Check if assign commands already exist for this return statement
+                    List<Command> existingAssignCommands = findReturnAssignCommands(returnValueIds, returnTargetIds);
+                    
+                    // Only create new assign commands if they don't already exist
+                    if (existingAssignCommands == null || existingAssignCommands.isEmpty()) {
+                        // Create assign operations for each return value
+                        Command firstAssignCommand = null;
+                        Command previousAssignCommand = null;
                         
-                        // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
-                        Operation operation = new Operation();
-                        operation.setId(UUID.randomUUID().toString());
-                        operation.setOperatorType("=");
-                        
-                        // operand2 is the return value - create a command wrapping it
-                        String returnValueId = returnValueIds.get(i);
-                        Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
-                        operation.setOperand2(returnValueCommand.getId());
-                        
-                        // operand1 is the return target variable from function arguments
-                        String returnTargetId = returnTargetIds.get(i);
-                        Command targetCommand = new Command();
-                        targetCommand.setId("command_" + UUID.randomUUID().toString());
-                        targetCommand.setCodeStrPtr(cmd.getCodeStrPtr());
-                        targetCommand.setVariableId(returnTargetId);
-                        ruleEngineInput.getCommands().add(targetCommand);
-                        
-                        operation.setOperand1(targetCommand.getId());
-                        
-                        ruleEngineInput.getOperations().add(operation);
-                        assignCommand.setOperation(operation.getId());
-                        
-                        ruleEngineInput.getCommands().add(assignCommand);
-                        
-                        // Link the assign commands
-                        if (firstAssignCommand == null) {
-                            firstAssignCommand = assignCommand;
+                        for (int i = 0; i < returnValueIds.size(); i++) {
+                            Command assignCommand = new Command();
+                            assignCommand.setId("command_" + UUID.randomUUID().toString());
+                            assignCommand.setCodeStrPtr(cmd.getCodeStrPtr());
+                            
+                            // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
+                            Operation operation = new Operation();
+                            operation.setId(UUID.randomUUID().toString());
+                            operation.setOperatorType("=");
+                            
+                            // operand2 is the return value - create a command wrapping it
+                            String returnValueId = returnValueIds.get(i);
+                            Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
+                            operation.setOperand2(returnValueCommand.getId());
+                            
+                            // operand1 is the return target variable from function arguments
+                            String returnTargetId = returnTargetIds.get(i);
+                            Command targetCommand = new Command();
+                            targetCommand.setId("command_" + UUID.randomUUID().toString());
+                            targetCommand.setCodeStrPtr(cmd.getCodeStrPtr());
+                            targetCommand.setVariableId(returnTargetId);
+                            ruleEngineInput.getCommands().add(targetCommand);
+                            
+                            operation.setOperand1(targetCommand.getId());
+                            
+                            ruleEngineInput.getOperations().add(operation);
+                            assignCommand.setOperation(operation.getId());
+                            
+                            ruleEngineInput.getCommands().add(assignCommand);
+                            
+                            // Link the assign commands
+                            if (firstAssignCommand == null) {
+                                firstAssignCommand = assignCommand;
+                            }
+                            if (previousAssignCommand != null) {
+                                previousAssignCommand.setNextId(assignCommand.getId());
+                            }
+                            previousAssignCommand = assignCommand;
                         }
+                        
+                        // Link the last assign command to the return command
                         if (previousAssignCommand != null) {
-                            previousAssignCommand.setNextId(assignCommand.getId());
+                            previousAssignCommand.setNextId(cmd.getId());
                         }
-                        previousAssignCommand = assignCommand;
-                    }
-                    
-                    // Link the last assign command to the return command
-                    if (previousAssignCommand != null) {
-                        previousAssignCommand.setNextId(cmd.getId());
-                    }
-                    
-                    // Find the command that was pointing to this return command and update it
-                    // to point to the first assign command instead
-                    if (firstAssignCommand != null) {
-                        for (Command prevCmd : ruleEngineInput.getCommands()) {
-                            if (cmd.getId().equals(prevCmd.getNextId())) {
-                                prevCmd.setNextId(firstAssignCommand.getId());
+                        
+                        // Find the command that was pointing to this return command and update it
+                        // to point to the first assign command instead
+                        if (firstAssignCommand != null) {
+                            for (Command prevCmd : ruleEngineInput.getCommands()) {
+                                if (cmd.getId().equals(prevCmd.getNextId())) {
+                                    prevCmd.setNextId(firstAssignCommand.getId());
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1956,6 +1965,66 @@ public class PythonAstToRuleEngineInputConverter {
         for (MethodDataTypeAgnosticArg arg : ruleEngineInput.getMethodDataTypeAgnosticArgs()) {
             if (arg.getId().equals(id)) {
                 return arg;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Finds existing assign commands that match the given return values and return targets.
+     * Returns a list of assign commands if they exist, null otherwise.
+     */
+    private List<Command> findReturnAssignCommands(List<String> returnValueIds, List<String> returnTargetIds) {
+        if (returnValueIds.size() != returnTargetIds.size()) {
+            return null;
+        }
+        
+        List<Command> assignCommands = new ArrayList<>();
+        
+        // Look for assign operations that match: returnTargetIds[i] = returnValueIds[i]
+        for (int i = 0; i < returnValueIds.size(); i++) {
+            String returnValueId = returnValueIds.get(i);
+            String returnTargetId = returnTargetIds.get(i);
+            
+            Command foundCommand = null;
+            
+            // Search for a command with an operation that assigns returnValueId to returnTargetId
+            for (Command cmd : ruleEngineInput.getCommands()) {
+                if (cmd.getOperation() != null) {
+                    Operation op = findOperationById(cmd.getOperation());
+                    if (op != null && "=".equals(op.getOperatorType())) {
+                        // Check if this operation assigns to the return target
+                        Command operand1Cmd = findCommandById(op.getOperand1());
+                        if (operand1Cmd != null && returnTargetId.equals(operand1Cmd.getVariableId())) {
+                            // Check if the value being assigned is the return value
+                            Command operand2Cmd = findCommandById(op.getOperand2());
+                            if (operand2Cmd != null && returnValueId.equals(operand2Cmd.getVariableId())) {
+                                foundCommand = cmd;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (foundCommand == null) {
+                // If any assign command is missing, return null (we'll create all of them)
+                return null;
+            }
+            
+            assignCommands.add(foundCommand);
+        }
+        
+        return assignCommands;
+    }
+    
+    /**
+     * Finds an Operation by its ID.
+     */
+    private Operation findOperationById(String id) {
+        for (Operation op : ruleEngineInput.getOperations()) {
+            if (op.getId().equals(id)) {
+                return op;
             }
         }
         return null;
