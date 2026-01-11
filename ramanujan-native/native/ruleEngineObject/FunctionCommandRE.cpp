@@ -14,6 +14,8 @@
 #include <limits>
 #include <random>
 
+thread_local bool FunctionCommandRE::hasEncounteredReturn = false;
+
 /**
  * Constructor for FunctionCommandRE.
  * Initializes a function call execution context by setting up the relationship
@@ -325,6 +327,7 @@ CommandRE* FunctionCommandRE::process() {
     memMaintainer->deallocateDual(totalSizeAllocated);
     
     // Function completed - return control to the next command after the function call
+    hasEncounteredReturn = false;
     return nextCommandRE;
 }
 

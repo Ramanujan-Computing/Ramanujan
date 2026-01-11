@@ -6,6 +6,7 @@
 #define NATIVE_IFRE_H
 
 #include "RuleEngineInputUnits.hpp"
+#include "FunctionCommandRE.h"
 #include "If.hpp"
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/CommandRE.h"
@@ -58,6 +59,9 @@ public:
             commandRE = commandRE->get();
         }
         // Normal completion of if block
+        if (FunctionCommandRE::hasEncounteredReturn) {
+            return nullptr;
+        }
         return nextCommandRE;
     }
 };

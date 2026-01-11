@@ -31,6 +31,8 @@
  * - Memory management for local variables and arrays
  */
 class FunctionCommandRE : public RuleEngineInputUnits {
+public:
+    static thread_local bool hasEncounteredReturn;
 protected:
     // ==================== Core Function Information (Protected for Inheritance) ====================
     

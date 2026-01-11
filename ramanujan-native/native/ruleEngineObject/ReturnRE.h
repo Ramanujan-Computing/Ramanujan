@@ -2,6 +2,7 @@
 #define NATIVE_RETURNRE_H
 
 #include "RuleEngineInputUnits.hpp"
+#include "FunctionCommandRE.h"
 #include "dataContainer/VariableRE.h"
 #include <vector>
 #include <string>
@@ -45,6 +46,7 @@ public:
     }
 
     CommandRE* process() override {
+        FunctionCommandRE::hasEncounteredReturn = true;
         // Return statement hit - return nullptr to propagate up call stack
         return nullptr;
     }

@@ -6,6 +6,7 @@
 #define NATIVE_WHILERE_H
 
 #include "While.hpp"
+#include "FunctionCommandRE.h"
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/CommandRE.h"
 #include "DebugPoint.h"
@@ -49,6 +50,10 @@ public:
             }
         }
         // Normal completion of while loop
+        if (FunctionCommandRE::hasEncounteredReturn)
+        {
+            return nullptr;
+        }
         return nextCommandRE;
     }
 
