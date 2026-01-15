@@ -865,6 +865,505 @@ public class PythonCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
+
+    /**
+     * Tests deeply nested if-else blocks with returns at different levels.
+     * Verifies that return statements work correctly in multi-level nested structures.
+     */
+    @Test(timeout = 5000)
+    public void testPythonDeeplyNestedIfElseReturns() throws Exception {
+        String pythonCode = 
+            "def classify(x, y, z):\n" +
+            "    if x > 0:\n" +
+            "        if y > 0:\n" +
+            "            if z > 0:\n" +
+            "                return 1\n" +
+            "            else:\n" +
+            "                if z == 0:\n" +
+            "                    return 2\n" +
+            "                else:\n" +
+            "                    return 3\n" +
+            "        else:\n" +
+            "            if z > 0:\n" +
+            "                return 4\n" +
+            "            else:\n" +
+            "                return 5\n" +
+            "    else:\n" +
+            "        if x == 0:\n" +
+            "            if y > 0:\n" +
+            "                return 6\n" +
+            "            else:\n" +
+            "                return 7\n" +
+            "        else:\n" +
+            "            if y < 0:\n" +
+            "                return 8\n" +
+            "            else:\n" +
+            "                return 9\n" +
+            "\n" +
+            "r1 = classify(1, 1, 1)\n" +
+            "r2 = classify(1, 1, 0)\n" +
+            "r3 = classify(1, 1, -1)\n" +
+            "r4 = classify(1, -1, 1)\n" +
+            "r5 = classify(1, -1, -1)\n" +
+            "r6 = classify(0, 1, 0)\n" +
+            "r7 = classify(0, -1, 0)\n" +
+            "r8 = classify(-1, -1, 0)\n" +
+            "r9 = classify(-1, 1, 0)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("r1", 1d);
+        variablesToAssert.put("r2", 2d);
+        variablesToAssert.put("r3", 3d);
+        variablesToAssert.put("r4", 4d);
+        variablesToAssert.put("r5", 5d);
+        variablesToAssert.put("r6", 6d);
+        variablesToAssert.put("r7", 7d);
+        variablesToAssert.put("r8", 8d);
+        variablesToAssert.put("r9", 9d);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests return statements inside while loops.
+     * Verifies early exit from loops when a condition is met.
+     */
+    @Test(timeout = 5000)
+    public void testPythonReturnInWhileLoop() throws Exception {
+        String pythonCode = 
+            "def findFirstNegative(arr, size):\n" +
+            "    i = 0\n" +
+            "    while i < size:\n" +
+            "        if arr[i] < 0:\n" +
+            "            return arr[i]\n" +
+            "        i = i + 1\n" +
+            "    return 0\n" +
+            "\n" +
+            "def findSum(arr, size, target):\n" +
+            "    sum = 0\n" +
+            "    i = 0\n" +
+            "    while i < size:\n" +
+            "        sum = sum + arr[i]\n" +
+            "        if sum >= target:\n" +
+            "            return sum\n" +
+            "        i = i + 1\n" +
+            "    return sum\n" +
+            "\n" +
+            "testArr1 = [0 for _ in range(5)]\n" +
+            "testArr1[0] = 10\n" +
+            "testArr1[1] = 20\n" +
+            "testArr1[2] = -5\n" +
+            "testArr1[3] = 30\n" +
+            "testArr1[4] = -15\n" +
+            "\n" +
+            "testArr2 = [0 for _ in range(4)]\n" +
+            "testArr2[0] = 5\n" +
+            "testArr2[1] = 10\n" +
+            "testArr2[2] = 15\n" +
+            "testArr2[3] = 20\n" +
+            "\n" +
+            "negResult = findFirstNegative(testArr1, 5)\n" +
+            "sumResult = findSum(testArr2, 4, 25)\n" +
+            "sumResultNoEarlyExit = findSum(testArr2, 4, 100)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("negResult", -5d); // First negative is -5
+        variablesToAssert.put("sumResult", 30d); // 5+10+15=30 (exits when sum>=25)
+        variablesToAssert.put("sumResultNoEarlyExit", 50d); // Full sum: 5+10+15+20=50
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests nested while loops with return statements.
+     * Verifies return can exit from deeply nested loop structures.
+     */
+    @Test(timeout = 5000)
+    public void testPythonReturnInNestedWhileLoops() throws Exception {
+        String pythonCode = 
+            "def findPairSum(arr, rows, cols, target):\n" +
+            "    i = 0\n" +
+            "    j = 0\n" +
+            "    i = 0\n" +
+            "    while i < rows:\n" +
+            "        j = 0\n" +
+            "        while j < cols:\n" +
+            "            idx = i * cols + j\n" +
+            "            if arr[idx] == target:\n" +
+            "                return idx\n" +
+            "            j = j + 1\n" +
+            "        i = i + 1\n" +
+            "    return -1\n" +
+            "\n" +
+            "matrix = [0 for _ in range(12)]\n" +
+            "matrix[0] = 5\n" +
+            "matrix[1] = 10\n" +
+            "matrix[2] = 15\n" +
+            "matrix[3] = 20\n" +
+            "matrix[4] = 25\n" +
+            "matrix[5] = 30\n" +
+            "matrix[6] = 35\n" +
+            "matrix[7] = 40\n" +
+            "matrix[8] = 45\n" +
+            "matrix[9] = 50\n" +
+            "matrix[10] = 55\n" +
+            "matrix[11] = 60\n" +
+            "\n" +
+            "foundIndex = findPairSum(matrix, 3, 4, 40)\n" +
+            "notFoundIndex = findPairSum(matrix, 3, 4, 99)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("foundIndex", 7d); // 40 is at index 7
+        variablesToAssert.put("notFoundIndex", -1d); // 99 not found
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests complex combination of nested if-else inside while loops with multiple return points.
+     */
+    @Test(timeout = 5000)
+    public void testPythonComplexNestedControlFlowReturns() throws Exception {
+        String pythonCode = 
+            "def analyzeSequence(arr, size, threshold):\n" +
+            "    i = 0\n" +
+            "    consecutiveCount = 0\n" +
+            "    maxConsecutive = 0\n" +
+            "    returnValue = 0\n" +
+            "    i = 0\n" +
+            "    while i < size:\n" +
+            "        if arr[i] > threshold:\n" +
+            "            consecutiveCount = consecutiveCount + 1\n" +
+            "            if consecutiveCount > maxConsecutive:\n" +
+            "                maxConsecutive = consecutiveCount\n" +
+            "            if consecutiveCount >= 3:\n" +
+            "                returnValue = maxConsecutive * 100\n" +
+            "                return returnValue\n" +
+            "        else:\n" +
+            "            if consecutiveCount > 0:\n" +
+            "                if consecutiveCount == 2:\n" +
+            "                    returnValue = consecutiveCount * 10\n" +
+            "                    return returnValue\n" +
+            "            consecutiveCount = 0\n" +
+            "        i = i + 1\n" +
+            "    return maxConsecutive\n" +
+            "\n" +
+            "seq1 = [0 for _ in range(6)]\n" +
+            "seq1[0] = 5\n" +
+            "seq1[1] = 15\n" +
+            "seq1[2] = 20\n" +
+            "seq1[3] = 25\n" +
+            "seq1[4] = 8\n" +
+            "seq1[5] = 30\n" +
+            "\n" +
+            "seq2 = [0 for _ in range(5)]\n" +
+            "seq2[0] = 15\n" +
+            "seq2[1] = 20\n" +
+            "seq2[2] = 5\n" +
+            "seq2[3] = 25\n" +
+            "seq2[4] = 30\n" +
+            "\n" +
+            "seq3 = [0 for _ in range(4)]\n" +
+            "seq3[0] = 5\n" +
+            "seq3[1] = 8\n" +
+            "seq3[2] = 15\n" +
+            "seq3[3] = 3\n" +
+            "\n" +
+            "result1 = analyzeSequence(seq1, 6, 10)\n" +
+            "result2 = analyzeSequence(seq2, 5, 10)\n" +
+            "result3 = analyzeSequence(seq3, 4, 10)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result1", 300d); // 3 consecutive > 10, returns 3*100
+        variablesToAssert.put("result2", 20d); // 2 consecutive then break, returns 2*10
+        variablesToAssert.put("result3", 1d); // Max consecutive is 1
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests return with array manipulation in nested structures.
+     */
+    @Test(timeout = 5000)
+    public void testPythonReturnWithArrayManipulation() throws Exception {
+        String pythonCode = 
+            "def processAndReturn(arr, size, operation):\n" +
+            "    i = 0\n" +
+            "    sum = 0\n" +
+            "    product = 1\n" +
+            "    returnValue = 0\n" +
+            "    i = 0\n" +
+            "    while i < size:\n" +
+            "        if operation == 1:\n" +
+            "            sum = sum + arr[i]\n" +
+            "            if sum > 50:\n" +
+            "                arr[i] = sum\n" +
+            "                return sum\n" +
+            "        else:\n" +
+            "            if operation == 2:\n" +
+            "                product = product * arr[i]\n" +
+            "                if product > 100:\n" +
+            "                    arr[i] = product\n" +
+            "                    return product\n" +
+            "            else:\n" +
+            "                if arr[i] > 0:\n" +
+            "                    returnValue = arr[i] * 3\n" +
+            "                    return returnValue\n" +
+            "        i = i + 1\n" +
+            "    return 0\n" +
+            "\n" +
+            "testArr1 = [0 for _ in range(5)]\n" +
+            "testArr1[0] = 10\n" +
+            "testArr1[1] = 15\n" +
+            "testArr1[2] = 20\n" +
+            "testArr1[3] = 8\n" +
+            "testArr1[4] = 5\n" +
+            "\n" +
+            "testArr2 = [0 for _ in range(4)]\n" +
+            "testArr2[0] = 2\n" +
+            "testArr2[1] = 3\n" +
+            "testArr2[2] = 4\n" +
+            "testArr2[3] = 5\n" +
+            "\n" +
+            "testArr3 = [0 for _ in range(3)]\n" +
+            "testArr3[0] = 3\n" +
+            "testArr3[1] = 5\n" +
+            "testArr3[2] = 8\n" +
+            "\n" +
+            "result1 = processAndReturn(testArr1, 5, 1)\n" +
+            "result2 = processAndReturn(testArr2, 4, 2)\n" +
+            "result3 = processAndReturn(testArr3, 3, 3)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result1", 65d); // 10+15+20+20=65 > 50, returns 65
+        variablesToAssert.put("result2", 120d); // 2*3*4*5=120 > 100, returns 120
+        variablesToAssert.put("result3", 24d); // First even (8) * 3 = 24
+        
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("2", 65d); // arr[2] should be modified to sum=65
+        arrayIndexToAssert.put("testArr1", expectedArr1);
+        
+        Map<String, Object> expectedArr2 = new HashMap<>();
+        expectedArr2.put("3", 120d); // arr[3] should be modified to product=120
+        arrayIndexToAssert.put("testArr2", expectedArr2);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
+    /**
+     * Tests recursive function with complex nested if-else and early returns.
+     */
+    @Test(timeout = 5000)
+    public void testPythonRecursiveWithComplexReturns() throws Exception {
+        String pythonCode = 
+            "def complexRecursive(n, threshold):\n" +
+            "    returnValue = 0\n" +
+            "    nMinus1 = 0\n" +
+            "    nMinus2 = 0\n" +
+            "    if n <= 0:\n" +
+            "        return 0\n" +
+            "    else:\n" +
+            "        if n == 1:\n" +
+            "            return 1\n" +
+            "        else:\n" +
+            "            if n > threshold:\n" +
+            "                nMinus1 = n - 1\n" +
+            "                nMinus2 = n - 2\n" +
+            "                temp1 = complexRecursive(nMinus1, threshold)\n" +
+            "                temp2 = complexRecursive(nMinus2, threshold)\n" +
+            "                returnValue = temp1 + temp2\n" +
+            "                return returnValue\n" +
+            "            else:\n" +
+            "                if n == 2:\n" +
+            "                    returnValue = n * 2\n" +
+            "                    return returnValue\n" +
+            "                else:\n" +
+            "                    if n == 3:\n" +
+            "                        returnValue = n * 3\n" +
+            "                        return returnValue\n" +
+            "                    else:\n" +
+            "                        return 0\n" +
+            "\n" +
+            "r1 = complexRecursive(0, 5)\n" +
+            "r2 = complexRecursive(1, 5)\n" +
+            "r3 = complexRecursive(2, 5)\n" +
+            "r4 = complexRecursive(3, 5)\n" +
+            "r5 = complexRecursive(4, 5)\n" +
+            "r6 = complexRecursive(6, 5)\n" +
+            "r7 = complexRecursive(7, 5)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("r1", 0d); // n <= 0
+        variablesToAssert.put("r2", 1d); // n == 1
+        variablesToAssert.put("r3", 4d); // n=2: 2*2=4
+        variablesToAssert.put("r4", 9d); // n=3: 3*3=9
+        variablesToAssert.put("r5", 0d); // n=4: threshold check fails, returns 0
+        variablesToAssert.put("r6", 13d); // n=6 > 5: fib(5)+fib(4) = (fib(4)+fib(3))+(3*3) = (8+9)+8 = 13
+        variablesToAssert.put("r7", 21d); // n=7 > 5: fib(6)+fib(5) = 13+8 = 21
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests multiple return paths with state machine logic.
+     */
+    @Test(timeout = 5000)
+    public void testPythonStateMachineReturns() throws Exception {
+        String pythonCode = 
+            "def stateMachine(state, input):\n" +
+            "    if state == 0:\n" +
+            "        if input == 1:\n" +
+            "            return 1\n" +
+            "        else:\n" +
+            "            if input == 2:\n" +
+            "                return 2\n" +
+            "            else:\n" +
+            "                return 0\n" +
+            "    else:\n" +
+            "        if state == 1:\n" +
+            "            if input == 2:\n" +
+            "                return 3\n" +
+            "            else:\n" +
+            "                if input == 3:\n" +
+            "                    return 0\n" +
+            "                else:\n" +
+            "                    return 1\n" +
+            "        else:\n" +
+            "            if state == 2:\n" +
+            "                if input == 1:\n" +
+            "                    return 3\n" +
+            "                else:\n" +
+            "                    if input == 3:\n" +
+            "                        return 0\n" +
+            "                    else:\n" +
+            "                        return 2\n" +
+            "            else:\n" +
+            "                if input == 3:\n" +
+            "                    return 0\n" +
+            "                else:\n" +
+            "                    return 3\n" +
+            "\n" +
+            "s00 = stateMachine(0, 0)\n" +
+            "s01 = stateMachine(0, 1)\n" +
+            "s02 = stateMachine(0, 2)\n" +
+            "s12 = stateMachine(1, 2)\n" +
+            "s13 = stateMachine(1, 3)\n" +
+            "s21 = stateMachine(2, 1)\n" +
+            "s23 = stateMachine(2, 3)\n" +
+            "s33 = stateMachine(3, 3)\n" +
+            "s31 = stateMachine(3, 1)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("s00", 0d);
+        variablesToAssert.put("s01", 1d);
+        variablesToAssert.put("s02", 2d);
+        variablesToAssert.put("s12", 3d);
+        variablesToAssert.put("s13", 0d);
+        variablesToAssert.put("s21", 3d);
+        variablesToAssert.put("s23", 0d);
+        variablesToAssert.put("s33", 0d);
+        variablesToAssert.put("s31", 3d);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests return with while loop that modifies array and has multiple exit conditions.
+     */
+    @Test(timeout = 5000)
+    public void testPythonWhileLoopArrayReturnComplex() throws Exception {
+        String pythonCode = 
+            "def searchAndModify(arr, size, target, replacement):\n" +
+            "    i = 0\n" +
+            "    modifications = 0\n" +
+            "    returnValue = 0\n" +
+            "    negOne = -1\n" +
+            "    i = 0\n" +
+            "    while i < size:\n" +
+            "        if arr[i] == target:\n" +
+            "            arr[i] = replacement\n" +
+            "            modifications = modifications + 1\n" +
+            "            if modifications >= 3:\n" +
+            "                returnValue = modifications * 10\n" +
+            "                return returnValue\n" +
+            "        else:\n" +
+            "            if arr[i] > target:\n" +
+            "                if arr[i] > 12:\n" +
+            "                    returnValue = arr[i] + target\n" +
+            "                    return returnValue\n" +
+            "        i = i + 1\n" +
+            "    if modifications > 0:\n" +
+            "        return modifications\n" +
+            "    else:\n" +
+            "        return negOne\n" +
+            "\n" +
+            "arr1 = [0 for _ in range(8)]\n" +
+            "arr1[0] = 5\n" +
+            "arr1[1] = 10\n" +
+            "arr1[2] = 5\n" +
+            "arr1[3] = 15\n" +
+            "arr1[4] = 5\n" +
+            "arr1[5] = 20\n" +
+            "arr1[6] = 5\n" +
+            "arr1[7] = 25\n" +
+            "\n" +
+            "arr2 = [0 for _ in range(4)]\n" +
+            "arr2[0] = 3\n" +
+            "arr2[1] = 7\n" +
+            "arr2[2] = 3\n" +
+            "arr2[3] = 15\n" +
+            "\n" +
+            "arr3 = [0 for _ in range(3)]\n" +
+            "arr3[0] = 10\n" +
+            "arr3[1] = 20\n" +
+            "arr3[2] = 30\n" +
+            "\n" +
+            "res1 = searchAndModify(arr1, 8, 5, 99)\n" +
+            "res2 = searchAndModify(arr2, 4, 3, 88)\n" +
+            "res3 = searchAndModify(arr3, 3, 7, 11)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("res1", 30d); // 3 modifications, returns 3*10=30
+        variablesToAssert.put("res2", 18d); // Finds 15 (>3 and >12), returns 15+3=18
+        variablesToAssert.put("res3", -1d); // No target found, no modifications
+        
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 99d); // First 5 replaced
+        expectedArr1.put("2", 99d); // Second 5 replaced
+        expectedArr1.put("4", 99d); // Third 5 replaced
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        
+        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+    }
+
     // ========== AST PARSING TESTS ==========
 
     /**

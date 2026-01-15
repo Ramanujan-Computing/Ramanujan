@@ -48,11 +48,12 @@ public:
             while(commandRE != nullptr) {
                 commandRE = commandRE->get();
             }
-        }
-        // Normal completion of while loop
-        if (FunctionCommandRE::hasEncounteredReturn)
-        {
-            return nullptr;
+
+            // Normal completion of while loop
+            if (FunctionCommandRE::hasEncounteredReturn)
+            {
+                return nullptr;
+            }
         }
         return nextCommandRE;
     }

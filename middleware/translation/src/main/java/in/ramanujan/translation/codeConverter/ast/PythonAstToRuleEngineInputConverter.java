@@ -878,7 +878,7 @@ public class PythonAstToRuleEngineInputConverter {
             }
 
             // Convert the slice to the direct entity ID (variable/constant), not a command ID
-            String indexId = getArgumentId(sliceNode, variableScope);
+            String indexId = getArgumentId(sliceNode, variableScope, false);
             indices.add(0, indexId); // Add at front to maintain left-to-right order
             
             current = subscript.getValue();
@@ -1398,13 +1398,13 @@ public class PythonAstToRuleEngineInputConverter {
             
             if (elements != null) {
                 for (AstNode element : elements) {
-                    String valueId = getArgumentId(element, variableScope);
+                    String valueId = getArgumentId(element, variableScope, false);
                     returnValueIds.add(valueId);
                 }
             }
         } else {
             // Single return value
-            String valueId = getArgumentId(returnValue, variableScope);
+            String valueId = getArgumentId(returnValue, variableScope, true);
             returnValueIds.add(valueId);
         }
         
@@ -1440,7 +1440,7 @@ public class PythonAstToRuleEngineInputConverter {
                 
                 // operand2 is the return value - create a command wrapping it
                 String returnValueId = returnValueIds.get(i);
-                Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
+                Command returnValueCommand = createCommandForVariableOrArrayForReturn(returnValueId);
                 operation.setOperand2(returnValueCommand.getId());
                 
                 // operand1 is the return target variable from function arguments
@@ -1614,7 +1614,7 @@ public class PythonAstToRuleEngineInputConverter {
             }
             
             // Get the ID of the argument (variable, array, or methodArg)
-            String argumentId = getArgumentId(arg, variableScope);
+            String argumentId = getArgumentId(arg, variableScope, false);
             argumentIds.add(argumentId);
             
             // Add to debug output
@@ -1670,7 +1670,7 @@ public class PythonAstToRuleEngineInputConverter {
         
         // Add regular arguments first
         for (AstNode arg : call.getArgs()) {
-            String argumentId = getArgumentId(arg, variableScope);
+            String argumentId = getArgumentId(arg, variableScope, false);
             argumentIds.add(argumentId);
         }
         
@@ -1839,7 +1839,7 @@ public class PythonAstToRuleEngineInputConverter {
                             
                             // operand2 is the return value - create a command wrapping it
                             String returnValueId = returnValueIds.get(i);
-                            Command returnValueCommand = createCommandForVariableOrArray(returnValueId);
+                            Command returnValueCommand = createCommandForVariableOrArrayForReturn(returnValueId);
                             operation.setOperand2(returnValueCommand.getId());
                             
                             // operand1 is the return target variable from function arguments
@@ -2227,7 +2227,12 @@ public class PythonAstToRuleEngineInputConverter {
      * Creates a Command object that wraps a variable or array by its ID.
      * If array indices are provided, they are set on the ArrayCommand.
      */
-    private Command createCommandForVariableOrArray(String entityId) {
+    private Command createCommandForVariableOrArrayForReturn(String entityId) {
+        for (Command cmd : ruleEngineInput.getCommands()) {
+            if (entityId.equals(cmd.getId())) {
+                return cmd;
+            }
+        }
         return createCommandForVariableOrArray(entityId, null);
     }
     
@@ -2258,15 +2263,29 @@ public class PythonAstToRuleEngineInputConverter {
                 }
                 command.setArrayCommand(arrayCommand);
             } else {
-                // Could be a method arg - set as variableId
-                command.setVariableId(entityId);
+                Constant constant = findConstantById(entityId);
+                if (constant != null) {
+                    command.setConstant(constant.getId());
+                } else {
+                    // Could be a method arg - set as variableId
+                    command.setVariableId(entityId);
+                }
             }
         }
         
         ruleEngineInput.getCommands().add(command);
         return command;
     }
-    
+
+    private Constant findConstantById(String id) {
+        for (Constant c : ruleEngineInput.getConstants()) {
+            if (id.equals(c.getId())) {
+                return c;
+            }
+        }
+        return null;
+    }
+
     /**
      * Finds a Variable by its ID.
      */
@@ -2587,16 +2606,18 @@ public class PythonAstToRuleEngineInputConverter {
     
     /**
      * Gets the ID of an argument expression (variable, array, methodArg, constant, or unary op).
-     * 
+     *
      * <p>Used for function call arguments where we need just the entity ID,
      * not wrapped in a Command.</p>
-     * 
-     * @param arg The argument expression node (NameNode, ConstantNode, UnaryOpNode, etc.)
+     *
+     * @param arg           The argument expression node (NameNode, ConstantNode, UnaryOpNode, etc.)
      * @param variableScope Current scope stack for variable resolution
+     * @param forReturn     Only return can process superscripted arrays. Other callers cannot handle,
+     *                      because arayCommand is not allowed in funcCall or in arrayIndex in the interpreter.
      * @return The ID of the variable, array, methodArg, constant, or unary operation
      * @throws CompilationException If argument type is not supported or variable not found
      */
-    private String getArgumentId(AstNode arg, List<String> variableScope) throws CompilationException {
+    private String getArgumentId(AstNode arg, List<String> variableScope, boolean forReturn) throws CompilationException {
         // Handle constant literals as arguments (e.g., func(3, x))
         if (arg instanceof ConstantNode) {
             return createConstantForArgument((ConstantNode) arg);
@@ -2605,6 +2626,12 @@ public class PythonAstToRuleEngineInputConverter {
         // Handle unary operations as arguments (e.g., func(-x, ~y))
         if (arg instanceof UnaryOpNode) {
             return convertUnaryOpToCommand((UnaryOpNode) arg, variableScope).getConstant();
+        }
+
+        if (forReturn && arg instanceof SubscriptNode) {
+            // Handle array subscripting for return statements only
+            SubscriptNode subscript = (SubscriptNode) arg;
+            return convertSubscriptToCommand(subscript, variableScope);
         }
         
         if (!(arg instanceof NameNode)) {
