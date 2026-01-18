@@ -16,6 +16,9 @@ import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -28,6 +31,7 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
 public class ExecuteInline implements Operation {
     protected final TranslateUtil translateUtil = new TranslateUtil();
     protected final ObjectMapper objectMapper = new ObjectMapper();
+    protected boolean isSequentialMode = false;
 
 
     // Hook for subclasses: called before processing a DAG element
@@ -46,8 +50,23 @@ public class ExecuteInline implements Operation {
             postProcess(dagElement, null);
             return;
         }
+        
+        String ruleEngineJson = objectMapper.writeValueAsString(dagElement.getRuleEngineInput());
+        
+        // In sequential mode, write debug JSON before processing
+        if (isSequentialMode) {
+            try {
+                Files.write(Paths.get("/tmp/rule_engine_debug.json"), 
+                           ruleEngineJson.getBytes(), 
+                           StandardOpenOption.CREATE, 
+                           StandardOpenOption.TRUNCATE_EXISTING);
+            } catch (IOException e) {
+                System.err.println("Warning: Failed to write debug JSON: " + e.getMessage());
+            }
+        }
+        
         in.ramanujan.rule.engine.NativeProcessor nativeProcessor = new in.ramanujan.rule.engine.NativeProcessor();
-        nativeProcessor.process(objectMapper.writeValueAsString(dagElement.getRuleEngineInput()), dagElement.getFirstCommandId());
+        nativeProcessor.process(ruleEngineJson, dagElement.getFirstCommandId());
         for(Object en : nativeProcessor.jniObject.entrySet()) {
             Map.Entry<String, Object> entry = (Map.Entry<String, Object>) en;
             String key = entry.getKey();
@@ -74,6 +93,54 @@ public class ExecuteInline implements Operation {
         postProcess(dagElement, nativeProcessor);
     }
 
+    /**
+     * Execute DAG elements sequentially
+     */
+    protected void executeSequentially(DagElement firstDagElement, List<DagElement> dagElementList,
+                                     Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws IOException {
+        isSequentialMode = true;
+        Set<DagElement> completedElements = new HashSet<>();
+        Set<DagElement> allElements = new HashSet<>(dagElementList);
+        allElements.add(firstDagElement);
+        
+        Queue<DagElement> queue = new LinkedList<>();
+        queue.add(firstDagElement);
+        
+        while (!queue.isEmpty()) {
+            DagElement element = queue.poll();
+            
+            if (completedElements.contains(element)) {
+                continue;
+            }
+            
+            // Check if all dependencies are satisfied
+            boolean dependenciesSatisfied = true;
+            if (!element.getPreviousElements().isEmpty()) {
+                for (DagElement dependency : element.getPreviousElements()) {
+                    if (!completedElements.contains(dependency)) {
+                        dependenciesSatisfied = false;
+                        break;
+                    }
+                }
+            }
+            
+            if (!dependenciesSatisfied) {
+                // Re-queue this element and try again later
+                queue.add(element);
+                continue;
+            }
+            
+            // Execute the element
+            executeDagElement(element, variableMap, arrayMap);
+            completedElements.add(element);
+            
+            // Add next elements to queue
+            queue.addAll(element.getNextElements());
+        }
+        
+        isSequentialMode = false;
+    }
+    
     /**
      * Execute DAG elements in parallel where possible, respecting dependencies
      */
@@ -245,9 +312,21 @@ public class ExecuteInline implements Operation {
 
             startTime = System.currentTimeMillis();
             
-            // Execute DAG in parallel mode
-            System.out.println("Executing DAG in parallel mode");
-            executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
+            // Determine execution mode from arguments or default to parallel
+            boolean useSequential = false;
+            if (args.size() > 1) {
+                String executionMode = args.get(1).toLowerCase();
+                useSequential = executionMode.equals("sequential") || executionMode.equals("seq");
+            }
+            
+            // Execute DAG in chosen mode
+            if (useSequential) {
+                System.out.println("Executing DAG in sequential mode");
+                executeSequentially(firstDagElement, dagElementList, variableMap, arrayMap);
+            } else {
+                System.out.println("Executing DAG in parallel mode");
+                executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
+            }
 
             System.out.println("execution time: " + (System.currentTimeMillis() - startTime) + "ms");
 
