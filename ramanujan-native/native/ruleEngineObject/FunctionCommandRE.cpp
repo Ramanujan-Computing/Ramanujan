@@ -95,8 +95,8 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
             // Array parameter found
             arrCount++;
             // Build name mapping for debugging purposes
-            dataContainerNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
-                                                ((ArrayRE *) functionInfoRE->arguments[i])->name));
+//            dataContainerNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
+//                                                ((ArrayRE *) functionInfoRE->arguments[i])->name));
         } else {
             // Variable parameter found
             varCount++;

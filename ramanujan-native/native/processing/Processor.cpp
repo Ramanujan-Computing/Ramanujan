@@ -29,7 +29,7 @@ Processor::~Processor() {
 std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngineInput ruleEngineInput,
         std::string firstCommandId) {
     // Create memory maintainer for efficient function call memory management
-    DataContainerValueFunctionCommandREMemMaintainer memMaintainer;
+    DataContainerValueFunctionCommandREMemMaintainer* memMaintainer = new DataContainerValueFunctionCommandREMemMaintainer();
     
     std::unordered_map<std::string, RuleEngineInputUnits*>* mapBetweenIdAndRuleInput
         = createMap(ruleEngineInput);
@@ -61,7 +61,7 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
     {
         auto commandRE = dynamic_cast<CommandRE*>(mapBetweenIdAndRuleInput->at(command->id));
         if(commandRE->functionCommandRE != nullptr) {
-            commandRE->functionCommandRE->setMemMaintainer(&memMaintainer);
+            commandRE->functionCommandRE->setMemMaintainer(memMaintainer);
         }
     }
 
@@ -73,6 +73,7 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
         command = command->get();
     }
 
+    delete memMaintainer;
     return new std::unordered_map<std::string, ProcessingResult>();
 }
 
