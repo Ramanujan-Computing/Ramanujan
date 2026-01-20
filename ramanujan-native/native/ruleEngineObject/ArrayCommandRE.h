@@ -90,8 +90,7 @@ public:
     }
 
     void set(double value) override {
-       double *ptr = getArrayValueDataContainer();
-        *ptr = value;
+       *getArrayValueDataContainer() = value;
     }
 
     double get() override {

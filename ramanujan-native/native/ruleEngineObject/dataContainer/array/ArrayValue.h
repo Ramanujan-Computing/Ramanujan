@@ -213,7 +213,7 @@ public:
 class ArrayDataContainerValue : public DataContainerValue
 {
 public:
-    ArrayValue * arrayValue = nullptr;
+    ArrayValue * arrayValue = nullptr, *oldValue = nullptr;
     bool isClone = false;
 
     ArrayDataContainerValue() = default;

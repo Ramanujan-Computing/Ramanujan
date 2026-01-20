@@ -53,7 +53,7 @@ void ArrayDataContainerValue::setValueInDataContainerValueFunctionCommandRE(Data
 void ArrayDataContainerValue::saveValueAndCopyFrom(DataContainerValueFunctionCommandRE* savedValue, DataContainerValue* source) {
     // Save current value
     savedValue->arrayValuePtr = arrayValue->val;
-    auto oldValue = arrayValue;
+    oldValue = arrayValue;
     // Copy from source
     arrayValue = new ArrayValue(((ArrayDataContainerValue*) source)->arrayValue, true);
     delete oldValue;

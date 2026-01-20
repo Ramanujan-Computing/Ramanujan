@@ -26,6 +26,8 @@ public:
 
     DoublePtr(double  val)   {value = val;}
 
+    double placeholderVar = 0.0;
+
     // PERFORMANCE CRITICAL: Inlined to eliminate function call overhead (~11% of execution time)
     inline void copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) override;
 
@@ -141,11 +143,11 @@ inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommand
 
 inline void DoublePtr::saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) {
     // Save current value (final computed result)
-    double finalValue = value;
+    placeholderVar = value;
     // Restore from previous saved value
     value = restoreFrom->value;
     // Propagate final value to calling context
-    propagateTo->value = finalValue;
+    propagateTo->value = placeholderVar;
 }
 
 #endif //NATIVE_VARIABLERE_H

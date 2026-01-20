@@ -108,8 +108,7 @@ public:
     void set() override {
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(v1->value);
-        double val = v2->value;
-        v1->value = val;
+        v1->value = v2->value;
         DEBUG_ADD_DATA_DOUBLE_SET_AFTER(val);
     }
 };
