@@ -645,8 +645,8 @@ public class PythonAstToRuleEngineInputConverter {
             } else {
                 String targetId = existingVar != null ? existingVar.getId() : existingArray.getId();
                 
-                // Check if value is a function call - only for variables, not arrays
-                if (value instanceof CallNode && existingVar != null) {
+                // Check if value is a function call - handle both variables and arrays
+                if (value instanceof CallNode) {
                     FunctionCall functionCall = convertFunctionCallWithReturnTargets(
                         (CallNode) value, variableScope, Arrays.asList(targetId));
                     command.setFunctionCall(functionCall);
@@ -2498,20 +2498,26 @@ public class PythonAstToRuleEngineInputConverter {
     private String convertSubscriptToCommand(SubscriptNode subscript, List<String> variableScope) 
             throws CompilationException {
         
-        if (!(subscript.getValue() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex subscript not supported");
-        }
+        // Extract array name and indices (handles nested subscripts like arr[x1][y1])
+        // This method validates that:
+        // - The base is a simple name (no complex expressions like arr[func()][0])
+        // - Indices are simple names/constants (no function calls like arr[func()] or array elements like arr[someArray[i]])
+        SubscriptExtractionResult extractionResult = extractArrayNameAndIndices(subscript, variableScope);
+        String arrayVarName = extractionResult.arrayName;
+        List<String> indices = extractionResult.indices;
         
-        NameNode arrayName = (NameNode) subscript.getValue();
-        String arrayVarName = arrayName.getId();
+        // Validate that all indices are resolvable (variable, constant, or array names)
+        if (indices != null && !indices.isEmpty()) {
+            for (String indexId : indices) {
+                if (!isValidIndexId(indexId, variableScope)) {
+                    throw new CompilationException(null, null, "Array index " + indexId + " is not a valid variable or constant");
+                }
+            }
+        }
         
         // First check if it's a declared array
         Array array = getExistingArray(arrayVarName, variableScope);
         if (array != null) {
-            // Extract indices from the subscript
-            SubscriptExtractionResult extractionResult = extractArrayNameAndIndices(subscript, variableScope);
-            List<String> indices = extractionResult.indices;
-            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
             ArrayCommand arrayCommand = new ArrayCommand();
@@ -2540,10 +2546,6 @@ public class PythonAstToRuleEngineInputConverter {
             codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + arrayVarName);
             codeConverter.setArray(newArray, scope);
             
-            // Extract indices from the subscript
-            SubscriptExtractionResult extractionResult = extractArrayNameAndIndices(subscript, variableScope);
-            List<String> indices = extractionResult.indices;
-            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
             ArrayCommand arrayCommand = new ArrayCommand();
@@ -2561,7 +2563,47 @@ public class PythonAstToRuleEngineInputConverter {
     }
     
     /**
+     * Validates that an index ID references a known variable, constant, or array.
+     * Converts method arguments to variables when encountered.
+     */
+    private boolean isValidIndexId(String indexId, List<String> variableScope) {
+        // Check if it's a variable
+        if (findVariableById(indexId) != null) {
+            return true;
+        }
+        // Check if it's a constant
+        if (findConstantById(indexId) != null) {
+            return true;
+        }
+        // Check if it's an array
+        if (findArrayById(indexId) != null) {
+            return true;
+        }
+        // Check if it's a method argument
+        MethodDataTypeAgnosticArg methodArg = findMethodArgById(indexId);
+        if (methodArg != null) {
+            // Convert MethodArg to Variable when first used
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().remove(methodArg);
+            Variable newVar = new Variable();
+            newVar.setId(methodArg.getId());
+            newVar.setName(methodArg.getName());
+            newVar.setDataType("Integer"); // Default type, will be refined during operations
+            
+            ruleEngineInput.getVariables().add(newVar);
+            String scope = getScope(variableScope);
+            codeConverter.getMethodDataTypeAgnosticArgMap().remove(scope + methodArg.getName());
+            codeConverter.setVariable(newVar, scope);
+            return true;
+        }
+        return false;
+    }
+    
+    /**
      * Converts a function call expression and wraps it in a Command.
+     * 
+     * <p>Note: This method is used when a function call appears as part of an expression
+     * (e.g., in arithmetic operations). For assignment statements like `x = func()`,
+     * the caller should use convertFunctionCallWithReturnTargets instead.</p>
      */
     private String convertCallExpressionToCommand(CallNode call, List<String> variableScope) 
             throws CompilationException {
@@ -2570,16 +2612,21 @@ public class PythonAstToRuleEngineInputConverter {
             throw new CompilationException(null, null, "Complex function calls not supported");
         }
         
+        NameNode funcName = (NameNode) call.getFunc();
+        String functionName = funcName.getId();
+        
         FunctionCall functionCall = new FunctionCall();
-        functionCall.setId("funcCall_" + UUID.randomUUID().toString());
+        functionCall.setId(functionName);  // Use actual function name, not random ID
         
-        List<String> argCommandIds = new ArrayList<>();
+        List<String> argumentIds = new ArrayList<>();
         for (AstNode arg : call.getArgs()) {
-            argCommandIds.add(convertExpressionToCommand(arg, variableScope));
+            // Use getArgumentId to get variable/array IDs directly, not wrapped in commands
+            String argumentId = getArgumentId(arg, variableScope, false);
+            argumentIds.add(argumentId);
         }
-        functionCall.setArguments(argCommandIds);
+        functionCall.setArguments(argumentIds);
         
-        ruleEngineInput.getFunctionCalls().add(functionCall);
+        // Don't add to ruleEngineInput.getFunctionCalls() - this is a call site, not a definition
         
         Command command = new Command();
         command.setId("command_" + UUID.randomUUID().toString());

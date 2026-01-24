@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 
+import static in.ramanujan.translation.codeConverter.utils.TranslateUtil.isPythonCode;
+
 
 @Component
 public class TranslateService {
@@ -32,9 +34,15 @@ public class TranslateService {
     * variableMap and arrayMap are used when we need to return end-result of computation to the end-developer.
     *
     * Heuristic:
-    * 1. Convert all the functions to corresponding RuleEngineInput and extract all the non-function code.
-    * 2. Get the graph of CodeSnippetElement in the extracted code.
-    * 3. Each CodeSnippetElement object has to be converted to DagElement.
+    * 1. Detect if code is Python or Ramanujan.
+    * 2. For Ramanujan code:
+    *    a. Convert all the functions to corresponding RuleEngineInput and extract all the non-function code.
+    *    b. Get the graph of CodeSnippetElement in the extracted code.
+    *    c. Each CodeSnippetElement object has to be converted to DagElement.
+    * 3. For Python code:
+    *    a. Skip function extraction step.
+    *    b. Get the graph of CodeSnippetElement directly.
+    *    c. Each CodeSnippetElement object has to be converted to DagElement.
     * 4. Return the entry point in the DagElement graph.
     * */
     public Future<TranslateResponse> translate(String code, List<CsvInformation> csvInformationList, Map<String, Variable> variableMap,
@@ -44,20 +52,35 @@ public class TranslateService {
             TranslateResponse translateResponse = new TranslateResponse();
             Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
             ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", 0);
-            ExtractedCodeAndFunctionCode extractedCodeAndFunctionCode =
-                    translateUtil.extractCodeWithoutAbstractCodeDeclaration(code, functionCallsRuleEngineInput, actualDebugCodeCreator);
-            code = extractedCodeAndFunctionCode.getExtractedCode();
-            CodeSnippetElement firstCodeSnippetElement = translateUtil.getCodeSnippets(code, new HashMap<>(),
+            
+            boolean isPython = isPythonCode(code);
+            String extractedCode;
+            String functionCode = "";
+            int linesForFunctions;
+            
+            if (isPython) {
+                // For Python code, skip function extraction
+                extractedCode = code;
+                linesForFunctions = 0;
+            } else {
+                // For Ramanujan code, extract functions as before
+                ExtractedCodeAndFunctionCode extractedCodeAndFunctionCode =
+                        translateUtil.extractCodeWithoutAbstractCodeDeclaration(code, functionCallsRuleEngineInput, actualDebugCodeCreator);
+                extractedCode = extractedCodeAndFunctionCode.getExtractedCode();
+                functionCode = extractedCodeAndFunctionCode.getFunctionCode();
+                linesForFunctions = actualDebugCodeCreator.getLine();
+            }
+            
+            CodeSnippetElement firstCodeSnippetElement = translateUtil.getCodeSnippets(extractedCode, new HashMap<>(),
                     new HashMap<>(), new HashMap<>());
             List<DagElement> dagElementList = new ArrayList<>();
             Map<String, String> dagElementAndCodeMap = new HashMap<>();
-            int linesForFunctions = actualDebugCodeCreator.getLine();
             DagElement firstDagElement  = translateUtil.populateAllDagElements(firstCodeSnippetElement, csvInformationList,
                     functionCallsRuleEngineInput, variableMap, arrayMap, dagElementList, dagElementAndCodeMap, linesForFunctions);
             translateResponse.setFirstDagElement(firstDagElement);
             translateResponse.setDagElementList(dagElementList);
             translateResponse.setCodeAndDagElementMap(dagElementAndCodeMap);
-            translateResponse.setCommonFunctionCode(extractedCodeAndFunctionCode.getFunctionCode());
+            translateResponse.setCommonFunctionCode(functionCode);
             future.complete(translateResponse);
         } catch (Exception e) {
             future.fail(e);

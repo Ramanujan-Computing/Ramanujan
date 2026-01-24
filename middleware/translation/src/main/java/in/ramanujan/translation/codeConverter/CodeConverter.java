@@ -176,6 +176,7 @@ public class CodeConverter {
             return commands;
             
         } catch (Exception e) {
+            e.printStackTrace();
             throw new CompilationException(null, null, "Error parsing Python code: " + e.getMessage());
         }
     }
