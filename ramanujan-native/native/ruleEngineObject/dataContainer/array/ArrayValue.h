@@ -216,6 +216,8 @@ public:
     ArrayValue * arrayValue = nullptr, *oldValue = nullptr;
     bool isClone = false;
 
+    double* placeholder= nullptr;
+
     ArrayDataContainerValue() = default;
 
     ArrayDataContainerValue(ArrayValue* arrayValueIn, bool isClone = false)

@@ -109,6 +109,8 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
             }
         }
     }
+
+    double* arrayPlaceHolder = nullptr;
     
     void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) override
     {
@@ -117,11 +119,11 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
             if (isArray)
             {
                 // Save current value (final computed result)
-                double* finalArrayPtr = arrayValue->val;
+                arrayPlaceHolder = arrayValue->val;
                 // Restore from previous saved value
                 arrayValue->val = restoreFrom->arrayValuePtr;
                 // Propagate final value to calling context
-                ((ArrayDataContainerValue*)propagateTo)->arrayValue->val = finalArrayPtr;
+                ((ArrayDataContainerValue*)propagateTo)->arrayValue->val = arrayPlaceHolder;
             }
             else
             {

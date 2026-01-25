@@ -17,11 +17,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-include_directories($ENV{JDK_HOME}/include)
-IF(UNIX AND NOT APPLE)
-    include_directories($ENV{JDK_HOME}/include/linux)
-ELSEIF(APPLE)
-    include_directories($ENV{JDK_HOME}/include/darwin)
+# JNI include paths - use Android NDK for Android builds, otherwise use JDK_HOME
+IF(ANDROID)
+    # For Android builds, use NDK's JNI headers
+    include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
+ELSE()
+    # For non-Android builds, use JDK_HOME
+    include_directories($ENV{JDK_HOME}/include)
+    IF(UNIX AND NOT APPLE)
+        include_directories($ENV{JDK_HOME}/include/linux)
+    ELSEIF(APPLE)
+        include_directories($ENV{JDK_HOME}/include/darwin)
+    ENDIF()
 ENDIF()
 
 add_definitions(-D_GNU_SOURCE)
