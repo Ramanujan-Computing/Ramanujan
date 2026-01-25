@@ -26,6 +26,7 @@ public class Command extends RuleEngineInputUnits {
     private Boolean returnStatement;
     private List<String> returnValueIds;
     private List<String> returnTargetIds;
+    private String returnOperation;
 
     public Command() {
         setClazz(Command.class);

@@ -23,6 +23,7 @@ class Command : public RuleEngineInputUnit {
         std::string variableId;
         std::string conditionId;
         std::string whileId;
+        std::string returnOperation;
         FunctionCall* functionCall = nullptr;
         std::vector<std::string> nextDagTriggerIds;
         ArrayCommand* arrayCommand = nullptr;
@@ -39,6 +40,7 @@ class Command : public RuleEngineInputUnit {
             this->variableId = (*value)["variableId"].asString();
             this->conditionId = (*value)["conditionId"].asString();
             this->whileId = (*value)["whileId"].asString();
+            this->returnOperation = (*value)["returnOperation"].asString();
             this->codeStrPtr = (*value)["codeStrPtr"].asInt();
             this->returnStatement = (*value)["returnStatement"].asBool();
             

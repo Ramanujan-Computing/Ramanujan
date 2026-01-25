@@ -11,6 +11,7 @@
 #include "../ruleEngineObject/dataContainer/VariableRE.h"
 #include "../ruleEngineObject/dataContainer/ArrayRE.h"
 #include "../ruleEngineObject/OperationRE.h"
+#include "../ruleEngineObject/ReturnOperationRE.h"
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/FunctionCommandRE.h"
 #include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
@@ -41,6 +42,7 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
     fixGraph(mapBetweenIdAndRuleInput);
 
     fixOperator(mapBetweenIdAndRuleInput, *ruleEngineInput.operations);
+    fixReturnOperations(mapBetweenIdAndRuleInput, *ruleEngineInput.returnOperations);
     fixConditions(mapBetweenIdAndRuleInput, *ruleEngineInput.conditions);
 
     for(RuleEngineInputUnits* variable : variableREs) {
@@ -150,6 +152,7 @@ std::unordered_map<std::string, RuleEngineInputUnits*>* Processor::createMap(Rul
     storeInIdMap(map, ruleEngineInput.whileBlocks);
     storeInIdMap(map, ruleEngineInput.commands);
     storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
+    storeInIdMap(map, ruleEngineInput.returnOperations);
     return map;
 }
 
@@ -248,5 +251,17 @@ void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnit
     for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
         pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
     }
+}
+
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<ReturnOperation*>* list1) {
+    for(std::vector<ReturnOperation*>::iterator itr = list1->begin(); itr !=  list1->end(); itr++) {
+        pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+    }
+}
+
+void Processor::fixReturnOperations(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap,
+        std::vector<ReturnOperation *> returnOperations) {
+    // ReturnOperations don't need caching like Operations do, as they always use AssignImplBothVar
+    // The initialization happens in ReturnOperationRE::setFields
 }
 

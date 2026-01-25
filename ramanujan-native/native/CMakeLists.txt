@@ -61,6 +61,7 @@ set(SOURCE_FILES
         ruleEngineObject/FunctionCommandRE.h
         ruleEngineObject/IfRE.h
         ruleEngineObject/OperationRE.h
+        ruleEngineObject/ReturnOperationRE.h
         ruleEngineObject/WhileRE.h
         ruleEngineObject/dataContainer/VariableRE.h
         ruleEngineObject/dataContainer/AbstractDataContainer.h
@@ -72,6 +73,7 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/VaraiableRE.cpp
         input/Variable.cpp
         input/Operation.cpp
+        input/ReturnOperation.cpp
         input/Condition.cpp
         input/Constant.cpp
         input/FunctionCall.cpp
@@ -119,6 +121,7 @@ set(SOURCE_FILES
         ruleEngineObject/processingDefinition/IfReProcessing.h
         ruleEngineObject/processingDefinition/WhileReProcessing.h
         ruleEngineObject/processingDefinition/OperationReProcessing.h
+        ruleEngineObject/processingDefinition/ReturnOperationReProcessing.h
         ruleEngineObject/processingDefinition/VariableReProcessing.h
         ruleEngineObject/processingDefinition/FunctionReProcessing.h
         ruleEngineObject/processingDefinition/ConditionReProcessing.h

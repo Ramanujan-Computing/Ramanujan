@@ -11,6 +11,7 @@
 #include "Variable.hpp"
 
 #include "OperationRE.h"
+#include "ReturnOperationRE.h"
 #include "IfRE.h"
 #include "ConstantRE.h"
 #include "ArrayCommandRE.h"
@@ -26,6 +27,7 @@
 #include "processingDefinition/VariableReProcessing.h"
 #include "processingDefinition/FunctionReProcessing.h"
 #include "processingDefinition/RedefineArrayCommandReProcessing.h"
+#include "processingDefinition/ReturnOperationReProcessing.h"
 #include "ReturnRE.h"
 
 #include "DefaultRuleEngineUnits.h"
@@ -42,6 +44,7 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     nextCommandRE = dynamic_cast<CommandRE *>(getFromMap(map, command->nextId));
     whileCommandRE = dynamic_cast<WhileRE *>(getFromMap(map, command->whileId));
     operationCommand = dynamic_cast<OperationRE *>(getFromMap(map, command->operation));
+    returnOperationCommand = dynamic_cast<ReturnOperationRE *>(getFromMap(map, command->returnOperation));
     ifCommandRE = dynamic_cast<IfRE *>(getFromMap(map, command->ifBlocks));
     constantRE = dynamic_cast<ConstantRE *>(getFromMap(map, command->constant));
     variableRE = dynamic_cast<VariableRE *>(getFromMap(map, command->variableId));
@@ -100,6 +103,12 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
         unit = operationCommand;
         operationCommand->nextCommandRE = nextCommandRE;  // Pass next command to operation
         commandTypeProcessingDefinition = new OperationReProcessing(operationCommand);
+    }
+
+    if(returnOperationCommand != nullptr) {
+        unit = returnOperationCommand;
+        returnOperationCommand->nextCommandRE = nextCommandRE;  // Pass next command to return operation
+        commandTypeProcessingDefinition = new ReturnOperationReProcessing(returnOperationCommand);
     }
 
     if(functionCommandRE != nullptr) {

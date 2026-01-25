@@ -1433,15 +1433,15 @@ public class PythonAstToRuleEngineInputConverter {
                 assignCommand.setId("command_" + UUID.randomUUID().toString());
                 assignCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
                 
-                // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
-                Operation operation = new Operation();
-                operation.setId(UUID.randomUUID().toString());
-                operation.setOperatorType("=");
+                // Create the ReturnOperation for: returnTargetIds[i] = returnValueIds[i]
+                ReturnOperation returnOperation = new ReturnOperation();
+                returnOperation.setId(UUID.randomUUID().toString());
+                returnOperation.setOperatorType("=");
                 
                 // operand2 is the return value - create a command wrapping it
                 String returnValueId = returnValueIds.get(i);
                 Command returnValueCommand = createCommandForVariableOrArrayForReturn(returnValueId);
-                operation.setOperand2(returnValueCommand.getId());
+                returnOperation.setOperand2(returnValueCommand.getId());
                 
                 // operand1 is the return target variable from function arguments
                 String returnTargetId = returnTargetIds.get(i);
@@ -1451,10 +1451,10 @@ public class PythonAstToRuleEngineInputConverter {
                 targetCommand.setVariableId(returnTargetId);
                 ruleEngineInput.getCommands().add(targetCommand);
                 
-                operation.setOperand1(targetCommand.getId());
+                returnOperation.setOperand1(targetCommand.getId());
                 
-                ruleEngineInput.getOperations().add(operation);
-                assignCommand.setOperation(operation.getId());
+                ruleEngineInput.getReturnOperations().add(returnOperation);
+                assignCommand.setReturnOperation(returnOperation.getId());
                 
                 ruleEngineInput.getCommands().add(assignCommand);
                 
@@ -1832,15 +1832,15 @@ public class PythonAstToRuleEngineInputConverter {
                             assignCommand.setId("command_" + UUID.randomUUID().toString());
                             assignCommand.setCodeStrPtr(cmd.getCodeStrPtr());
                             
-                            // Create the Operation for: returnTargetIds[i] = returnValueIds[i]
-                            Operation operation = new Operation();
-                            operation.setId(UUID.randomUUID().toString());
-                            operation.setOperatorType("=");
+                            // Create the ReturnOperation for: returnTargetIds[i] = returnValueIds[i]
+                            ReturnOperation returnOperation = new ReturnOperation();
+                            returnOperation.setId(UUID.randomUUID().toString());
+                            returnOperation.setOperatorType("=");
                             
                             // operand2 is the return value - create a command wrapping it
                             String returnValueId = returnValueIds.get(i);
                             Command returnValueCommand = createCommandForVariableOrArrayForReturn(returnValueId);
-                            operation.setOperand2(returnValueCommand.getId());
+                            returnOperation.setOperand2(returnValueCommand.getId());
                             
                             // operand1 is the return target variable from function arguments
                             String returnTargetId = returnTargetIds.get(i);
@@ -1850,10 +1850,10 @@ public class PythonAstToRuleEngineInputConverter {
                             targetCommand.setVariableId(returnTargetId);
                             ruleEngineInput.getCommands().add(targetCommand);
                             
-                            operation.setOperand1(targetCommand.getId());
+                            returnOperation.setOperand1(targetCommand.getId());
                             
-                            ruleEngineInput.getOperations().add(operation);
-                            assignCommand.setOperation(operation.getId());
+                            ruleEngineInput.getReturnOperations().add(returnOperation);
+                            assignCommand.setReturnOperation(returnOperation.getId());
                             
                             ruleEngineInput.getCommands().add(assignCommand);
                             

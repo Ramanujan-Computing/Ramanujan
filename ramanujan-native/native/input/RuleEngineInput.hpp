@@ -15,6 +15,7 @@
 #include "While.hpp"
 #include "RedefineArrayCommand.hpp"
 #include "Return.hpp"
+#include "ReturnOperation.hpp"
 
 #include <json/json.h>
 
@@ -33,6 +34,7 @@ class RuleEngineInput {
         std::vector<FunctionCall*> *functionCalls = new std::vector<FunctionCall*>();
         std::vector<While*> *whileBlocks = new std::vector<While*>();
         std::vector<RedefineArrayCommand*> *redefineArrayCommands = new std::vector<RedefineArrayCommand*>();
+        std::vector<ReturnOperation*> *returnOperations = new std::vector<ReturnOperation*>();
 
         RuleEngineInput(Json::Value* value) {
             Json::Value variables = (*value)["variables"];
@@ -87,6 +89,11 @@ class RuleEngineInput {
             Json::Value redefineArrayCommands = (*value)["redefineArrayCommands"];
             for(int i = 0; i < redefineArrayCommands.size(); i++) {
                 this->redefineArrayCommands->push_back(new RedefineArrayCommand(&redefineArrayCommands[i]));
+            }
+
+            Json::Value returnOperations = (*value)["returnOperations"];
+            for(int i = 0; i < returnOperations.size(); i++) {
+                this->returnOperations->push_back(new ReturnOperation(&returnOperations[i]));
             }
         }
 };
