@@ -41,6 +41,11 @@ class Processor {
 
     std::list<RuleEngineInputUnits*> arrayREs;
     std::list<RuleEngineInputUnits*> variableREs;
+    
+    // Deferred setFields - these units need setFields called after all other units
+    std::list<RuleEngineInputUnits*> deferredWhileREs;
+    std::list<RuleEngineInputUnits*> deferredIfREs;
+    std::list<RuleEngineInputUnits*> deferredFunctionCommandREs;
 
 
 

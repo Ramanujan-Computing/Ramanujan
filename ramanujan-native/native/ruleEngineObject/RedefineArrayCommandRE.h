@@ -75,7 +75,7 @@ public:
         if (dims) delete[] dims;
     }
 
-    CommandRE* process() override; // To be implemented: logic to redefine the array in memory
+    RuleEngineInputUnits* process() override; // To be implemented: logic to redefine the array in memory
 };
 
 #endif // NATIVE_REDEFINEARRAYCOMMANDRE_H

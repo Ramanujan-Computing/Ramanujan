@@ -34,8 +34,8 @@ public:
 
     }
 
-    CommandRE* process() override {
-        return nextCommandRE;
+    RuleEngineInputUnits* process() override {
+        return nextUnit;
     }
 
     void destroy() {

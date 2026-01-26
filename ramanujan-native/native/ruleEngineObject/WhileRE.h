@@ -15,7 +15,7 @@ class WhileRE : public RuleEngineInputUnits {
 private:
     While* whileCommand;
     ConditionRE* conditionRe;
-    CommandRE* whileCommandRE;
+    RuleEngineInputUnits* whileCommandRE;
 
 public:
     WhileRE(While* whileCommand) {
@@ -25,12 +25,15 @@ public:
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
         id = whileCommand->id;
         immediateParent = getFromMap(map, whileCommand->immediateParentRuleEngineInputUnitId);
-        whileCommandRE = dynamic_cast<CommandRE *>(getFromMap(map, whileCommand->whileCommandId));
+        whileCommandRE = (dynamic_cast<CommandRE *>(getFromMap(map, whileCommand->whileCommandId)));
+        if (whileCommandRE != nullptr) {
+            whileCommandRE = ((CommandRE*)whileCommandRE)->getUnit();
+        }
         conditionRe = dynamic_cast<ConditionRE *>(getFromMap(map, whileCommand->conditionId));
         conditionRe->whileUser.insert(this);
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
 #ifdef DEBUG_BUILD
         int debugLine = debugger->getDebugPointToBeCommitted()->line;
         while(true) {
@@ -46,9 +49,9 @@ public:
 #else
         while(conditionFunctioning->operate()) {
 #endif
-            CommandRE* commandRE = whileCommandRE;
-            while(commandRE != nullptr) {
-                commandRE = commandRE->get();
+            RuleEngineInputUnits* unit = whileCommandRE;
+            while(unit != nullptr) {
+                unit = unit->process();
             }
 
              // Check if a return was encountered in the while loop body
@@ -62,7 +65,7 @@ public:
                 return nullptr;
             }
         }
-        return nextCommandRE;
+        return nextUnit;
     }
 
     void destroy() {

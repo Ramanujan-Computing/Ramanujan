@@ -16,8 +16,8 @@ class IfRE : public RuleEngineInputUnits {
 private:
     If* ifCommand;
     ConditionRE* conditionRe;
-    CommandRE* ifCommandRE = nullptr;
-    CommandRE* elseCommandRE = nullptr;
+    RuleEngineInputUnits* ifCommandRE = nullptr;
+    RuleEngineInputUnits* elseCommandRE = nullptr;
 
 
 public:
@@ -37,29 +37,35 @@ public:
         id = ifCommand->id;
         immediateParent = getFromMap(map, ifCommand->immediateParentRuleEngineInputUnitId);
         conditionRe = dynamic_cast<ConditionRE*> (getFromMap(map, ifCommand->conditionId));
-        ifCommandRE = dynamic_cast<CommandRE*> (getFromMap(map, ifCommand->ifCommand));
-        elseCommandRE = dynamic_cast<CommandRE*> (getFromMap(map, ifCommand->elseCommand));
+        ifCommandRE = (dynamic_cast<CommandRE*> (getFromMap(map, ifCommand->ifCommand)));
+        if (ifCommandRE != nullptr) {
+            ifCommandRE = ((CommandRE*)ifCommandRE)->getUnit();
+        }
+        elseCommandRE = (dynamic_cast<CommandRE*> (getFromMap(map, ifCommand->elseCommand)));
+        if (elseCommandRE != nullptr) {
+            elseCommandRE = ((CommandRE*)elseCommandRE)->getUnit();
+        }
         conditionRe->ifUser.insert(this);
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
 
 #ifdef DEBUG_BUILD
         std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
 #endif
-        CommandRE* commandRE;
+        RuleEngineInputUnits* unit;
         if(conditionFunctioning->operate()) {
-            commandRE = ifCommandRE;
+            unit = ifCommandRE;
         } else {
-            commandRE = elseCommandRE;
+            unit = elseCommandRE;
         }
 #ifdef DEBUG_BUILD
         debugPoint->setCondResult(result);
         debugger->commitDebugPoint();
 #endif
 
-        while(commandRE != nullptr) {
-            commandRE = commandRE->get();
+        while(unit != nullptr) {
+            unit = unit->process();
         }
         
         // Check if a return was encountered in the if/else block
@@ -73,7 +79,7 @@ public:
             return nullptr;
         }
         
-        return nextCommandRE;
+        return nextUnit;
     }
 };
 

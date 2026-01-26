@@ -54,12 +54,14 @@ public:
     // Functions would have demarcation between variable and array in args.
     CommandProcessing* defaultCommandProcessing;
     CommandRE(Command *command);
+    void chooseRuleEngineUnits(std::unordered_map<std::string, RuleEngineInputUnits *> *map);
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override;
-    CommandRE* process() override;
-    CommandRE* get();
+    RuleEngineInputUnits* process() override;
     DataOperation *getDataOperation();
     DoublePtr * getVar();
     bool evalCondition();
+    
+    RuleEngineInputUnits* getUnit() { return unit; }
 
     void destroy() override {
         if(arrayCommandRE != nullptr) {

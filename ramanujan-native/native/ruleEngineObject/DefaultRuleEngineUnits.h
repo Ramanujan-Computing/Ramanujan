@@ -9,8 +9,8 @@
 
 class DefaultRuleEngineUnits : public RuleEngineInputUnits {
 public:
-    CommandRE* process() override {
-        return nextCommandRE;
+    RuleEngineInputUnits* process() override {
+        return nextUnit;
     }
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {

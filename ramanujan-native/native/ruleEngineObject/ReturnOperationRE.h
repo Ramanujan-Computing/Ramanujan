@@ -37,13 +37,13 @@ public:
         v2 = operandCommandRE2->getVar();
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
         v1->value = v2->value;
         
 #ifdef DEBUG_BUILD
         debugger->commitDebugPoint();
 #endif
-        return nextCommandRE;
+        return nextUnit;
     }
 };
 

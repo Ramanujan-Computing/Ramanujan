@@ -19,7 +19,7 @@ protected:
 
 public:
     std::string id;
-    CommandRE* nextCommandRE = nullptr;  // Next command to execute after this unit
+    RuleEngineInputUnits* nextUnit = nullptr;  // Next unit to execute after this unit
     RuleEngineInputUnits* immediateParent = nullptr;  // Parent scope unit (FunctionCommandRE, WhileRE, IfRE)
     
     // Flags for control flow propagation
@@ -28,7 +28,7 @@ public:
     bool encounteredContinue = false;
     
     virtual void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) = 0;
-    virtual CommandRE* process() = 0;  // Returns next command (nullptr on return statement)
+    virtual RuleEngineInputUnits* process() = 0;  // Returns next unit (nullptr on return statement)
     std::string getId() {
         return id;
     }

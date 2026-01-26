@@ -101,14 +101,14 @@ private:
     int argSize = 0;
     
     /**
-     * First command to execute in the function body.
+     * First unit to execute in the function body.
      * This is the entry point for function execution and represents the head
-     * of the command chain that forms the function's body.
+     * of the unit chain that forms the function's body.
      * Set during setFields() from functionInfoRE->commmandRe or retrieved from map.
      */
-    CommandRE* firstCommand;
+    RuleEngineInputUnits* firstUnit;
 
-    CommandRE* command = nullptr;
+    RuleEngineInputUnits* unit = nullptr;
 
     // ==================== Total Variable/Array Counts ====================
     
@@ -286,9 +286,9 @@ public:
      * This method handles complex stack management required for proper function
      * call semantics including recursive calls and memory management.
      * 
-     * Returns: nextCommandRE after function completes (nullptr handled internally)
+     * Returns: nextUnit after function completes (nullptr handled internally)
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
     
     /**
      * Alternative processing method (currently unused).
@@ -406,7 +406,7 @@ public:
      * Executes negative infinity assignment.
      * Sets the target variable or all array elements to -std::numeric_limits<double>::infinity()
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -429,7 +429,7 @@ public:
      * Executes positive infinity assignment.
      * Sets the target variable or all array elements to +std::numeric_limits<double>::infinity()
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -452,7 +452,7 @@ public:
      * Executes random number generation.
      * Uses static random engine to generate uniformly distributed random numbers.
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -475,7 +475,7 @@ public:
      * Executes absolute value computation.
      * Modifies the input variable to contain its absolute value.
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -497,7 +497,7 @@ public:
      * Executes sine computation.
      * Modifies the input variable to contain sin(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -519,7 +519,7 @@ public:
      * Executes cosine computation.
      * Modifies the input variable to contain cos(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -541,7 +541,7 @@ public:
      * Executes tangent computation.
      * Modifies the input variable to contain tan(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -564,7 +564,7 @@ public:
      * Executes arcsine computation.
      * Modifies the input variable to contain asin(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -587,7 +587,7 @@ public:
      * Executes arccosine computation.
      * Modifies the input variable to contain acos(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -610,7 +610,7 @@ public:
      * Executes arctangent computation.
      * Modifies the input variable to contain atan(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -633,7 +633,7 @@ public:
      * Executes floor computation.
      * Modifies the input variable to contain floor(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -656,7 +656,7 @@ public:
      * Executes ceiling computation.
      * Modifies the input variable to contain ceil(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -679,7 +679,7 @@ public:
      * Executes exponential computation.
      * Modifies the input variable to contain exp(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -702,7 +702,7 @@ public:
      * Executes square root computation.
      * Modifies the input variable to contain sqrt(variable).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 /**
@@ -725,7 +725,7 @@ public:
      * Executes power computation.
      * Modifies the first variable to contain pow(first_var, second_var).
      */
-    CommandRE* process() override;
+    RuleEngineInputUnits* process() override;
 };
 
 // ==================== Factory Function for Function Command Creation ====================

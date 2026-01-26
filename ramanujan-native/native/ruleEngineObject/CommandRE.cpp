@@ -38,8 +38,7 @@ CommandRE::CommandRE(Command *command) {
     this->command = command;
 }
 
-void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
-    nextCommandRE = dynamic_cast<CommandRE *>(getFromMap(map, command->nextId));
+void CommandRE::chooseRuleEngineUnits(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
     whileCommandRE = dynamic_cast<WhileRE *>(getFromMap(map, command->whileId));
     operationCommand = dynamic_cast<OperationRE *>(getFromMap(map, command->operation));
     ifCommandRE = dynamic_cast<IfRE *>(getFromMap(map, command->ifBlocks));
@@ -53,14 +52,7 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     immediateParent = getFromMap(map, command->immediateParentRuleEngineInputUnitId);
 
     if (command->functionCall != nullptr) {
-        /*
-         * TODO:
-         * command.functionCall contains the information about how that command is going execute the function which is
-         * pointed by functionCall.id;
-         * FunctionCallRE has to be created in Processor.
-         */
         functionCommandRE = GetFunctionCommandRE(command->functionCall, command->functionCall->id, map);
-        functionCommandRE->setFields(map);
     }
 
     if (command->arrayCommand != nullptr) {
@@ -73,13 +65,11 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
 
     if(command -> redefineArrayCommand != nullptr) {
         redefineArrayCommandRE = new RedefineArrayCommandRE(command->redefineArrayCommand->arrayId, command->redefineArrayCommand->newDimensions);
-        redefineArrayCommandRE->setFields(map);
     }
 
     returnStatement = command->returnStatement;
 
     unit = nullptr;
-    commandTypeProcessingDefinition = nullptr;
 
     // If this command is a return statement, use ReturnRE as the unit
     if (returnStatement) {
@@ -91,44 +81,93 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
         
         returnRE = new ReturnRE({}, assignmentPairs);
         returnRE->immediateParent = immediateParent;
-        returnRE->setFields(map);
         unit = returnRE;
     }
 
     if(ifCommandRE != nullptr) {
         unit = ifCommandRE;
-        ifCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to if block
-        commandTypeProcessingDefinition = new IfReProcessing(ifCommandRE);
     }
 
     if(whileCommandRE != nullptr) {
         unit = whileCommandRE;
-        whileCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to while block
-        commandTypeProcessingDefinition = new WhileReProcessing(whileCommandRE);
     }
 
     if(operationCommand != nullptr) {
         unit = operationCommand;
-        operationCommand->nextCommandRE = nextCommandRE;  // Pass next command to operation
-        commandTypeProcessingDefinition = new OperationReProcessing(operationCommand);
     }
 
     if(functionCommandRE != nullptr) {
         unit = functionCommandRE;
-        functionCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to function
-        commandTypeProcessingDefinition = new FunctionReProcessing(functionCommandRE);
     }
 
-    // Set the correct unit for RedefineArrayCommandRE after all other units, before DefaultRuleEngineUnits
     if (redefineArrayCommandRE != nullptr) {
         unit = redefineArrayCommandRE;
-        redefineArrayCommandRE->nextCommandRE = nextCommandRE;  // Pass next command to redefine array
-        commandTypeProcessingDefinition = new RedefineArrayCommandReProcessing(redefineArrayCommandRE);
     }
 
     if(unit == nullptr) {
         unit = new DefaultRuleEngineUnits();
-        unit->nextCommandRE = nextCommandRE;  // Pass next command to default unit
+    }
+}
+
+void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) {
+    // Resolve nextUnit - if it's a CommandRE, get its internal unit
+    RuleEngineInputUnits* nextUnitTemp = getFromMap(map, command->nextId);
+    if(nextUnitTemp != nullptr) {
+        CommandRE* nextCommandRE = dynamic_cast<CommandRE*>(nextUnitTemp);
+        if(nextCommandRE != nullptr) {
+            // Get the unit from the next CommandRE
+            nextUnit = nextCommandRE->unit;
+            if(nextUnit == nullptr) {
+                // This shouldn't happen - unit should be set by chooseRuleEngineUnits
+                std::cerr << "ERROR: Next CommandRE has nullptr unit! ID: " << command->nextId << std::endl;
+                nextUnit = nextCommandRE;  // Fallback to CommandRE itself
+            }
+        } else {
+            nextUnit = nextUnitTemp;
+        }
+    } else {
+        nextUnit = nullptr;
+    }
+
+    // Call setFields on units that need it
+    if(redefineArrayCommandRE != nullptr) {
+        redefineArrayCommandRE->setFields(map);
+    }
+
+    if (returnRE != nullptr) {
+        returnRE->setFields(map);
+    }
+
+    // Set nextUnit in the selected unit
+    commandTypeProcessingDefinition = nullptr;
+
+    if(ifCommandRE != nullptr) {
+        ifCommandRE->nextUnit = nextUnit;
+        commandTypeProcessingDefinition = new IfReProcessing(ifCommandRE);
+    }
+
+    if(whileCommandRE != nullptr) {
+        whileCommandRE->nextUnit = nextUnit;
+        commandTypeProcessingDefinition = new WhileReProcessing(whileCommandRE);
+    }
+
+    if(operationCommand != nullptr) {
+        operationCommand->nextUnit = nextUnit;
+        commandTypeProcessingDefinition = new OperationReProcessing(operationCommand);
+    }
+
+    if(functionCommandRE != nullptr) {
+        functionCommandRE->nextUnit = nextUnit;
+        commandTypeProcessingDefinition = new FunctionReProcessing(functionCommandRE);
+    }
+
+    if (redefineArrayCommandRE != nullptr) {
+        redefineArrayCommandRE->nextUnit = nextUnit;
+        commandTypeProcessingDefinition = new RedefineArrayCommandReProcessing(redefineArrayCommandRE);
+    }
+
+    if(unit != nullptr) {
+        unit->nextUnit = nextUnit;
     }
 
     if(commandTypeProcessingDefinition == nullptr) {
@@ -136,18 +175,15 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     }
 
 //
-    if(nextCommandRE != nullptr) {
-        nextCommProcessing = new CommandProcessing(nullptr, nextCommandRE, nullptr);
+    if(nextUnit != nullptr) {
+        nextCommProcessing = new CommandProcessing(nullptr, (nextUnit), nullptr);
         defaultCommandProcessing = nextCommProcessing;
     } else {
         defaultCommandProcessing = new CommandProcessing(nullptr, nullptr, nullptr);
     }
 }
 
-CommandRE* CommandRE::process() {
-}
-
-CommandRE*  CommandRE::get() {
+RuleEngineInputUnits* CommandRE::process() {
 #ifdef DEBUG_BUILD
     debugger->startDebugPoint();
     std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
@@ -155,7 +191,7 @@ CommandRE*  CommandRE::get() {
     debugPoint->setLine(this->line);
 #endif
 
-    // Process the unit and get the next command from it
+    // Process the unit and get the next unit from it
     return unit->process();
 }
 

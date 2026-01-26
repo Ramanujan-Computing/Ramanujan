@@ -14,7 +14,7 @@
 #include "conditionFunctioning/NotEqualImpl.h"
 #include "conditionFunctioning/IsEqualImpl.h"
 
-CommandRE* ConditionRE::process() {
+RuleEngineInputUnits* ConditionRE::process() {
 
 }
 

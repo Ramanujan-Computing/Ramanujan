@@ -75,7 +75,7 @@ public:
 
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
     }
 };
 
@@ -96,7 +96,7 @@ public:
 
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
     }
 };
 
@@ -115,7 +115,7 @@ public:
 
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
     }
 };
 
@@ -143,11 +143,11 @@ inline void DoublePtr::saveValueAndRestoreFrom(DataContainerValueFunctionCommand
 
 inline void DoublePtr::saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) {
     // Save current value (final computed result)
-    //placeholderVar = value;
+    placeholderVar = value;
     // Restore from previous saved value
     value = restoreFrom->value;
     // Propagate final value to calling context
-    //propagateTo->value = placeholderVar;
+    propagateTo->value = placeholderVar;
 }
 
 #endif //NATIVE_VARIABLERE_H

@@ -128,11 +128,11 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
             else
             {
                 // Save current value (final computed result)
-                //double finalValue = value;
+                double finalValue = value;
                 // Restore from previous saved value
                 value = restoreFrom->value;
                 // Propagate final value to calling context
-                //propagateTo->value = finalValue;
+                propagateTo->value = finalValue;
             }
         }
     }

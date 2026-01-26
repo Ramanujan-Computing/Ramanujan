@@ -85,7 +85,7 @@ public:
         }
     }
 
-    CommandRE* process() override {
+    RuleEngineInputUnits* process() override {
         // Execute all return value assignments sequentially
         for (int i = 0; i < assignmentCount; i++) {
             targetValues[i]->value = sourceValues[i]->value;
