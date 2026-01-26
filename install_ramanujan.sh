@@ -43,7 +43,7 @@ echo "[INFO] RAMANUJAN_WS set in $PROFILE"
 
 # Download developer-console JAR to RAMANUJAN_WS
 JAR_PATH="$RAMANUJAN_WS/developer-console-1.0-SNAPSHOT-fat.jar"
-JAR_URL="https://github.com/Ramanujan-Computing/Ramanujan/releases/download/standalone/developer-console-1.0-SNAPSHOT-fat.jar"
+JAR_URL="https://github.com/Ramanujan-Computing/Ramanujan/releases/download/python/developer-console-1.0-SNAPSHOT-fat.jar"
 echo "[INFO] Downloading developer-console JAR to $JAR_PATH ..."
 curl -L -o "$JAR_PATH" "$JAR_URL"
 echo "[INFO] JAR downloaded."
