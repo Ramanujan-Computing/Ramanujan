@@ -12,13 +12,14 @@
 #include "operatorFunctioning/MinusImpl.h"
 
 
-void OperationRE::process() {
+RuleEngineInputUnits* OperationRE::process() {
     // Only Assignment operations have the implementation. Its expected that an assign operation would be here.
     operationFunctioning -> set();
 
 #ifdef DEBUG_BUILD
     debugger->commitDebugPoint();
 #endif
+    return nextUnit;
 }
 
 CachedOperationFunctioning *OperationRE::get() {

@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include "CommandProcessing.h"
 
-
+class CommandRE;  // Forward declaration
 
 class RuleEngineInputUnits {
 protected:
@@ -19,8 +19,16 @@ protected:
 
 public:
     std::string id;
+    RuleEngineInputUnits* nextUnit = nullptr;  // Next unit to execute after this unit
+    RuleEngineInputUnits* immediateParent = nullptr;  // Parent scope unit (FunctionCommandRE, WhileRE, IfRE)
+    
+    // Flags for control flow propagation
+    bool encounteredReturn = false;
+    bool encounteredBreak = false;
+    bool encounteredContinue = false;
+    
     virtual void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) = 0;
-    virtual void process() = 0;
+    virtual RuleEngineInputUnits* process() = 0;  // Returns next unit (nullptr on return statement)
     std::string getId() {
         return id;
     }

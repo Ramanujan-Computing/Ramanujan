@@ -2,7 +2,7 @@
 # FROM anapsix/alpine-java
 
 # Pull base image.
-FROM ubuntu:16.04
+FROM ubuntu:24.04
 
 # Install OpenJDK-8
 RUN apt-get update && \
@@ -15,6 +15,18 @@ RUN apt-get update && \
     apt-get install ca-certificates-java && \
     apt-get clean && \
     update-ca-certificates -f;
+
+# Install Python 3.12, pip, and venv from Ubuntu 24.04 repos
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip python3-venv && \
+    apt-get clean;
+
+# Create a virtual environment and install ast2json in it
+RUN python3 -m venv /venv && \
+    /venv/bin/pip install --no-cache-dir ast2json;
+
+# Ensure /venv/bin is first in PATH for all processes (including Java)
+ENV PATH="/venv/bin:$PATH"
 
 # Setup JAVA_HOME -- useful for docker commandline
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/

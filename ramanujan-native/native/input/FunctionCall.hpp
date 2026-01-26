@@ -18,6 +18,7 @@ class FunctionCall : public RuleEngineInputUnit {
 
         FunctionCall(Json::Value* value) {
             this->id = (*value)["id"].asString();
+            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
             this->firstCommandId = (*value)["firstCommandId"].asString();
             for (int i = 0; i < (*value)["arguments"].size(); i++) {
                 this->arguments.push_back((*value)["arguments"][i].asString());

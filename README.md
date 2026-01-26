@@ -368,18 +368,400 @@ The `ramanujan` language is faster than the Python3 language. The above single n
 in Python3 takes ~410 ms. The device it was tested on was a MacBook Air M3 : 8GB RAM, Apple M3 chip.
 
 
+# Python Support (In Development):
+Ramanujan now supports a subset of Python syntax. Python code is converted to Ramanujan's intermediate representation using Python's AST module.
+
+## How Python Code is Processed:
+
+The conversion from Python code to Ramanujan's intermediate code follows this flow:
+
+```
+Python Source Code (.py file)
+        ↓
+    [PythonAstInvoker]
+    Writes code to temp file, invokes: python3 -c "import ast, ast2json, json; ..."
+        ↓
+    Python's ast.parse() generates AST
+        ↓
+    ast2json.ast2json() converts AST to JSON
+        ↓
+    JSON string returned to Java
+        ↓
+    [JsonAstParser]
+    Parses JSON into Java AST node objects (ModuleNode, AssignNode, IfNode, etc.)
+        ↓
+    [PythonAstToRuleEngineInputConverter]
+    Traverses AST nodes and generates RuleEngineInput structures
+    (Variables, Operations, Commands, Conditions, etc.)
+        ↓
+    RuleEngineInput (Ramanujan Intermediate Code)
+        ↓
+    Execution by Ramanujan Engine
+```
+
+### Technical Details:
+1. **PythonAstInvoker**: Creates a temporary `.py` file, then runs a Python snippet that:
+   - Imports `ast`, `ast2json`, and `json`
+   - Parses the code using `ast.parse()`
+   - Converts to JSON using `ast2json.ast2json()`
+   - Outputs JSON to stdout
+
+2. **JsonAstParser**: Uses Jackson to parse the JSON and creates corresponding Java AST node objects.
+
+3. **PythonAstToRuleEngineInputConverter**: Walks the AST tree and generates:
+   - `Variable` objects for variable declarations
+   - `Array` objects for list/array declarations  
+   - `Operation` objects for arithmetic and assignments
+   - `Condition` objects for comparisons
+   - `Command` objects that link everything in execution order
+   - `If`/`While` blocks for control flow
+   - `FunctionCall` objects for function invocations
+
+## Supported Python Features:
+
+### Variables and Types
+Variables are automatically declared on first assignment. Type is inferred from the assigned value:
+- **Integer**: `x = 5`
+- **Double/Float**: `y = 3.14` or any arithmetic operation result
+
+```python
+x = 5           # Integer
+y = 3.14        # Double
+z = x + y       # Double (arithmetic result)
+```
+
+### Arrays
+Arrays **must** be created using list comprehensions initialized with `0`. This is the only supported form:
+```python
+# 1D array initialized with zeros
+arr = [0 for _ in range(100)]
+
+# 2D array (matrix)
+matrix = [[0 for _ in range(10)] for _ in range(10)]
+
+# n-dimensional arrays with nested comprehensions
+tensor = [[[0 for _ in range(5)] for _ in range(10)] for _ in range(3)]
+
+# Variable dimensions are supported
+n = 100
+arr = [0 for _ in range(n)]
+
+# Array element access and assignment
+arr[0] = 10
+value = arr[i]
+matrix[x][y] = 5
+```
+
+**Note**: Arrays cannot be initialized with explicit values like `[1, 2, 3]` - only `[0 for _ in range(n)]` form is allowed.
+
+### Arithmetic Operations
+Supported operators: `+`, `-`, `*`, `/`
+```python
+result = a + b * c - d / e
+```
+
+### Augmented Assignments
+```python
+x += 5      # x = x + 5
+y -= 3      # y = y - 3
+z *= 2      # z = z * 2
+w /= 4      # w = w / 4
+```
+
+### Comparison Operations
+Supported: `<`, `<=`, `>`, `>=`, `==`, `!=`
+```python
+if x > 5:
+    pass
+while count <= 100:
+    pass
+```
+
+### Control Flow
+
+#### If-Else Statements
+```python
+if x > 10:
+    y = 1
+else:
+    y = 0
+```
+
+**Note**: `elif` is not supported. Use nested if-else instead:
+```python
+# Instead of elif, use nested if-else:
+if x > 10:
+    y = 1
+else:
+    if x > 5:
+        y = 2
+    else:
+        y = 0
+```
+
+#### While Loops
+```python
+i = 0
+while i < 100:
+    # loop body
+    i += 1
+```
+
+### Functions
+Functions are defined using `def` and called directly. Arguments are passed by reference.
+
+```python
+def calculate(a, b, result):
+    result = a + b * 2
+
+# Function call
+calculate(x, y, answer)
+```
+
+### Return Values
+Functions can return values using tuple unpacking:
+```python
+def get_coords():
+    x = 10
+    y = 20
+    return x, y
+
+# Tuple unpacking to receive return values
+a, b = get_coords()
+```
+
+Single return values:
+```python
+def compute(x):
+    result = x * 2
+    return result
+
+value = compute(5)
+```
+
+## Unsupported Python Features (Current Limitations):
+
+### 1. Return with Array Element Access
+Returning an array element directly is **NOT** supported:
+```python
+# NOT SUPPORTED
+def get_element(arr, index):
+    return arr[index]  # ❌ Cannot return array element directly
+```
+**Workaround**: Assign to a variable first, then return:
+```python
+# SUPPORTED
+def get_element(arr, index):
+    value = arr[index]
+    return value  # ✓ Return variable works
+```
+
+### 2. Function Call as Argument
+Passing a function call as an argument to another function is **NOT** supported:
+```python
+# NOT SUPPORTED
+result = outer_func(inner_func(x))  # ❌ Nested function calls not allowed
+```
+**Workaround**: Use intermediate variables:
+```python
+# SUPPORTED
+temp = inner_func(x)
+result = outer_func(temp)  # ✓ Works with intermediate variable
+```
+
+### 3. Return Function Call
+Returning the result of a function call directly is **NOT** supported:
+```python
+# NOT SUPPORTED
+def wrapper(x):
+    return compute(x)  # ❌ Cannot return function call directly
+```
+**Workaround**: Assign to a variable first:
+```python
+# SUPPORTED
+def wrapper(x):
+    result = compute(x)
+    return result  # ✓ Return variable works
+```
+
+### 4. Complex Function References
+Only simple function names are supported (no method chains or computed function references):
+```python
+# NOT SUPPORTED
+obj.method()           # ❌ Method calls on objects
+funcs[0]()             # ❌ Function from array
+getattr(obj, 'func')() # ❌ Dynamic function access
+```
+
+### 5. For Loops
+`for` loops are **NOT** currently supported. Use `while` loops instead:
+```python
+# NOT SUPPORTED
+for i in range(10):  # ❌
+    pass
+
+# SUPPORTED - Use while loop
+i = 0
+while i < 10:  # ✓
+    i += 1
+```
+
+### 6. Classes and Objects
+Object-oriented programming is not yet supported:
+```python
+# NOT SUPPORTED
+class MyClass:  # ❌
+    pass
+```
+
+### 7. Boolean Operations in Conditions
+Boolean expressions with `and`/`or`/`not` are **NOT** supported:
+```python
+# NOT SUPPORTED
+if x > 5 and y < 10:  # ❌
+    pass
+if not flag:          # ❌
+    pass
+```
+**Workaround**: Use nested if statements:
+```python
+# SUPPORTED
+if x > 5:
+    if y < 10:  # ✓ Nested if for 'and' logic
+        pass
+```
+
+### 8. List Operations
+Dynamic list operations are not supported:
+```python
+# NOT SUPPORTED
+arr.append(5)   # ❌ append
+arr.pop()       # ❌ pop
+len(arr)        # ❌ len function
+arr + other     # ❌ list concatenation
+```
+
+### 9. Strings
+Strings are **NOT** supported:
+```python
+# NOT SUPPORTED
+s = "hello"            # ❌ string assignment
+s = "hello" + "world"  # ❌ string concatenation
+```
+
+### 10. Import Statements
+Importing modules is not supported:
+```python
+# NOT SUPPORTED
+import math  # ❌
+from collections import deque  # ❌
+```
+
+### 11. Exception Handling
+Try-except blocks are not supported:
+```python
+# NOT SUPPORTED
+try:  # ❌
+    pass
+except:
+    pass
+```
+
+### 12. Generators and Iterators
+Generator expressions and iterator protocols are not supported.
+
+### 13. Power and Modulo Operators
+Power (`**`) and modulo (`%`) operators are **NOT** currently supported:
+```python
+# NOT SUPPORTED
+x = 2 ** 10    # ❌ power operator
+y = n % 10     # ❌ modulo operator
+```
+
+### 14. elif Keyword
+The `elif` keyword is **NOT** supported. Use nested if-else:
+```python
+# NOT SUPPORTED
+if x > 10:
+    y = 1
+elif x > 5:    # ❌ elif not allowed
+    y = 2
+
+# SUPPORTED - Use nested if-else
+if x > 10:
+    y = 1
+else:
+    if x > 5:  # ✓
+        y = 2
+```
+
+## Complete Python Example:
+```python
+# Gradient descent example in Python syntax
+
+def get_squared(x_pow, y_pow):
+    if x_pow < y_pow:
+        ans = y_pow - x_pow
+    else:
+        ans = x_pow - y_pow
+    return ans
+
+def get_test_arr(x, y, test_arr):
+    it = 0
+    while it < 100:
+        test_arr[it] = x * it + y
+        it = it + 1
+
+# Initialize training data
+train = [0 for _ in range(100)]
+i = 0
+while i < 100:
+    train[i] = i * 1.9 + 33
+    i = i + 1
+
+# Main computation
+x1 = 0.0
+y1 = 0.0
+j = 0
+test_arr = [0 for _ in range(100)]
+
+while j < 1000:
+    get_test_arr(x1, y1, test_arr)
+    # ... gradient computation logic
+    j = j + 1
+```
+
+
 # Future of the language and platform:
-Currently, the language's grammar and parsing logic is different from that of Python3. Since, Python3's ecosystem is huge,
-and it is widely used in all the parallel processing tools like TensorFlow, PyTorch, etc., the  aim is that the python's code
-can be run on the platform. To do that, the next version(near future), the syntax of the `ramanujan` language would be matching
-the syntax of Python3. It should be able to take in all the python dependencies and run the code on the network.
+Ramanujan now supports a subset of Python syntax through AST-based conversion (see Python Support section above). The platform is actively evolving to support more Python features progressively.
+
+## Python Feature Roadmap:
+Python support is being actively developed on the Ramanujan platform. More and more features are being added continuously to bring the full power of Python to distributed computing:
+
+1. **Coming Shortly**: Object-Oriented Programming (OOP) support
+   - Classes and objects
+   - Inheritance and polymorphism
+   - Methods and properties
+
+2. **Progressive Additions**: We will progressively add all Python features to the Ramanujan platform, including:
+   - Boolean operations (`and`, `or`, `not`)
+   - Power (`**`) and modulo (`%`) operators
+   - `for` loops and iterators
+   - `elif` statements
+   - String operations
+   - Exception handling (`try`/`except`)
+   - Import statements and module system
+   - List operations (append, pop, etc.)
+   - Function call composition and nested expressions
+
+3. **Long-term Vision**: Full Python3 ecosystem compatibility
+   - Support for Python dependencies and libraries
+   - Integration with TensorFlow, PyTorch, NumPy, and other scientific computing libraries
+   - CFFI and C extension support for high-performance libraries
+
+The goal is to make Python code seamlessly executable on the distributed Ramanujan platform while maintaining performance and enabling parallel computation across devices.
 
 ## Near future works:
-### On Language front:
-1. Adopt Python's syntax and grammar.
-2. Introduction of Object-Oriented-Programming in the language. The syntax to be exactly like Python3.
-   1. This would need change on the interpreter (ramanujan-native) front as well.
-
 ### On Client front:
 1. The client to be compiled on all usable OS. Starting with iOS.
     1. Client to be written for all other kind of smart-devices like smart refrigerators, smart washing machines, etc.
@@ -463,6 +845,18 @@ Dockerfile is provided to containerize all the necessary services.
 ## Developer Console:
 For executing code file:
 ```java -jar <developer-console-path>/target/developer-console-1.0-SNAPSHOT-fat.jar execute <path-to-code-file>```
+
+## Python Dependencies for Translation Module
+
+The translation module (middleware-translation) currently requires the following Python dependencies to convert Python code to Ramanujan intermediate code:
+
+- **Python 3.x**: Required for AST generation [In particular >= 3.12]
+- **ast2json** _(may be removed in future versions)_: BSD-licensed library for converting Python AST to JSON format
+  - Install: `pip install ast2json`
+  - Repository: https://github.com/YoloSwagTeam/ast2json
+  - License: BSD-3-Clause
+
+For more information about third-party licenses, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## Installing Ramanujan Console for executing on-current-device (Ubuntu & macOS)
 

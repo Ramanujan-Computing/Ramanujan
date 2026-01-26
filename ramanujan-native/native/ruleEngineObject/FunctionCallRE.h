@@ -16,7 +16,7 @@ public:
     RuleEngineInputUnits** arguments = nullptr;
     RuleEngineInputUnits** allVariablesInMethod = nullptr;
     int argSize = 0;
-    CommandRE* commmandRe = nullptr;
+    RuleEngineInputUnits* commmandRe = nullptr;
     std::string firstCommandId;
 
     bool setFieldDone = false;
@@ -38,7 +38,12 @@ public:
             return;
         }
         firstCommandId = functionCall->firstCommandId;
-        commmandRe = dynamic_cast<CommandRE *>(getFromMap(map, firstCommandId));
+        RuleEngineInputUnits* commandTemp = getFromMap(map, firstCommandId);
+        // If it's a CommandRE, get its internal unit
+        CommandRE* cmdRE = dynamic_cast<CommandRE*>(commandTemp);
+        if(cmdRE != nullptr) {
+            commmandRe = cmdRE->getUnit();
+        }
         argSize = functionCall->argumentsSize;
         arguments = new RuleEngineInputUnits*[argSize];
         auto itr = functionCall->arguments.begin();
@@ -52,7 +57,7 @@ public:
         setFieldDone = true;
     }
 
-    void process() override {
+    RuleEngineInputUnits* process() override {
     }
 
 };

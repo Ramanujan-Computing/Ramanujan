@@ -50,15 +50,32 @@ public class TranslateUtil {
                 RuleEngineInput ruleEngineInput = new RuleEngineInput();
 
                 final ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", linesForCommonFunctions);
-                codeConverter.interpret(
-                        pairCodeSnippetElementWithParent.getCodeSnippetElement().getCode(), ruleEngineInput,
-                        new LinkedList<String>() {{add("");}},
-                        actualDebugCodeCreator, null, null);
+                String code = pairCodeSnippetElementWithParent.getCodeSnippetElement().getCode();
+                
+                // Detect if code is Python or Ramanujan and call appropriate method
+                List<Command> commands = null;
+                if (isPythonCode(code)) {
+                    Map<Integer, RuleEngineInputUnits> functionFrameVariableMap = new HashMap<>();
+                    Integer[] frameVariableCounterId = {0};
+                    commands = codeConverter.interpretPython(
+                            code, ruleEngineInput,
+                            new ArrayList<>(),
+                            actualDebugCodeCreator, functionFrameVariableMap, frameVariableCounterId);
+                } else {
+                    codeConverter.interpret(
+                            code, ruleEngineInput,
+                            new LinkedList<String>() {{add("");}},
+                            actualDebugCodeCreator, null, null);
+                }
 
                dagElement = new DagElement(ruleEngineInput);
                dagElementAndCodeMap.put(dagElement.getId(), actualDebugCodeCreator.getDebugCode());
 
-               if(ruleEngineInput.getCommands().size() > 0) {
+               // For Python code, use the first command from the returned commands list (execution order)
+               // For Ramanujan code, use the first command from ruleEngineInput.getCommands() list
+               if(commands != null && commands.size() > 0) {
+                   dagElement.setFirstCommandId(commands.get(0).getId());
+               } else if(ruleEngineInput.getCommands().size() > 0) {
                    dagElement.setFirstCommandId(ruleEngineInput.getCommands().get(0).getId());
                } else {
                    dagElement.setFirstCommandId("");
@@ -95,6 +112,63 @@ public class TranslateUtil {
 
     public CodeConverter getNewCodeConverter(List<CsvInformation> csvInformationList) {
         return new CodeConverter(codeConverterLogicFactory, null, csvInformationList);
+    }
+
+    /**
+     * Detects whether the given code is Python or Ramanujan language.
+     * This is a shared static method used by both TranslateUtil and TranslateService.
+     * 
+     * @param code The code to analyze
+     * @return true if the code is Python, false if it's Ramanujan
+     */
+    public static boolean isPythonCode(String code) {
+        if (code == null || code.trim().isEmpty()) {
+            return false;
+        }
+        
+        String trimmedCode = code.trim();
+        
+        // Primary check: Ramanujan uses curly braces, Python doesn't
+        // If code contains curly braces, it's Ramanujan
+        if (trimmedCode.contains("{") || trimmedCode.contains("}")) {
+            return false;
+        }
+        
+        // Check for Python-specific patterns
+        // 1. Python function definitions with colon: def function_name(...):
+        if (trimmedCode.matches("(?s).*\\bdef\\s+\\w+\\s*\\(.*\\)\\s*:.*")) {
+            return true;
+        }
+        
+        // 2. Python imports: import xyz or from xyz import
+        if (trimmedCode.matches("(?s).*(^|\\n)\\s*(import\\s+\\w+|from\\s+\\w+\\s+import).*")) {
+            return true;
+        }
+        
+        // 3. Python class definitions: class ClassName:
+        if (trimmedCode.matches("(?s).*\\bclass\\s+\\w+.*:.*")) {
+            return true;
+        }
+        
+        // 4. Python-style for/while loops with colon: for x in y: or while x:
+        if (trimmedCode.matches("(?s).*(\\bfor\\s+.+\\s+in\\s+.+:|\\bwhile\\s+.+:).*")) {
+            return true;
+        }
+        
+        // 5. Check for Ramanujan-specific patterns
+        // Variable declarations: var x:integer;
+        if (trimmedCode.matches("(?s).*\\bvar\\s+\\w+\\s*:.*")) {
+            return false;
+        }
+        
+        // 6. If code has simple assignments without any language-specific syntax,
+        // and no curly braces were found above, it's likely Python
+        if (trimmedCode.matches("(?s).*(^|\\n)\\s*[a-zA-Z_]\\w*\\s*=\\s*.*")) {
+            return true;
+        }
+        
+        // Default to Ramanujan if no clear indicators
+        return false;
     }
 
     private Boolean validateIfSuffixOfMethod(Character c) {
@@ -159,10 +233,12 @@ public class TranslateUtil {
                                       Map<String, CodeSnippetElement> threadCodeSnippetMap,
                                       Map<String, List<CodeSnippetElement>> mappingToBeResolved,
                                       Map<String, List<CodeSnippetElement>> cloningToBeResolved,
-                                      CodeSnippetElement codeSnippetElement) {
+                                      CodeSnippetElement codeSnippetElement,
+                                      boolean isPython) {
         //threadStart block to be covered
         if(indexWrapper.getIndex() != threadStartCodeIndex) {
-            extractedCode.concat(code.substring(indexWrapper.getIndex(), threadStartCodeIndex).trim());
+            String chunk = code.substring(indexWrapper.getIndex(), threadStartCodeIndex);
+            extractedCode.concat(isPython ? chunk : chunk.trim());
         }
         indexWrapper.setIndex(threadStartCodeIndex);
 
@@ -194,10 +270,12 @@ public class TranslateUtil {
                                            int threadEndCodeIndex,
                                            Map<String, CodeSnippetElement> threadCodeSnippetMap,
                                            Map<String, List<CodeSnippetElement>> mappingToBeResolved,
-                                           Map<String, List<CodeSnippetElement>> cloningToBeResolved) {
+                                           Map<String, List<CodeSnippetElement>> cloningToBeResolved,
+                                           boolean isPython) {
         //threadEnd block to be covered
         if(indexWrapper.getIndex() != threadEndCodeIndex) {
-            extractedCode.concat(code.substring(indexWrapper.getIndex(), threadEndCodeIndex).trim());
+            String chunk = code.substring(indexWrapper.getIndex(), threadEndCodeIndex);
+            extractedCode.concat(isPython ? chunk : chunk.trim());
         }
         indexWrapper.setIndex(threadEndCodeIndex);
 
@@ -245,6 +323,7 @@ public class TranslateUtil {
         CodeSnippetElement codeSnippetElement = new CodeSnippetElement();
         String extractedCode = "";
         int index = 0;
+        boolean isPython = isPythonCode(code);
         int threadStartCodeIndex = code.indexOf(CodeToken.threadStart);
         int threadEndCodeIndex = code.indexOf(CodeToken.threadTriggerOnSomeThreadCompleteion);
         while(threadEndCodeIndex !=-1 || threadStartCodeIndex != -1) {
@@ -261,14 +340,14 @@ public class TranslateUtil {
                 StringWrapper extractedCodeWrapper = new StringWrapper(extractedCode);
                 IndexWrapper indexWrapper = new IndexWrapper(index);
                 parseThreadStartCode(code, extractedCodeWrapper, indexWrapper, threadStartCodeIndex, threadCodeSnippetMap,
-                        mappingToBeResolved, cloningToBeResolved, codeSnippetElement);
+                    mappingToBeResolved, cloningToBeResolved, codeSnippetElement, isPython);
                 extractedCode = extractedCodeWrapper.getStr();
                 index = indexWrapper.getIndex();
             } else {
                 StringWrapper extractedCodeWrapper = new StringWrapper(extractedCode);
                 IndexWrapper indexWrapper = new IndexWrapper(index);
                 parseThreadOnCompleteCode(code, extractedCodeWrapper, indexWrapper, threadEndCodeIndex, threadCodeSnippetMap,
-                        mappingToBeResolved, cloningToBeResolved);
+                        mappingToBeResolved, cloningToBeResolved, isPython);
                 extractedCode = extractedCodeWrapper.getStr();
                 index = indexWrapper.getIndex();
             }
@@ -284,7 +363,8 @@ public class TranslateUtil {
             }
         }
         if(index < code.length()) {
-            extractedCode += code.substring(index).trim();
+            String tail = code.substring(index);
+            extractedCode += isPython ? tail : tail.trim();
         }
         codeSnippetElement.setCode(extractedCode);
         return codeSnippetElement;

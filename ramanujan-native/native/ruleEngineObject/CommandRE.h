@@ -16,13 +16,13 @@ class ConstantRE;
 class VariableRE;
 class ArrayCommandRE;
 class WhileRE;
+class ReturnRE;
 class Command;
 class FunctionCommandRE;
 class ConditionRE;
 
 class CommandRE : public RuleEngineInputUnits {
 private:
-    CommandRE* nextCommandRE;
     WhileRE* whileCommandRE;
     OperationRE* operationCommand;
     IfRE* ifCommandRE;
@@ -30,8 +30,11 @@ private:
     VariableRE* variableRE;
     ConditionRE* conditionRe;
     ArrayCommandRE* arrayCommandRE = nullptr;
+    ReturnRE* returnRE = nullptr;
     Command * command;
     RedefineArrayCommandRE* redefineArrayCommandRE = nullptr;
+    std::vector<std::string> returnValueIds;
+    std::vector<std::string> returnTargetIds;
 
     RuleEngineInputUnits* unit;
 
@@ -42,6 +45,7 @@ private:
     int line;
 
 public:
+    bool returnStatement = false;  // Made public for If/While blocks to check
     FunctionCommandRE* functionCommandRE = nullptr;
     //TODO: can we save all variables in an array and variableVal be nothing but just an index to that array?
 
@@ -50,12 +54,14 @@ public:
     // Functions would have demarcation between variable and array in args.
     CommandProcessing* defaultCommandProcessing;
     CommandRE(Command *command);
+    void chooseRuleEngineUnits(std::unordered_map<std::string, RuleEngineInputUnits *> *map);
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override;
-    void process() override;
-    CommandRE* get();
+    RuleEngineInputUnits* process() override;
     DataOperation *getDataOperation();
     DoublePtr * getVar();
     bool evalCondition();
+    
+    RuleEngineInputUnits* getUnit() { return unit; }
 
     void destroy() override {
         if(arrayCommandRE != nullptr) {

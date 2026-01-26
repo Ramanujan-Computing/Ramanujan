@@ -17,11 +17,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-include_directories($ENV{JDK_HOME}/include)
-IF(UNIX AND NOT APPLE)
-    include_directories($ENV{JDK_HOME}/include/linux)
-ELSEIF(APPLE)
-    include_directories($ENV{JDK_HOME}/include/darwin)
+# JNI include paths - use Android NDK for Android builds, otherwise use JDK_HOME
+IF(ANDROID)
+    # For Android builds, use NDK's JNI headers
+    include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
+ELSE()
+    # For non-Android builds, use JDK_HOME
+    include_directories($ENV{JDK_HOME}/include)
+    IF(UNIX AND NOT APPLE)
+        include_directories($ENV{JDK_HOME}/include/linux)
+    ELSEIF(APPLE)
+        include_directories($ENV{JDK_HOME}/include/darwin)
+    ENDIF()
 ENDIF()
 
 add_definitions(-D_GNU_SOURCE)
@@ -54,6 +61,7 @@ set(SOURCE_FILES
         ruleEngineObject/FunctionCommandRE.h
         ruleEngineObject/IfRE.h
         ruleEngineObject/OperationRE.h
+        ruleEngineObject/ReturnOperationRE.h
         ruleEngineObject/WhileRE.h
         ruleEngineObject/dataContainer/VariableRE.h
         ruleEngineObject/dataContainer/AbstractDataContainer.h
@@ -65,6 +73,7 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/VaraiableRE.cpp
         input/Variable.cpp
         input/Operation.cpp
+        input/ReturnOperation.cpp
         input/Condition.cpp
         input/Constant.cpp
         input/FunctionCall.cpp
@@ -112,6 +121,7 @@ set(SOURCE_FILES
         ruleEngineObject/processingDefinition/IfReProcessing.h
         ruleEngineObject/processingDefinition/WhileReProcessing.h
         ruleEngineObject/processingDefinition/OperationReProcessing.h
+        ruleEngineObject/processingDefinition/ReturnOperationReProcessing.h
         ruleEngineObject/processingDefinition/VariableReProcessing.h
         ruleEngineObject/processingDefinition/FunctionReProcessing.h
         ruleEngineObject/processingDefinition/ConditionReProcessing.h

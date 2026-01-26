@@ -12,7 +12,7 @@
 #include "operatorFunctioning/CachedOperationFunctioning.h"
 #include "operatorFunctioning/OperationFunctioning.h"
 
-class OperationRE : public RuleEngineInputUnits {
+class OperationRE final : public RuleEngineInputUnits {
 private:
     Operation* operation;
     CommandRE* operandCommandRE1;
@@ -38,7 +38,7 @@ public:
         operationType = operation->operatorType;
     }
 
-    void process() override;
+    RuleEngineInputUnits* process() override;
     CachedOperationFunctioning * get();
 
     void setCachedOperationFunctioning() {

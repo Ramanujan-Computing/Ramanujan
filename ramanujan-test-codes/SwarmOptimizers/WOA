@@ -559,6 +559,7 @@ threadStart(t9) {
 var best0, best1, best2, best3, best4, best5, best6, best7, best8, best9 : double;
 
 threadOnEnd(t0,t1,t2,t3,t4,t5,t6,t7,t8,t9,1) {
+    var x : double;
     best0 = finalConvergenceCurve[0];
     best1 = finalConvergenceCurve[1];
     best2 = finalConvergenceCurve[2];

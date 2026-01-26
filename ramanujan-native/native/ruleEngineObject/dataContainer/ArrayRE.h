@@ -34,8 +34,8 @@ public:
 
     }
 
-    void process() override {
-
+    RuleEngineInputUnits* process() override {
+        return nextUnit;
     }
 
     void destroy() {

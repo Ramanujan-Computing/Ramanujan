@@ -218,28 +218,43 @@ public class ExecuteInline implements Operation {
             TranslateResponse translateResponse = new TranslateResponse();
             Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
             ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", 0);
-            ExtractedCodeAndFunctionCode extractedCodeAndFunctionCode =
-                    translateUtil.extractCodeWithoutAbstractCodeDeclaration(code, functionCallsRuleEngineInput, actualDebugCodeCreator);
-            for(Map.Entry<String, RuleEngineInput> entry : functionCallsRuleEngineInput.entrySet()) {
-                for(Variable variable : entry.getValue().getVariables()) {
-                    variableMap.put(variable.getId(), variable);
+            
+            boolean isPython = TranslateUtil.isPythonCode(code);
+            String extractedCode;
+            String functionCode = "";
+            int linesForFunctions;
+            
+            if (isPython) {
+                // For Python code, skip function extraction
+                extractedCode = code;
+                linesForFunctions = 0;
+            } else {
+                // For Ramanujan code, extract functions as before
+                ExtractedCodeAndFunctionCode extractedCodeAndFunctionCode =
+                        translateUtil.extractCodeWithoutAbstractCodeDeclaration(code, functionCallsRuleEngineInput, actualDebugCodeCreator);
+                for(Map.Entry<String, RuleEngineInput> entry : functionCallsRuleEngineInput.entrySet()) {
+                    for(Variable variable : entry.getValue().getVariables()) {
+                        variableMap.put(variable.getId(), variable);
+                    }
+                    for(Array array : entry.getValue().getArrays()) {
+                        arrayMap.put(array.getId(), array);
+                    }
                 }
-                for(Array array : entry.getValue().getArrays()) {
-                    arrayMap.put(array.getId(), array);
-                }
+                extractedCode = extractedCodeAndFunctionCode.getExtractedCode();
+                functionCode = extractedCodeAndFunctionCode.getFunctionCode();
+                linesForFunctions = actualDebugCodeCreator.getLine();
             }
-            code = extractedCodeAndFunctionCode.getExtractedCode();
-            CodeSnippetElement firstCodeSnippetElement = translateUtil.getCodeSnippets(code, new HashMap<>(),
+            
+            CodeSnippetElement firstCodeSnippetElement = translateUtil.getCodeSnippets(extractedCode, new HashMap<>(),
                     new HashMap<>(), new HashMap<>());
             List<DagElement> dagElementList = new ArrayList<>();
             Map<String, String> dagElementAndCodeMap = new HashMap<>();
-            int linesForFunctions = actualDebugCodeCreator.getLine();
             DagElement firstDagElement = translateUtil.populateAllDagElements(firstCodeSnippetElement, csvInformationList,
                     functionCallsRuleEngineInput, variableMap, arrayMap, dagElementList, dagElementAndCodeMap, linesForFunctions);
             translateResponse.setFirstDagElement(firstDagElement);
             translateResponse.setDagElementList(dagElementList);
             translateResponse.setCodeAndDagElementMap(dagElementAndCodeMap);
-            translateResponse.setCommonFunctionCode(extractedCodeAndFunctionCode.getFunctionCode());
+            translateResponse.setCommonFunctionCode(functionCode);
 
             System.out.println("compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
 

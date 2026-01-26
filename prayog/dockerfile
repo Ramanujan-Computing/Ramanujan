@@ -25,6 +25,7 @@ RUN export JAVA_HOME
 WORKDIR /
 COPY rest/target/rest-1.0-SNAPSHOT-fat.jar rest-1.0-SNAPSHOT-fat.jar
 COPY config/application-config.json config.json
+COPY native/libnative.so libnative.so
 
 ENV RAMANUJAN_WS /
 

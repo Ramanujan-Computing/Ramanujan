@@ -14,6 +14,8 @@
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/FunctionCommandRE.h"
 #include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
+#include "../ruleEngineObject/WhileRE.h"
+#include "../ruleEngineObject/IfRE.h"
 #include <json/json.h>
 //#include <boost/stacktrace.hpp>
 #include <DebugPoint.h>
@@ -29,10 +31,18 @@ Processor::~Processor() {
 std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngineInput ruleEngineInput,
         std::string firstCommandId) {
     // Create memory maintainer for efficient function call memory management
-    DataContainerValueFunctionCommandREMemMaintainer memMaintainer;
+    DataContainerValueFunctionCommandREMemMaintainer* memMaintainer = new DataContainerValueFunctionCommandREMemMaintainer();
     
     std::unordered_map<std::string, RuleEngineInputUnits*>* mapBetweenIdAndRuleInput
         = createMap(ruleEngineInput);
+    
+    /*
+     * First, call chooseRuleEngineUnits on all CommandRE objects to select their internal units
+     */
+    for (auto command : *ruleEngineInput.commands) {
+        CommandRE* commandRE = dynamic_cast<CommandRE*>(mapBetweenIdAndRuleInput->at(command->id));
+        commandRE->chooseRuleEngineUnits(mapBetweenIdAndRuleInput);
+    }
     
     /*
      * Right now, the map does have info of each other, for ex, lets take Command,
@@ -41,6 +51,7 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
     fixGraph(mapBetweenIdAndRuleInput);
 
     fixOperator(mapBetweenIdAndRuleInput, *ruleEngineInput.operations);
+    fixReturnOperations(mapBetweenIdAndRuleInput, *ruleEngineInput.returnOperations);
     fixConditions(mapBetweenIdAndRuleInput, *ruleEngineInput.conditions);
 
     for(RuleEngineInputUnits* variable : variableREs) {
@@ -61,7 +72,10 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
     {
         auto commandRE = dynamic_cast<CommandRE*>(mapBetweenIdAndRuleInput->at(command->id));
         if(commandRE->functionCommandRE != nullptr) {
-            commandRE->functionCommandRE->setMemMaintainer(&memMaintainer);
+            // Now call setFields for FunctionCommandRE - deferred from CommandRE::setFields
+            // This must be done after all CommandRE are initialized
+            commandRE->functionCommandRE->setFields(mapBetweenIdAndRuleInput);
+            commandRE->functionCommandRE->setMemMaintainer(memMaintainer);
         }
     }
 
@@ -69,10 +83,12 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
     debugger->clear();
 #endif
     CommandRE *command = dynamic_cast<CommandRE*> (mapBetweenIdAndRuleInput->at(firstCommandId));
-    while(command != nullptr) {
-        command = command->get();
+    auto unit = command->getUnit();
+    while(unit != nullptr) {
+        unit = unit->process();
     }
 
+    delete memMaintainer;
     return new std::unordered_map<std::string, ProcessingResult>();
 }
 
@@ -149,6 +165,7 @@ std::unordered_map<std::string, RuleEngineInputUnits*>* Processor::createMap(Rul
     storeInIdMap(map, ruleEngineInput.whileBlocks);
     storeInIdMap(map, ruleEngineInput.commands);
     storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
+    storeInIdMap(map, ruleEngineInput.returnOperations);
     return map;
 }
 
@@ -228,11 +245,23 @@ void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnit
 }
 
 void Processor::fixGraph(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap) {
+    // First pass: setFields for all units EXCEPT WhileRE and IfRE
     for(std::unordered_map<std::string, RuleEngineInputUnits*>::iterator itr = pMap->begin();
     itr != pMap->end(); itr++) {
 //        try {
             if(itr->first == "command_f52a5304-32d6-41de-a9db-9a0f5c48f97b") {
                 std::cout << "Command found" << std::endl;
+            }
+            // Check if it's a WhileRE or IfRE - defer these
+            WhileRE* whileRE = dynamic_cast<WhileRE*>(itr->second);
+            if(whileRE != nullptr) {
+                deferredWhileREs.push_back(whileRE);
+                continue;
+            }
+            IfRE* ifRE = dynamic_cast<IfRE*>(itr->second);
+            if(ifRE != nullptr) {
+                deferredIfREs.push_back(ifRE);
+                continue;
             }
             itr->second->setFields(pMap);
 //        } catch (exception e) {
@@ -240,6 +269,16 @@ void Processor::fixGraph(std::unordered_map<std::string, RuleEngineInputUnits *>
 //
 //
 //        }
+    }
+    
+    // Second pass: setFields for WhileRE (needs CommandRE to be initialized first)
+    for(RuleEngineInputUnits* unit : deferredWhileREs) {
+        unit->setFields(pMap);
+    }
+    
+    // Third pass: setFields for IfRE (needs CommandRE to be initialized first)
+    for(RuleEngineInputUnits* unit : deferredIfREs) {
+        unit->setFields(pMap);
     }
 }
 
@@ -249,4 +288,15 @@ void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnit
     }
 }
 
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<ReturnOperation*>* list1) {
+    for(std::vector<ReturnOperation*>::iterator itr = list1->begin(); itr !=  list1->end(); itr++) {
+        pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+    }
+}
+
+void Processor::fixReturnOperations(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap,
+        std::vector<ReturnOperation *> returnOperations) {
+    // ReturnOperations don't need caching like Operations do, as they always use AssignImplBothVar
+    // The initialization happens in ReturnOperationRE::setFields
+}
 

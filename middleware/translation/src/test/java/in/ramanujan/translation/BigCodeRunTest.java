@@ -1,6 +1,7 @@
 package in.ramanujan.translation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
@@ -12,7 +13,12 @@ import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import static in.ramanujan.translation.codeConverter.utils.TranslateUtil.isPythonCode;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -173,19 +179,13 @@ public class BigCodeRunTest {
                 "  }" +
                 "exec posRun(0, train, x1, y1,iteration);";
 
-        // Get the parsed structure with variable and array maps
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
-        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
         
         Long timeStart = new Date().toInstant().toEpochMilli();
         
-        // Execute the native processor
-        NativeProcessor processor1 = new NativeProcessor();
-        processor1.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
-        
-        // Resolve variables from native processor result (similar to ExecuteInline.java)
-        resolveVariablesFromNativeProcessor(processor1, variableMap, arrayMap);
+        // Execute using the helper method which handles NativeProcessor and debug output
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
         
         System.out.println("timeTaken: " + (new Date().toInstant().toEpochMilli() - timeStart) + "ms");
         
@@ -365,19 +365,13 @@ public class BigCodeRunTest {
                 "  }" +
                 "exec posRun(0, train, x1, y1,iteration);";
 
-// Get the parsed structure with variable and array maps
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
-        RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
 
         Long timeStart = new Date().toInstant().toEpochMilli();
 
-        // Execute the native processor
-        NativeProcessor processor1 = new NativeProcessor();
-        processor1.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
-
-        // Resolve variables from native processor result (similar to ExecuteInline.java)
-        resolveVariablesFromNativeProcessor(processor1, variableMap, arrayMap);
+        // Execute using the helper method which handles NativeProcessor and debug output
+        InterpretAndGetVariableArrayMap(code, variableMap, arrayMap);
 
         System.out.println("timeTaken: " + (new Date().toInstant().toEpochMilli() - timeStart) + "ms");
 
@@ -2757,10 +2751,26 @@ public class BigCodeRunTest {
         RuleEngineInput ruleEngineInput = getRuleEngineInputWithMaps(code.replaceAll("\n", "").replaceAll("\t", ""), variableMap, arrayMap);
 
         NativeProcessor processor = new NativeProcessor();
-        processor.process(new ObjectMapper().writeValueAsString(ruleEngineInput), ruleEngineInput.getCommands().get(0).getId());
+        ObjectMapper mapper = new ObjectMapper();
+        String jsonInput = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
+
+        // Write combined payload (firstCommandId + ruleEngineInput) to a stable tmp file for native debugging
+        ObjectNode wrapper = mapper.createObjectNode();
+        wrapper.put("firstCommandId", ruleEngineInput.getCommands().get(0).getId());
+        wrapper.set("ruleEngineInput", mapper.valueToTree(ruleEngineInput));
+        Path tmpPath = Paths.get("/tmp", "rule_engine_debug.json");
+        Files.write(tmpPath,
+            mapper.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper)
+                .getBytes(StandardCharsets.UTF_8));
+
+        System.out.println("========== Debug payload written to /tmp/rule_engine_debug.json ==========");
+        System.out.flush();
+        processor.process(jsonInput, ruleEngineInput.getCommands().get(0).getId());
 
         resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
     }
+
+
 
     // Tests recursive function with multiple array assertions and transformations.
     // This test uses a recursive merge sort that operates on input, output, and tracking arrays simultaneously.
@@ -2961,4 +2971,6 @@ public class BigCodeRunTest {
         
         analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
+
+
 }

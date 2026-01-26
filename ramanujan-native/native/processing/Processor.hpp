@@ -32,12 +32,20 @@ class Processor {
     void fixOperator(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap,
     std::vector<Operation *> operations);
 
+    void fixReturnOperations(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap,
+    std::vector<ReturnOperation *> returnOperations);
+
     void fixConditions(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap, std::vector<Condition *> conditions);
 
     std::unordered_map<double*, double> dataFieldOriginalData;
 
     std::list<RuleEngineInputUnits*> arrayREs;
     std::list<RuleEngineInputUnits*> variableREs;
+    
+    // Deferred setFields - these units need setFields called after all other units
+    std::list<RuleEngineInputUnits*> deferredWhileREs;
+    std::list<RuleEngineInputUnits*> deferredIfREs;
+    std::list<RuleEngineInputUnits*> deferredFunctionCommandREs;
 
 
 
@@ -62,6 +70,8 @@ class Processor {
     void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<Variable*>* list1);
 
     void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<RedefineArrayCommand*>* list1);
+
+    void storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<ReturnOperation*>* list1);
 
     void fixGraph(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap);
 };

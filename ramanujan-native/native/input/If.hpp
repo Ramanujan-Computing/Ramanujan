@@ -13,6 +13,7 @@ class If : public RuleEngineInputUnit {
 
         If(Json::Value* value) {
             this->id = (*value)["id"].asString();
+            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
             this->conditionId = (*value)["conditionId"].asString();
             this->ifCommand = (*value)["ifCommand"].asString();
             this->elseCommand = (*value)["elseCommandId"].asString();

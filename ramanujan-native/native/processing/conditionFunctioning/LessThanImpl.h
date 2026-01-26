@@ -52,10 +52,9 @@ public:
     }
 
     bool operate() override {
-        bool val = compareWhatOp->get() < compareWithValue->value;
         DEBUG_PRE();
         DEBUG_ADD_DOUBLE_PTR_BEFORE(compareWithValue->value);
-        return val;
+        return compareWhatOp->get() < compareWithValue->value;
     }
 };
 

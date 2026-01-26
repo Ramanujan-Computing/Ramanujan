@@ -12,6 +12,7 @@ class While : public RuleEngineInputUnit {
 
         While(Json::Value* value) {
             this->id = (*value)["id"].asString();
+            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
             this->conditionId = (*value)["conditionId"].asString();
             this->whileCommandId = (*value)["whileCommandId"].asString();
         }

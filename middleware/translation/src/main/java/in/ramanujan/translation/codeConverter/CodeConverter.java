@@ -15,6 +15,10 @@ import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
 import in.ramanujan.translation.codeConverter.pojo.IndexWrapper;
 import in.ramanujan.translation.codeConverter.utils.CodeConversionUtils;
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
+// import in.ramanujan.translation.codeConverter.ast.AstParser;
+import in.ramanujan.translation.codeConverter.ast.ModuleNode;
+import in.ramanujan.translation.codeConverter.ast.PythonAstToRuleEngineInputConverter;
+import in.ramanujan.translation.codeConverter.utils.PythonAstInvoker;
 
 import java.util.*;
 
@@ -119,6 +123,62 @@ public class CodeConverter {
             previousCommand = command;
         }
         return commandInThisCodeChunk;
+    }
+
+    /**
+     * Interprets Python code using AST-based parsing instead of string-based parsing.
+     * 
+     * @param pythonCode The Python code to interpret
+     * @param ruleEngineInput The RuleEngineInput object to populate
+     * @param variableScope List of variable scopes
+     * @param debugLevelCodeCreator Debug code creator for generating debug output
+     * @param functionFrameVariableMap Map of function frame variables
+     * @param frameVariableCounterId Counter for frame variable IDs
+     * @return List of Commands created from the Python code
+     * @throws CompilationException If there are errors during compilation
+     */
+    public List<Command> interpretPython(String pythonCode, RuleEngineInput ruleEngineInput, 
+                                        List<String> variableScope,
+                                        DebugLevelCodeCreator debugLevelCodeCreator, 
+                                        Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
+                                        Integer[] frameVariableCounterId) throws CompilationException {
+        try {
+            // Step 1: Invoke Python ast2json to get AST JSON
+            PythonAstInvoker invoker = new PythonAstInvoker();
+            String astJson = invoker.invokeAstJson(pythonCode);
+
+//            // Debug: Print AST JSON from Python
+//            System.out.println("========== AST JSON FROM PYTHON ==========");
+//            System.out.println(astJson);
+//            System.out.println("==========================================");
+
+            // Step 2: Parse AST JSON into Java AST objects
+            in.ramanujan.translation.codeConverter.ast.JsonAstParser parser = new in.ramanujan.translation.codeConverter.ast.JsonAstParser();
+            ModuleNode module = parser.parseJson(astJson);
+            
+//            // Debug: Print parsed Module toString
+//            System.out.println("========== PARSED MODULE (toString) ==========");
+//            System.out.println(module.toString());
+//            System.out.println("===============================================");
+            
+            // Step 3: Convert AST to RuleEngineInput
+            System.out.println("========== STARTING AST TO RULE ENGINE CONVERSION ==========");
+            PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
+                this, ruleEngineInput, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId
+            );
+
+            variableScope.add("");
+
+            List<Command> commands = converter.convert(module, variableScope);
+            System.out.println("========== AST TO RULE ENGINE CONVERSION COMPLETE ==========");
+            System.out.println("Commands created: " + commands.size());
+            
+            return commands;
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new CompilationException(null, null, "Error parsing Python code: " + e.getMessage());
+        }
     }
 
     public String getTypeOfChunk(String codeChunk) {
