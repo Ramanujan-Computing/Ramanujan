@@ -46,8 +46,30 @@ public:
     }
 
     CommandRE* process() override {
-        FunctionCommandRE::hasEncounteredReturn = true;
-        // Return statement hit - return nullptr to propagate up call stack
+        // Propagate return flag up to parent scope units until we reach a function
+//        RuleEngineInputUnits* parent = immediateParent;
+        immediateParent->encounteredReturn = true;
+//        while (parent != nullptr) {
+//            // If parent already encountered return, disable it and propagate up
+//            if (parent->encounteredReturn) {
+//                parent->encounteredReturn = false;
+//            }
+//
+//            // Set the flag on current parent
+//            parent->encounteredReturn = true;
+//
+//            // Check if we've reached a function - stop propagation there
+//            FunctionCommandRE* funcParent = dynamic_cast<FunctionCommandRE*>(parent);
+//            if (funcParent != nullptr) {
+//                // Reached function boundary, stop propagation
+//                break;
+//            }
+//
+//            // Move to next parent
+//            parent = parent->immediateParent;
+//        }
+        
+        // Return statement hit - return nullptr to stop execution
         return nullptr;
     }
 

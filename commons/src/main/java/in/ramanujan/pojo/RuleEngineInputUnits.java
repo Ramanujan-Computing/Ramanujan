@@ -9,4 +9,5 @@ public class RuleEngineInputUnits {
     private String id;
     private Class clazz;
     private Integer codeStrPtr;
+    private String immediateParentRuleEngineInputUnitId;
 }

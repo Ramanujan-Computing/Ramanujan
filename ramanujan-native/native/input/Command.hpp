@@ -32,6 +32,7 @@ class Command : public RuleEngineInputUnit {
 
         Command(Json::Value* value) {
             this->id = (*value)["id"].asString();
+            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
             this->nextId = (*value)["nextId"].asString();
             this->ifBlocks = (*value)["ifBlocks"].asString();
             this->loops = (*value)["loops"].asString();

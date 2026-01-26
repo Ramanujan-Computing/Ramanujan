@@ -19,9 +19,9 @@ class Test {
     // Path to dynamically written debug payload from translator tests
     const std::string tmpDebugPath = "/tmp/rule_engine_debug.json";
 
-    //std::string firstCommandId = "command_2b95556d-866f-4ec4-8541-802c86e51466";
+    std::string firstCommandId = "command_2b95556d-866f-4ec4-8541-802c86e51466";
 
-    std::string firstCommandId = "command_b704d666-f13f-49a5-a1c0-190654a04bd9";
+    //std::string firstCommandId = "command_b704d666-f13f-49a5-a1c0-190654a04bd9";
     Processor *processor = new Processor();
 
     // Try loading ruleEngineInput JSON + firstCommandId from tmp file

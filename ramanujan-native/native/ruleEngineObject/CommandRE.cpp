@@ -51,6 +51,9 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     conditionRe = dynamic_cast<ConditionRE *>(getFromMap(map, command->conditionId));
     line = command->codeStrPtr;
     id = command->id;
+    
+    // Set immediate parent from the command's parent ID
+    immediateParent = getFromMap(map, command->immediateParentRuleEngineInputUnitId);
 
     if (command->functionCall != nullptr) {
         /*
@@ -84,6 +87,7 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     // If this command is a return statement, use ReturnRE as the unit
     if (returnStatement) {
         returnRE = new ReturnRE({});
+        returnRE->immediateParent = immediateParent;
         unit = returnRE;
     }
 

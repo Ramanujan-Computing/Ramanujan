@@ -346,8 +346,8 @@ public class PythonAstToRuleEngineInputConverter {
         }
         
         for (AstNode node : nonFunctionDefNodes) {
-            // Top-level code is not inside a function, so pass null for variableFrameMap and counter
-            Command command = convertStatement(node, variableScope, null, null);
+            // Top-level code is not inside a function, so pass null for variableFrameMap, counter, and parentScopeUnit
+            Command command = convertStatement(node, variableScope, null, null, null);
             if (command != null) {
                 commands.add(command);
                 if (previousCommand != null) {
@@ -359,8 +359,8 @@ public class PythonAstToRuleEngineInputConverter {
 
         // Process function definitions after top-level code
         for (AstNode node : functionDefNodes) {
-            // Top-level code is not inside a function, so pass null for variableFrameMap and counter
-            convertStatement(node, variableScope, null, null);
+            // Top-level code is not inside a function, so pass null for variableFrameMap, counter, and parentScopeUnit
+            convertStatement(node, variableScope, null, null, null);
         }
         
         return commands;
@@ -396,31 +396,38 @@ public class PythonAstToRuleEngineInputConverter {
      * @param variableScope Current scope stack for variable resolution
      * @param variableFrameMap Map to track variables/arrays created in function body (null for non-function contexts)
      * @param counter Array containing current frame counter (modified during conversion)
+     * @param parentScopeUnit The parent scope unit (If/While/FunctionCall) for this command
      * @return The created Command, or null if statement doesn't produce a command (functions, returns)
      * @throws CompilationException If conversion fails for unsupported constructs
      */
     private Command convertStatement(AstNode node, List<String> variableScope,
                                     Map<Integer, RuleEngineInputUnits> variableFrameMap,
-                                    int[] counter) throws CompilationException {
+                                    int[] counter,
+                                    RuleEngineInputUnits parentScopeUnit) throws CompilationException {
         Command command = new Command();
         command.setId("command_" + UUID.randomUUID().toString());
         command.setCodeStrPtr(debugLevelCodeCreator.getLine());
+        
+        // Set parent relationship for this command
+        if (parentScopeUnit != null) {
+            command.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+        }
         
         if (node instanceof AssignNode) {
             convertAssign((AssignNode) node, command, variableScope, variableFrameMap, counter);
         } else if (node instanceof AugAssignNode) {
             convertAugAssign((AugAssignNode) node, command, variableScope);
         } else if (node instanceof IfNode) {
-            convertIf((IfNode) node, command, variableScope, variableFrameMap, counter);
+            convertIf((IfNode) node, command, variableScope, variableFrameMap, counter, parentScopeUnit);
         } else if (node instanceof WhileNode) {
-            convertWhile((WhileNode) node, command, variableScope, variableFrameMap, counter);
+            convertWhile((WhileNode) node, command, variableScope, variableFrameMap, counter, parentScopeUnit);
         } else if (node instanceof FunctionDefNode) {
-            convertFunctionDef((FunctionDefNode) node, command, variableScope);
+            convertFunctionDef((FunctionDefNode) node, command, variableScope, parentScopeUnit);
             return null; // Functions don't create commands in main flow
         } else if (node instanceof ExprNode) {
             convertExpr((ExprNode) node, command, variableScope);
         } else if (node instanceof ReturnNode) {
-            return convertReturn((ReturnNode) node, variableScope);
+            return convertReturn((ReturnNode) node, variableScope, parentScopeUnit);
         }
         ruleEngineInput.getCommands().add(command);
         return command;
@@ -1093,11 +1100,18 @@ public class PythonAstToRuleEngineInputConverter {
      */
     private void convertIf(IfNode ifNode, Command command, List<String> variableScope,
                           Map<Integer, RuleEngineInputUnits> variableFrameMap,
-                          int[] counter) 
+                          int[] counter,
+                          RuleEngineInputUnits parentScopeUnit) 
             throws CompilationException {
         
         If ifBlock = new If();
         ifBlock.setId("if_" + UUID.randomUUID().toString());
+        
+        // Set parent for the if block itself
+        if (parentScopeUnit != null) {
+            ifBlock.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+        }
+        
         variableScope.add(ifBlock.getId());
         
         Condition condition = convertCondition(ifNode.getTest(), variableScope);
@@ -1109,7 +1123,7 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.addIndentation();
         debugLevelCodeCreator.nextLine();
         
-        List<Command> ifCommands = convertBody(ifNode.getBody(), variableScope, variableFrameMap, counter);
+        List<Command> ifCommands = convertBody(ifNode.getBody(), variableScope, variableFrameMap, counter, ifBlock);
         if (!ifCommands.isEmpty()) {
             ifBlock.setIfCommand(ifCommands.get(0).getId());
         }
@@ -1121,7 +1135,7 @@ public class PythonAstToRuleEngineInputConverter {
             debugLevelCodeCreator.addIndentation();
             debugLevelCodeCreator.nextLine();
             
-            List<Command> elseCommands = convertBody(ifNode.getOrelse(), variableScope, variableFrameMap, counter);
+            List<Command> elseCommands = convertBody(ifNode.getOrelse(), variableScope, variableFrameMap, counter, ifBlock);
             if (!elseCommands.isEmpty()) {
                 ifBlock.setElseCommandId(elseCommands.get(0).getId());
             }
@@ -1194,11 +1208,18 @@ public class PythonAstToRuleEngineInputConverter {
      */
     private void convertWhile(WhileNode whileNode, Command command, List<String> variableScope,
                              Map<Integer, RuleEngineInputUnits> variableFrameMap,
-                             int[] counter) 
+                             int[] counter,
+                             RuleEngineInputUnits parentScopeUnit) 
             throws CompilationException {
         
         While whileBlock = new While();
         whileBlock.setId("while_" + UUID.randomUUID().toString());
+        
+        // Set parent for the while block itself
+        if (parentScopeUnit != null) {
+            whileBlock.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+        }
+        
         variableScope.add(whileBlock.getId());
         
         Condition condition = convertCondition(whileNode.getTest(), variableScope);
@@ -1210,7 +1231,7 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.addIndentation();
         debugLevelCodeCreator.nextLine();
         
-        List<Command> bodyCommands = convertBody(whileNode.getBody(), variableScope, variableFrameMap, counter);
+        List<Command> bodyCommands = convertBody(whileNode.getBody(), variableScope, variableFrameMap, counter, whileBlock);
         if (!bodyCommands.isEmpty()) {
             whileBlock.setWhileCommandId(bodyCommands.get(0).getId());
         }
@@ -1248,7 +1269,7 @@ public class PythonAstToRuleEngineInputConverter {
      * @param funcDef The FunctionDefNode to process
      * @param command The Command object (unused, function returns null from convertStatement)
      */
-    private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScopeNotUsed) throws CompilationException {
+    private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScopeNotUsed, RuleEngineInputUnits parentScopeUnit) throws CompilationException {
         debugLevelCodeCreator.concat("def " + funcDef.getName() + "(");
         List<String> paramNames = new ArrayList<>();
         List<String> paramIds = new ArrayList<>();
@@ -1300,7 +1321,14 @@ public class PythonAstToRuleEngineInputConverter {
         functionDefinitionArgs.put(funcDef.getName(), new ArrayList<>(paramIds));
 
         FunctionCall functionCall = new FunctionCall();
-        List<Command> bodyCommands = convertBody(funcDef.getBody(), variableScope, variableFrameMap, counter);
+        functionCall.setId(funcDef.getName());
+        
+        // Set parent for the function call itself (usually null for top-level functions)
+        if (parentScopeUnit != null) {
+            functionCall.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+        }
+        
+        List<Command> bodyCommands = convertBody(funcDef.getBody(), variableScope, variableFrameMap, counter, functionCall);
         if (!bodyCommands.isEmpty()) {
             functionCall.setFirstCommandId(bodyCommands.get(0).getId());
         }
@@ -1369,9 +1397,11 @@ public class PythonAstToRuleEngineInputConverter {
      * 
      * @param returnNode The ReturnNode to convert
      * @param variableScope Current scope stack for variable resolution
+     * @param parentScopeUnit The parent scope unit (typically a FunctionCall) for this return statement
      * @throws CompilationException If return value cannot be converted
      */
-    private Command convertReturn(ReturnNode returnNode, List<String> variableScope) 
+    private Command convertReturn(ReturnNode returnNode, List<String> variableScope, 
+                                 RuleEngineInputUnits parentScopeUnit) 
             throws CompilationException {
         
         AstNode returnValue = returnNode.getValue();
@@ -1379,6 +1409,12 @@ public class PythonAstToRuleEngineInputConverter {
         Command command = new Command();
         command.setId("command_" + UUID.randomUUID().toString());
         command.setCodeStrPtr(debugLevelCodeCreator.getLine());
+        
+        // Set parent for the return command
+        if (parentScopeUnit != null) {
+            command.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+        }
+        
         ruleEngineInput.getCommands().add(command);
         
         // Handle empty return (returns None)
@@ -1433,6 +1469,11 @@ public class PythonAstToRuleEngineInputConverter {
                 assignCommand.setId("command_" + UUID.randomUUID().toString());
                 assignCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
                 
+                // Set parent for the assign command
+                if (parentScopeUnit != null) {
+                    assignCommand.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+                }
+                
                 // Create the ReturnOperation for: returnTargetIds[i] = returnValueIds[i]
                 ReturnOperation returnOperation = new ReturnOperation();
                 returnOperation.setId(UUID.randomUUID().toString());
@@ -1449,6 +1490,12 @@ public class PythonAstToRuleEngineInputConverter {
                 targetCommand.setId("command_" + UUID.randomUUID().toString());
                 targetCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
                 targetCommand.setVariableId(returnTargetId);
+                
+                // Set parent for the target command
+                if (parentScopeUnit != null) {
+                    targetCommand.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+                }
+                
                 ruleEngineInput.getCommands().add(targetCommand);
                 
                 returnOperation.setOperand1(targetCommand.getId());
@@ -1475,6 +1522,12 @@ public class PythonAstToRuleEngineInputConverter {
         returnCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
         returnCommand.setReturnStatement(true);
         returnCommand.setReturnValueIds(returnValueIds);
+        
+        // Set parent for the return command
+        if (parentScopeUnit != null) {
+            returnCommand.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
+        }
+        
         ruleEngineInput.getCommands().add(returnCommand);
         
         // Link the last assign command to the return command
@@ -2061,14 +2114,15 @@ public class PythonAstToRuleEngineInputConverter {
      */
     private List<Command> convertBody(List<AstNode> body, List<String> variableScope,
                                      Map<Integer, RuleEngineInputUnits> variableFrameMap, 
-                                     int[] counter) 
+                                     int[] counter,
+                                     RuleEngineInputUnits parentScopeUnit) 
             throws CompilationException {
         
         List<Command> commands = new ArrayList<>();
         Command previousCommand = null;
         
         for (AstNode node : body) {
-            Command command = convertStatement(node, variableScope, variableFrameMap, counter);
+            Command command = convertStatement(node, variableScope, variableFrameMap, counter, parentScopeUnit);
             if (command != null) {
                 commands.add(command);
                 if (previousCommand != null) {
@@ -2077,7 +2131,6 @@ public class PythonAstToRuleEngineInputConverter {
                 previousCommand = command;
             }
         }
-        
         return commands;
     }
     

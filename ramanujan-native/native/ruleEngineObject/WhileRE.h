@@ -23,6 +23,8 @@ public:
     }
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+        id = whileCommand->id;
+        immediateParent = getFromMap(map, whileCommand->immediateParentRuleEngineInputUnitId);
         whileCommandRE = dynamic_cast<CommandRE *>(getFromMap(map, whileCommand->whileCommandId));
         conditionRe = dynamic_cast<ConditionRE *>(getFromMap(map, whileCommand->conditionId));
         conditionRe->whileUser.insert(this);
@@ -49,9 +51,14 @@ public:
                 commandRE = commandRE->get();
             }
 
-            // Normal completion of while loop
-            if (FunctionCommandRE::hasEncounteredReturn)
-            {
+            // Check if a return was encountered in the while loop body
+            if (encounteredReturn) [[unlikely]] {
+                // Propagate return flag to parent
+                if (immediateParent != nullptr) {
+                    immediateParent->encounteredReturn = true;
+                }
+                // Disable our flag and return nullptr
+                encounteredReturn = false;
                 return nullptr;
             }
         }

@@ -34,6 +34,8 @@ public:
 
     void
     setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+        id = ifCommand->id;
+        immediateParent = getFromMap(map, ifCommand->immediateParentRuleEngineInputUnitId);
         conditionRe = dynamic_cast<ConditionRE*> (getFromMap(map, ifCommand->conditionId));
         ifCommandRE = dynamic_cast<CommandRE*> (getFromMap(map, ifCommand->ifCommand));
         elseCommandRE = dynamic_cast<CommandRE*> (getFromMap(map, ifCommand->elseCommand));
@@ -41,6 +43,7 @@ public:
     }
 
     CommandRE* process() override {
+
 #ifdef DEBUG_BUILD
         std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
 #endif
@@ -58,10 +61,18 @@ public:
         while(commandRE != nullptr) {
             commandRE = commandRE->get();
         }
-        // Normal completion of if block
-        if (FunctionCommandRE::hasEncounteredReturn) {
+        
+        // Check if a return was encountered in the if/else block
+        if (encounteredReturn) [[unlikely]] {
+            // Propagate return flag to parent
+            if (immediateParent != nullptr) {
+                immediateParent->encounteredReturn = true;
+            }
+            // Disable our flag and return nullptr
+            encounteredReturn = false;
             return nullptr;
         }
+        
         return nextCommandRE;
     }
 };

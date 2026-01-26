@@ -12,6 +12,7 @@ class RuleEngineInputUnit {
     public:
         std::string id;
         int codeStrPtr;
+        std::string immediateParentRuleEngineInputUnitId;
 
         /**
          * This class is an input from network, there is an internal object which needs to be created for this impl,
