@@ -957,7 +957,8 @@ public class PythonCodeRunTest {
             "    i = 0\n" +
             "    while i < size:\n" +
             "        if arr[i] < 0:\n" +
-            "            return arr[i]\n" +
+            "            val = arr[i]\n" +
+            "            return val\n" +
             "        i = i + 1\n" +
             "    return 0\n" +
             "\n" +

@@ -8,6 +8,9 @@ import in.ramanujan.developer.console.pojo.packageRun.packageBuilderProperty.Pac
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Scanner;
 
@@ -17,16 +20,14 @@ public class PackageBuildHelper {
 
     public static String readFile(String fileLocation) {
         try {
-            String data = "";
-            File file = new File(fileLocation);
-            Scanner reader = new Scanner(file);
-            while (reader.hasNextLine()) {
-                data += reader.nextLine();
-            }
-            reader.close();
-            return data;
+            // Use readAllBytes for Java 8 compatibility while preserving original content
+            return new String(Files.readAllBytes(Paths.get(fileLocation)), StandardCharsets.UTF_8);
         } catch (FileNotFoundException e) {
             System.out.println("An error occurred.");
+            System.exit(1);
+            return null;
+        } catch (Exception e) {
+            System.out.println("Failed to read file: " + fileLocation);
             System.exit(1);
             return null;
         }

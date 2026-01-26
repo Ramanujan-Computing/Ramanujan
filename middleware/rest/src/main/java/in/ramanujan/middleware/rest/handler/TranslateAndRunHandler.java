@@ -23,6 +23,8 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static in.ramanujan.translation.codeConverter.utils.TranslateUtil.isPythonCode;
+
 @Component
 public class TranslateAndRunHandler implements Handler<RoutingContext> {
     @Autowired
@@ -78,7 +80,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
     protected void runCode(RoutingContext routingContext, CodeRunRequest codeRunRequest, Boolean toBeDebugged, AtomicInteger currentRequestCount) {
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
-        final String code = codeRunRequest.getCode().replaceAll("\\n","").replaceAll("\\t","");
+        final String code = isPythonCode(codeRunRequest.getCode()) ? codeRunRequest.getCode() : codeRunRequest.getCode().replaceAll("\\n","").replaceAll("\\t","");
         translateService.translate(code, codeRunRequest.getCsvInformationList(), variableMap, arrayMap)
                 .setHandler(translateHandler -> {
            if(translateHandler.succeeded()) {

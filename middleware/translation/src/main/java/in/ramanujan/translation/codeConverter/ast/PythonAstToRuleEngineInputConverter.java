@@ -587,7 +587,9 @@ public class PythonAstToRuleEngineInputConverter {
                     }
                     
                     Array array = new Array();
-                    array.setId(getScopedId(variableScope) + UUID.randomUUID().toString());
+                    String uuid = UUID.randomUUID().toString();
+                    String scopedId = getScopedId(variableScope);
+                    array.setId(!scopedId.isEmpty() ? scopedId + uuid : uuid + "_name_" + varName);
                     array.setName(varName);
                     array.setDataType("array");
                     
@@ -1112,7 +1114,8 @@ public class PythonAstToRuleEngineInputConverter {
             ifBlock.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
         }
         
-        variableScope.add(ifBlock.getId());
+        String currentScope = variableScope.isEmpty() ? "" : variableScope.get(variableScope.size() - 1) + "_";
+        variableScope.add(currentScope + ifBlock.getId());
         
         Condition condition = convertCondition(ifNode.getTest(), variableScope);
         ifBlock.setConditionId(condition.getId());
@@ -1220,7 +1223,8 @@ public class PythonAstToRuleEngineInputConverter {
             whileBlock.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
         }
         
-        variableScope.add(whileBlock.getId());
+        String currentScope = variableScope.isEmpty() ? "" : variableScope.get(variableScope.size() - 1) + "_";
+        variableScope.add(currentScope + whileBlock.getId());
         
         Condition condition = convertCondition(whileNode.getTest(), variableScope);
         whileBlock.setConditionId(condition.getId());
