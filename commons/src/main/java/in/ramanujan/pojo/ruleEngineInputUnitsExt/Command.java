@@ -27,6 +27,7 @@ public class Command extends RuleEngineInputUnits {
     private List<String> returnValueIds;
     private List<String> returnTargetIds;
     private String returnOperation;
+    private List<ReturnAssignmentPair> returnAssignmentPairs;
 
     public Command() {
         setClazz(Command.class);

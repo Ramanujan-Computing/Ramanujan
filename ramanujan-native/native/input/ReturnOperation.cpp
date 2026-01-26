@@ -6,10 +6,10 @@
 #define RETURNOPERATION_CPP
 
 #include "ReturnOperation.hpp"
-#include "../ruleEngineObject/ReturnOperationRE.h"
 
 RuleEngineInputUnits* ReturnOperation::getInternalAnalogy() {
-    return new ReturnOperationRE(this);
+    // ReturnOperation is no longer used - assignments are handled by ReturnRE
+    return nullptr;
 }
 
 #endif

@@ -11,7 +11,6 @@
 #include "RedefineArrayCommandRE.h"
 
 class OperationRE;
-class ReturnOperationRE;
 class IfRE;
 class ConstantRE;
 class VariableRE;
@@ -26,7 +25,6 @@ class CommandRE : public RuleEngineInputUnits {
 private:
     WhileRE* whileCommandRE;
     OperationRE* operationCommand;
-    ReturnOperationRE* returnOperationCommand;
     IfRE* ifCommandRE;
     ConstantRE* constantRE;
     VariableRE* variableRE;

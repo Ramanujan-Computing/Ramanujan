@@ -11,7 +11,6 @@
 #include "../ruleEngineObject/dataContainer/VariableRE.h"
 #include "../ruleEngineObject/dataContainer/ArrayRE.h"
 #include "../ruleEngineObject/OperationRE.h"
-#include "../ruleEngineObject/ReturnOperationRE.h"
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/FunctionCommandRE.h"
 #include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"

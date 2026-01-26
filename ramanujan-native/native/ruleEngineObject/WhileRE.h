@@ -51,7 +51,7 @@ public:
                 commandRE = commandRE->get();
             }
 
-            // Check if a return was encountered in the while loop body
+             // Check if a return was encountered in the while loop body
             if (encounteredReturn) [[unlikely]] {
                 // Propagate return flag to parent
                 if (immediateParent != nullptr) {

@@ -1458,31 +1458,15 @@ public class PythonAstToRuleEngineInputConverter {
             }
         }
         
-        // Create assign operation commands for each return value only if we have return targets
-        Command firstAssignCommand = null;
-        Command previousAssignCommand = null;
+        // Create assignment pairs for return values if we have return targets
+        List<ReturnAssignmentPair> returnAssignmentPairs = new ArrayList<>();
         
         if (returnTargetIds != null && !returnTargetIds.isEmpty()) {
-            // Create assign operation commands for each return value
+            // Create assignment pairs for each return value: returnTargetIds[i] = returnValueIds[i]
             for (int i = 0; i < returnValueIds.size(); i++) {
-                Command assignCommand = new Command();
-                assignCommand.setId("command_" + UUID.randomUUID().toString());
-                assignCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
-                
-                // Set parent for the assign command
-                if (parentScopeUnit != null) {
-                    assignCommand.setImmediateParentRuleEngineInputUnitId(parentScopeUnit.getId());
-                }
-                
-                // Create the ReturnOperation for: returnTargetIds[i] = returnValueIds[i]
-                ReturnOperation returnOperation = new ReturnOperation();
-                returnOperation.setId(UUID.randomUUID().toString());
-                returnOperation.setOperatorType("=");
-                
                 // operand2 is the return value - create a command wrapping it
                 String returnValueId = returnValueIds.get(i);
                 Command returnValueCommand = createCommandForVariableOrArrayForReturn(returnValueId);
-                returnOperation.setOperand2(returnValueCommand.getId());
                 
                 // operand1 is the return target variable from function arguments
                 String returnTargetId = returnTargetIds.get(i);
@@ -1498,21 +1482,11 @@ public class PythonAstToRuleEngineInputConverter {
                 
                 ruleEngineInput.getCommands().add(targetCommand);
                 
-                returnOperation.setOperand1(targetCommand.getId());
-                
-                ruleEngineInput.getReturnOperations().add(returnOperation);
-                assignCommand.setReturnOperation(returnOperation.getId());
-                
-                ruleEngineInput.getCommands().add(assignCommand);
-                
-                // Link the assign commands
-                if (firstAssignCommand == null) {
-                    firstAssignCommand = assignCommand;
-                }
-                if (previousAssignCommand != null) {
-                    previousAssignCommand.setNextId(assignCommand.getId());
-                }
-                previousAssignCommand = assignCommand;
+                // Create the pair (target, source)
+                ReturnAssignmentPair pair = new ReturnAssignmentPair();
+                pair.setTargetCommandId(targetCommand.getId());
+                pair.setSourceCommandId(returnValueCommand.getId());
+                returnAssignmentPairs.add(pair);
             }
         }
         
@@ -1522,6 +1496,7 @@ public class PythonAstToRuleEngineInputConverter {
         returnCommand.setCodeStrPtr(debugLevelCodeCreator.getLine());
         returnCommand.setReturnStatement(true);
         returnCommand.setReturnValueIds(returnValueIds);
+        returnCommand.setReturnAssignmentPairs(returnAssignmentPairs);
         
         // Set parent for the return command
         if (parentScopeUnit != null) {
@@ -1530,17 +1505,11 @@ public class PythonAstToRuleEngineInputConverter {
         
         ruleEngineInput.getCommands().add(returnCommand);
         
-        // Link the last assign command to the return command
-        if (previousAssignCommand != null) {
-            previousAssignCommand.setNextId(returnCommand.getId());
-        }
-        
-        
         debugLevelCodeCreator.concat("return ");
         appendValueToDebug(returnValue);
         debugLevelCodeCreator.nextLine();
 
-        return firstAssignCommand != null ? firstAssignCommand : returnCommand;
+        return returnCommand;
     }
     
     /**
@@ -1871,29 +1840,15 @@ public class PythonAstToRuleEngineInputConverter {
                 // Only create assignments if this is a return with values
                 if (!returnValueIds.isEmpty() && returnValueIds.size() == returnCount) {
                     
-                    // Check if assign commands already exist for this return statement
-                    List<Command> existingAssignCommands = findReturnAssignCommands(returnValueIds, returnTargetIds);
-                    
-                    // Only create new assign commands if they don't already exist
-                    if (existingAssignCommands == null || existingAssignCommands.isEmpty()) {
-                        // Create assign operations for each return value
-                        Command firstAssignCommand = null;
-                        Command previousAssignCommand = null;
+                    // Check if assignment pairs already exist for this return statement
+                    if (cmd.getReturnAssignmentPairs() == null || cmd.getReturnAssignmentPairs().isEmpty()) {
+                        // Create assignment pairs for each return value
+                        List<ReturnAssignmentPair> returnAssignmentPairs = new ArrayList<>();
                         
                         for (int i = 0; i < returnValueIds.size(); i++) {
-                            Command assignCommand = new Command();
-                            assignCommand.setId("command_" + UUID.randomUUID().toString());
-                            assignCommand.setCodeStrPtr(cmd.getCodeStrPtr());
-                            
-                            // Create the ReturnOperation for: returnTargetIds[i] = returnValueIds[i]
-                            ReturnOperation returnOperation = new ReturnOperation();
-                            returnOperation.setId(UUID.randomUUID().toString());
-                            returnOperation.setOperatorType("=");
-                            
                             // operand2 is the return value - create a command wrapping it
                             String returnValueId = returnValueIds.get(i);
                             Command returnValueCommand = createCommandForVariableOrArrayForReturn(returnValueId);
-                            returnOperation.setOperand2(returnValueCommand.getId());
                             
                             // operand1 is the return target variable from function arguments
                             String returnTargetId = returnTargetIds.get(i);
@@ -1903,38 +1858,15 @@ public class PythonAstToRuleEngineInputConverter {
                             targetCommand.setVariableId(returnTargetId);
                             ruleEngineInput.getCommands().add(targetCommand);
                             
-                            returnOperation.setOperand1(targetCommand.getId());
-                            
-                            ruleEngineInput.getReturnOperations().add(returnOperation);
-                            assignCommand.setReturnOperation(returnOperation.getId());
-                            
-                            ruleEngineInput.getCommands().add(assignCommand);
-                            
-                            // Link the assign commands
-                            if (firstAssignCommand == null) {
-                                firstAssignCommand = assignCommand;
-                            }
-                            if (previousAssignCommand != null) {
-                                previousAssignCommand.setNextId(assignCommand.getId());
-                            }
-                            previousAssignCommand = assignCommand;
+                            // Create the pair (target, source)
+                            ReturnAssignmentPair pair = new ReturnAssignmentPair();
+                            pair.setTargetCommandId(targetCommand.getId());
+                            pair.setSourceCommandId(returnValueCommand.getId());
+                            returnAssignmentPairs.add(pair);
                         }
                         
-                        // Link the last assign command to the return command
-                        if (previousAssignCommand != null) {
-                            previousAssignCommand.setNextId(cmd.getId());
-                        }
-                        
-                        // Find the command that was pointing to this return command and update it
-                        // to point to the first assign command instead
-                        if (firstAssignCommand != null) {
-                            for (Command prevCmd : ruleEngineInput.getCommands()) {
-                                if (cmd.getId().equals(prevCmd.getNextId())) {
-                                    prevCmd.setNextId(firstAssignCommand.getId());
-                                    break;
-                                }
-                            }
-                        }
+                        // Set the assignment pairs on the return command
+                        cmd.setReturnAssignmentPairs(returnAssignmentPairs);
                     }
                 }
             }

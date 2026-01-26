@@ -4,30 +4,46 @@
 #include "RuleEngineInputUnits.hpp"
 #include "FunctionCommandRE.h"
 #include "dataContainer/VariableRE.h"
+#include "CommandRE.h"
 #include <vector>
 #include <string>
+#include <utility>
 
 /**
  * ReturnRE represents a return statement in the rule engine.
  * 
- * Used for tuple unpacking support where functions return multiple values
- * that are assigned to target variables.
+ * Handles multiple return value assignments in a single command for efficiency.
+ * Instead of chaining N ReturnOperationRE commands, this executes all assignments
+ * at once, reducing command execution overhead from N+1 to 1.
  * 
- * Note: This is a placeholder implementation. Full return statement execution
- * logic may be added in the future when return statements are fully integrated
- * into the function execution flow.
+ * Stores pairs of (target, source) operands and performs sequential assignments
+ * v1 = v2 for all pairs before propagating the return flag.
  */
 class ReturnRE : public RuleEngineInputUnits {
 public:
     std::vector<std::string> returnValueIds;
     std::vector<VariableRE*> returnValueREs;
+    
+    // Pairs of (target_id, source_id) for return value assignments
+    std::vector<std::pair<std::string, std::string>> assignmentPairs;
+    
+    // Fixed-size arrays for efficient execution (max 255 return values)
+    int assignmentCount;
+    DoublePtr* targetValues[255];
+    DoublePtr* sourceValues[255];
 
     ReturnRE(std::vector<std::string> returnValueIds) 
-        : returnValueIds(returnValueIds) {
+        : returnValueIds(returnValueIds), assignmentCount(0) {
+    }
+    
+    // Constructor that accepts assignment pairs
+    ReturnRE(std::vector<std::string> returnValueIds,
+             std::vector<std::pair<std::string, std::string>> assignmentPairs)
+        : returnValueIds(returnValueIds), assignmentPairs(assignmentPairs), assignmentCount(0) {
     }
 
     void destroy() override {
-        // No dynamic allocations to clean up
+        // No dynamic allocations to clean up (using stack arrays)
     }
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits*> *map) override {
@@ -43,31 +59,44 @@ public:
                 }
             }
         }
+        
+        // Resolve assignment pairs to fixed arrays
+        assignmentCount = 0;
+        
+        for (const auto& pair : assignmentPairs) {
+            if (assignmentCount >= 255) {
+                // Max return values reached
+                break;
+            }
+            
+            CommandRE* target = dynamic_cast<CommandRE*>(getFromMap(map, pair.first));
+            CommandRE* source = dynamic_cast<CommandRE*>(getFromMap(map, pair.second));
+            
+            if (target && source) {
+                DoublePtr* v1 = target->getVar();
+                DoublePtr* v2 = source->getVar();
+                
+                if (v1 && v2) {
+                    targetValues[assignmentCount] = v1;
+                    sourceValues[assignmentCount] = v2;
+                    assignmentCount++;
+                }
+            }
+        }
     }
 
     CommandRE* process() override {
-        // Propagate return flag up to parent scope units until we reach a function
-//        RuleEngineInputUnits* parent = immediateParent;
+        // Execute all return value assignments sequentially
+        for (int i = 0; i < assignmentCount; i++) {
+            targetValues[i]->value = sourceValues[i]->value;
+        }
+        
+#ifdef DEBUG_BUILD
+        debugger->commitDebugPoint();
+#endif
+        
+        // Propagate return flag up to parent scope
         immediateParent->encounteredReturn = true;
-//        while (parent != nullptr) {
-//            // If parent already encountered return, disable it and propagate up
-//            if (parent->encounteredReturn) {
-//                parent->encounteredReturn = false;
-//            }
-//
-//            // Set the flag on current parent
-//            parent->encounteredReturn = true;
-//
-//            // Check if we've reached a function - stop propagation there
-//            FunctionCommandRE* funcParent = dynamic_cast<FunctionCommandRE*>(parent);
-//            if (funcParent != nullptr) {
-//                // Reached function boundary, stop propagation
-//                break;
-//            }
-//
-//            // Move to next parent
-//            parent = parent->immediateParent;
-//        }
         
         // Return statement hit - return nullptr to stop execution
         return nullptr;
@@ -75,9 +104,8 @@ public:
 
     // Placeholder for future return execution logic
     void execute() {
-        // TODO: Implement return statement execution
-        // This would involve copying values from returnValueREs to
-        // the target variables passed as function arguments
+        // TODO: Implement return statement execution if needed
+        // Currently handled in process()
     }
 };
 
