@@ -35,7 +35,7 @@ public class ExecutorImpl implements Operation {
         OkHttpClient httpClient = new OkHttpClient(builder);
         String json = new ObjectMapper().writeValueAsString(createJson(args));
         RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
-        Request request = new Request.Builder().url("http://localhost:8888/run?debug=false").post(requestBody).build();
+        Request request = new Request.Builder().url("https://server.ramanujan.dev/run?debug=false").post(requestBody).build();
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             Response response = httpClient.newCall(request).execute();
@@ -47,7 +47,7 @@ public class ExecutorImpl implements Operation {
                 System.out.println(taskId);
                 Diagram diagram = codeRunAsyncResponse.getDiagram();
                 System.out.println(diagram);
-                request = new Request.Builder().url("http://localhost:8888/status?uuid=" + taskId).build();
+                request = new Request.Builder().url("https://server.ramanujan.dev/status?uuid=" + taskId).build();
                 while(true) {
                     try {
                         Thread.sleep(5000);
