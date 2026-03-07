@@ -3,7 +3,6 @@ package in.ramanujan.middleware.service;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
-import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
 import in.ramanujan.rule.engine.NativeProcessor;
 import in.ramanujan.translation.codeConverter.DagElement;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
@@ -18,7 +17,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -387,94 +385,6 @@ public class TranslateServiceTest {
         } catch (Exception e) {
             System.err.println("Error resolving variables: " + e.getMessage());
         }
-    }
-
-    /**
-     * Tests that an array is automatically created in the non-thread (root) DagElement
-     * for each uploaded CSV file, with the array name equal to the CSV filename title
-     * (i.e., the filename without its extension).
-     */
-    @Test
-    public void testCsvArrayAutoCreatedWithCsvTitle() throws Exception {
-        String csvData = "1,2,3\n4,5,6\n7,8,9";
-        CsvInformation csvInfo = new CsvInformation();
-        csvInfo.setFileName("mydata.csv");
-        csvInfo.setData(csvData);
-
-        String code = "var x:integer;\nx = 1;";
-
-        Map<String, Variable> variableMap = new HashMap<>();
-        Map<String, Array> arrayMap = new HashMap<>();
-
-        TranslateResponse response = translateService.translate(
-                code, Collections.singletonList(csvInfo), variableMap, arrayMap).result();
-        assertNotNull("TranslateResponse should not be null", response);
-
-        // Collect arrays from all DagElements
-        if (response.getDagElementList() != null) {
-            for (DagElement element : response.getDagElementList()) {
-                RuleEngineInput rei = element.getRuleEngineInput();
-                if (rei != null) {
-                    for (Array array : rei.getArrays()) {
-                        arrayMap.put(array.getId(), array);
-                    }
-                }
-            }
-        }
-
-        // The array "mydata" should be automatically created from "mydata.csv"
-        Array csvArray = arrayMap.values().stream()
-                .filter(a -> "mydata".equals(a.getName()))
-                .findFirst()
-                .orElse(null);
-
-        assertNotNull("Array 'mydata' should be auto-created from uploaded CSV 'mydata.csv'", csvArray);
-        // 3 rows x 3 columns = 9 entries
-        assertEquals("CSV array should contain all 9 data entries (3 rows x 3 cols)", 9, csvArray.getValues().size());
-        // Spot-check a value: row 0, col 0 -> "1" parsed as Double
-        assertEquals("CSV entry [0_0] should be 1.0", 1.0, (Double) csvArray.getValues().get("0_0"), 0.0001);
-        assertEquals("CSV entry [1_1] should be 5.0", 5.0, (Double) csvArray.getValues().get("1_1"), 0.0001);
-        assertEquals("CSV entry [2_2] should be 9.0", 9.0, (Double) csvArray.getValues().get("2_2"), 0.0001);
-    }
-
-    /**
-     * Tests that when a CSV is already explicitly imported via import_csv, a duplicate
-     * array is NOT created by the auto-creation logic.
-     */
-    @Test
-    public void testNoDuplicateArrayWhenCsvAlreadyImported() throws Exception {
-        String csvData = "10,20\n30,40";
-        CsvInformation csvInfo = new CsvInformation();
-        csvInfo.setFileName("scores.csv");
-        csvInfo.setData(csvData);
-
-        // Code that explicitly imports the CSV under the same derived name "scores"
-        String code = "import_csv scores.csv as scores";
-
-        Map<String, Variable> variableMap = new HashMap<>();
-        Map<String, Array> arrayMap = new HashMap<>();
-
-        TranslateResponse response = translateService.translate(
-                code, Collections.singletonList(csvInfo), variableMap, arrayMap).result();
-        assertNotNull("TranslateResponse should not be null", response);
-
-        // Collect arrays from all DagElements
-        if (response.getDagElementList() != null) {
-            for (DagElement element : response.getDagElementList()) {
-                RuleEngineInput rei = element.getRuleEngineInput();
-                if (rei != null) {
-                    for (Array array : rei.getArrays()) {
-                        arrayMap.put(array.getId(), array);
-                    }
-                }
-            }
-        }
-
-        long countScoresArrays = arrayMap.values().stream()
-                .filter(a -> "scores".equals(a.getName()))
-                .count();
-
-        assertEquals("Array 'scores' should appear exactly once (no duplicate from auto-creation)", 1, countScoresArrays);
     }
 
     /**

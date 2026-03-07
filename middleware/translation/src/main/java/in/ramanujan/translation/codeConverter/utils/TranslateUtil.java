@@ -4,7 +4,6 @@ import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
-import in.ramanujan.pojo.ruleEngineInputUnitsExt.Constant;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
@@ -84,22 +83,6 @@ public class TranslateUtil {
 
                 for(RuleEngineInput ruleEngineInputFunction : functionCallsRuleEngineInput.values()) {
                     ruleEngineInput.addAllPartsOfGivenRuleEngineInput(ruleEngineInputFunction);
-                }
-
-                // For the root (non-thread) code element, explicitly add arrays from uploaded CSV files.
-                // The array name equals the CSV filename title (without extension).
-                if (pairCodeSnippetElementWithParent.getDagElement() == null && csvInformationList != null) {
-                    for (CsvInformation csvInfo : csvInformationList) {
-                        String arrayName = getCsvArrayName(csvInfo.getFileName());
-                        if (!arrayName.isEmpty() && !codeConverter.getArrayMap().containsKey(arrayName)) {
-                            Array array = new Array();
-                            array.setId(UUID.randomUUID().toString());
-                            array.setName(arrayName);
-                            array.setValues(parseCsvToValues(csvInfo.getData()));
-                            codeConverter.setArray(array, "");
-                            ruleEngineInput.getArrays().add(array);
-                        }
-                    }
                 }
 
             }
@@ -541,45 +524,6 @@ public class TranslateUtil {
         }
         str += arguments.get(size - 1);
         return str;
-    }
-
-    /**
-     * Derives the array name from a CSV filename by stripping the file extension
-     * and any leading path components (e.g. "data/employees.csv" -> "employees").
-     */
-    private String getCsvArrayName(String fileName) {
-        if (fileName == null) {
-            return "";
-        }
-        int slashIndex = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
-        String baseName = slashIndex >= 0 ? fileName.substring(slashIndex + 1) : fileName;
-        int dotIndex = baseName.lastIndexOf('.');
-        return dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
-    }
-
-    /**
-     * Parses CSV text into a Map keyed by "row_column" indices, matching the
-     * format used by {@link in.ramanujan.translation.codeConverter.codeConverterLogicImpl.CsvImporter}.
-     */
-    private Map<String, Object> parseCsvToValues(String data) {
-        Map<String, Object> values = new HashMap<>();
-        if (data == null) {
-            return values;
-        }
-        String[] lines = data.split("\n");
-        int row = 0;
-        for (String line : lines) {
-            String[] cols = line.split(",");
-            int column = 0;
-            for (String col : cols) {
-                Constant constant = new Constant();
-                constant.setValueAndDataType(col.trim());
-                values.put(row + "_" + column, constant.getValue());
-                column++;
-            }
-            row++;
-        }
-        return values;
     }
 
 }
