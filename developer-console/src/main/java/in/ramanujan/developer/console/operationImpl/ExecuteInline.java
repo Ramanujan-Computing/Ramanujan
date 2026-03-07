@@ -5,6 +5,7 @@ import in.ramanujan.developer.console.Operation;
 import in.ramanujan.developer.console.model.pojo.CodeRunRequest;
 import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
 import in.ramanujan.pojo.RuleEngineInput;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.Constant;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.translation.codeConverter.CodeSnippetElement;
@@ -214,7 +215,8 @@ public class ExecuteInline implements Operation {
             Map<String, Array> arrayMap = new HashMap<>();
             CodeRunRequest codeRunRequest = createJson(args);
             String code = codeRunRequest.getCode();
-            List<CsvInformation> csvInformationList = new ArrayList<>();
+            List<CsvInformation> csvInformationList = codeRunRequest.getCsvInformationList() != null
+                    ? codeRunRequest.getCsvInformationList() : new ArrayList<>();
             TranslateResponse translateResponse = new TranslateResponse();
             Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
             ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", 0);
@@ -251,6 +253,23 @@ public class ExecuteInline implements Operation {
             Map<String, String> dagElementAndCodeMap = new HashMap<>();
             DagElement firstDagElement = translateUtil.populateAllDagElements(firstCodeSnippetElement, csvInformationList,
                     functionCallsRuleEngineInput, variableMap, arrayMap, dagElementList, dagElementAndCodeMap, linesForFunctions);
+
+            // Explicitly add an array for each uploaded CSV to the non-thread (root) DagElement.
+            // The array name equals the CSV filename title (without extension).
+            for (CsvInformation csvInfo : csvInformationList) {
+                String arrayName = getCsvArrayName(csvInfo.getFileName());
+                if (!arrayName.isEmpty()) {
+                    boolean alreadyExists = arrayMap.values().stream().anyMatch(a -> arrayName.equals(a.getName()));
+                    if (!alreadyExists) {
+                        Array csvArray = new Array();
+                        csvArray.setId(UUID.randomUUID().toString());
+                        csvArray.setName(arrayName);
+                        csvArray.setValues(parseCsvToValues(csvInfo.getData()));
+                        firstDagElement.getRuleEngineInput().getArrays().add(csvArray);
+                        arrayMap.put(csvArray.getId(), csvArray);
+                    }
+                }
+            }
             translateResponse.setFirstDagElement(firstDagElement);
             translateResponse.setDagElementList(dagElementList);
             translateResponse.setCodeAndDagElementMap(dagElementAndCodeMap);
@@ -298,5 +317,44 @@ public class ExecuteInline implements Operation {
         } catch (CompilationException e) {
             throw new IOException(e);
         }
+    }
+
+    /**
+     * Derives the array name from a CSV filename by stripping the file extension
+     * and any leading path components (e.g. "data/employees.csv" -> "employees").
+     */
+    private String getCsvArrayName(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        int slashIndex = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+        String baseName = slashIndex >= 0 ? fileName.substring(slashIndex + 1) : fileName;
+        int dotIndex = baseName.lastIndexOf('.');
+        return dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+    }
+
+    /**
+     * Parses CSV text into a Map keyed by "row_column" indices, matching the
+     * format used by CsvImporter.
+     */
+    private Map<String, Object> parseCsvToValues(String data) {
+        Map<String, Object> values = new HashMap<>();
+        if (data == null) {
+            return values;
+        }
+        String[] lines = data.split("\\r?\\n");
+        int row = 0;
+        for (String line : lines) {
+            String[] cols = line.split(",");
+            int column = 0;
+            for (String col : cols) {
+                Constant constant = new Constant();
+                constant.setValueAndDataType(col.trim());
+                values.put(row + "_" + column, constant.getValue());
+                column++;
+            }
+            row++;
+        }
+        return values;
     }
 }
