@@ -42,6 +42,7 @@ public class TranslateUtil {
         populationQueue.add(new PairCodeSnippetElementWithParent(codeSnippetElement, null));
         DagElement lastElement = null;
         Map<String, DagElement> codeSnippetElementDagElementMap = new HashMap<>();
+        boolean isFirstDagElementBeingCreated = true;
         while(populationQueue.size() > 0) {
             PairCodeSnippetElementWithParent pairCodeSnippetElementWithParent = populationQueue.poll();
             DagElement dagElement = codeSnippetElementDagElementMap.get(pairCodeSnippetElementWithParent
@@ -51,7 +52,15 @@ public class TranslateUtil {
 
                 final ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", linesForCommonFunctions);
                 String code = pairCodeSnippetElementWithParent.getCodeSnippetElement().getCode();
-                
+
+                // For the first code snippet, if it is Python, prepend 2D array declarations for each CSV
+                if (isFirstDagElementBeingCreated && isPythonCode(code) && csvInformationList != null && !csvInformationList.isEmpty()) {
+                    String csvInitCode = generateCsvInitPythonCode(csvInformationList);
+                    if (!csvInitCode.isEmpty()) {
+                        code = csvInitCode + code;
+                    }
+                }
+
                 // Detect if code is Python or Ramanujan and call appropriate method
                 List<Command> commands = null;
                 if (isPythonCode(code)) {
@@ -106,12 +115,69 @@ public class TranslateUtil {
             lastElement = dagElement;
 
 
+            isFirstDagElementBeingCreated = false;
         }
         return  DagUtils.getFirstElementOfDag(lastElement, dagElementListToBePopulated);
     }
 
     public CodeConverter getNewCodeConverter(List<CsvInformation> csvInformationList) {
         return new CodeConverter(codeConverterLogicFactory, null, csvInformationList);
+    }
+
+    /**
+     * Generates Python code that declares and populates a 2D array for each CsvInformation.
+     * Array name is derived from the CSV file name (extension stripped, invalid chars replaced).
+     * Array dimensions are determined from the CSV data (rows x columns).
+     */
+    private String generateCsvInitPythonCode(List<CsvInformation> csvInformationList) {
+        StringBuilder sb = new StringBuilder();
+        for (CsvInformation csvInformation : csvInformationList) {
+            String data = csvInformation.getData();
+            if (data == null || data.trim().isEmpty()) {
+                continue;
+            }
+
+            // Derive a valid Python identifier from the file name
+            String arrayName = csvInformation.getFileName();
+            if (arrayName == null || arrayName.trim().isEmpty()) {
+                continue;
+            }
+            if (arrayName.endsWith(".csv")) {
+                arrayName = arrayName.substring(0, arrayName.length() - 4);
+            }
+            arrayName = arrayName.replaceAll("[^a-zA-Z0-9_]", "_");
+
+            // Parse rows
+            String[] rows = data.split("\n");
+            int numRows = rows.length;
+            if (numRows == 0) {
+                continue;
+            }
+
+            // Determine column count from first non-empty row
+            String[] firstRowCols = rows[0].split(",", -1);
+            int numCols = firstRowCols.length;
+
+            // Declare 2D array: name = [[0 for _ in range(cols)] for _ in range(rows)]
+            sb.append(arrayName)
+              .append(" = [[0 for _ in range(").append(numCols).append(")]");
+            sb.append(" for _ in range(").append(numRows).append(")]\n");
+
+            // Set each element: name[r][c] = value
+            for (int r = 0; r < numRows; r++) {
+                String[] cols = rows[r].split(",", -1);
+                for (int c = 0; c < cols.length; c++) {
+                    String value = cols[c].trim();
+                    if (!value.isEmpty()) {
+                        sb.append(arrayName)
+                          .append("[").append(r).append("]")
+                          .append("[").append(c).append("] = ")
+                          .append(value).append("\n");
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     /**
