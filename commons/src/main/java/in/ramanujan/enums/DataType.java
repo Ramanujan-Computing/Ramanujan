@@ -3,7 +3,8 @@ package in.ramanujan.enums;
 public enum  DataType {
     Integer("Integer"),
     String("String"),
-    Double("Double");
+    Double("Double"),
+    Object("Object");
 
     private String dataTypeName;
 

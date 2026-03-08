@@ -24,6 +24,8 @@ public class RuleEngineInput {
     private List<While> whileBlocks;
     private List<RedefineArrayCommand> redefineArrayCommands = new ArrayList<>();
     private List<ReturnOperation> returnOperations;
+    private List<ClassDefinition> classDefinitions;
+    private List<ObjectInstance> objectInstances;
 
     public RuleEngineInput() {
         variables = new ArrayList<>();
@@ -37,6 +39,8 @@ public class RuleEngineInput {
         methodDataTypeAgnosticArgs = new ArrayList<>();
         functionCalls = new ArrayList<>();
         returnOperations = new ArrayList<>();
+        classDefinitions = new ArrayList<>();
+        objectInstances = new ArrayList<>();
     }
 
     public List<RedefineArrayCommand> getRedefineArrayCommands() {
@@ -59,6 +63,8 @@ public class RuleEngineInput {
         redefineArrayCommands.addAll(ruleEngineInput.getRedefineArrayCommands());
         methodDataTypeAgnosticArgs.addAll(ruleEngineInput.getMethodDataTypeAgnosticArgs());
         returnOperations.addAll(ruleEngineInput.getReturnOperations());
+        classDefinitions.addAll(ruleEngineInput.getClassDefinitions());
+        objectInstances.addAll(ruleEngineInput.getObjectInstances());
     }
 
 }

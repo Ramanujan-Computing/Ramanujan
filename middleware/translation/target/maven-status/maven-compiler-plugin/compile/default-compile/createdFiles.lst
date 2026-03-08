@@ -5,6 +5,7 @@ in/ramanujan/translation/codeConverter/ast/SubscriptNode.class
 in/ramanujan/translation/codeConverter/grammar/DebugLevelCodeCreator.class
 in/ramanujan/translation/codeConverter/ast/ArgumentsNode.class
 in/ramanujan/translation/codeConverter/ast/BoolOpNode.class
+in/ramanujan/translation/codeConverter/ast/ClassDefNode.class
 in/ramanujan/translation/codeConverter/pojo/StringWrapper.class
 in/ramanujan/translation/codeConverter/ast/ArgNode.class
 in/ramanujan/translation/codeConverter/codeConverterLogicImpl/ForLogicConverter.class

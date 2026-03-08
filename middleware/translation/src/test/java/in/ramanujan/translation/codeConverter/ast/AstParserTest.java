@@ -760,4 +760,245 @@ public class AstParserTest {
             ((NameNode) call.getFunc()).getId());
         assertEquals("Call should have 3 arguments", 3, call.getArgs().size());
     }
+
+    // =========================================================================
+    // OOP – ClassDef parsing tests
+    // =========================================================================
+
+    @Test
+    public void testParseSimpleClassDef() throws CompilationException {
+        String astDump =
+            "Module(\n" +
+            "  body=[\n" +
+            "    ClassDef(\n" +
+            "      name='Person',\n" +
+            "      bases=[],\n" +
+            "      keywords=[],\n" +
+            "      body=[\n" +
+            "        FunctionDef(\n" +
+            "          name='__init__',\n" +
+            "          args=arguments(\n" +
+            "            posonlyargs=[],\n" +
+            "            args=[arg(arg='self'), arg(arg='name'), arg(arg='age')],\n" +
+            "            kwonlyargs=[],\n" +
+            "            kw_defaults=[],\n" +
+            "            defaults=[]),\n" +
+            "          body=[\n" +
+            "            Assign(\n" +
+            "              targets=[\n" +
+            "                Attribute(\n" +
+            "                  value=Name(id='self', ctx=Load()),\n" +
+            "                  attr='name',\n" +
+            "                  ctx=Store())],\n" +
+            "              value=Name(id='name', ctx=Load())),\n" +
+            "            Assign(\n" +
+            "              targets=[\n" +
+            "                Attribute(\n" +
+            "                  value=Name(id='self', ctx=Load()),\n" +
+            "                  attr='age',\n" +
+            "                  ctx=Store())],\n" +
+            "              value=Name(id='age', ctx=Load()))],\n" +
+            "          decorator_list=[])],\n" +
+            "      decorator_list=[])],\n" +
+            "  type_ignores=[])";
+
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+
+        assertNotNull("Module should not be null", module);
+        assertEquals("Module should have 1 statement", 1, module.getBody().size());
+
+        AstNode firstNode = module.getBody().get(0);
+        assertTrue("First node should be ClassDefNode", firstNode instanceof ClassDefNode);
+
+        ClassDefNode classDef = (ClassDefNode) firstNode;
+        assertEquals("Class name should be 'Person'", "Person", classDef.getName());
+        assertEquals("Class body should have 1 method", 1, classDef.getBody().size());
+
+        assertTrue("Class body[0] should be FunctionDefNode",
+            classDef.getBody().get(0) instanceof FunctionDefNode);
+        FunctionDefNode initMethod = (FunctionDefNode) classDef.getBody().get(0);
+        assertEquals("Method name should be '__init__'", "__init__", initMethod.getName());
+        assertEquals("__init__ should have 3 args (self, name, age)",
+            3, initMethod.getArgs().getArgs().size());
+        assertEquals("First arg should be 'self'", "self",
+            initMethod.getArgs().getArgs().get(0).getArg());
+    }
+
+    @Test
+    public void testParseClassWithMultipleMethods() throws CompilationException {
+        String astDump =
+            "Module(\n" +
+            "  body=[\n" +
+            "    ClassDef(\n" +
+            "      name='Calculator',\n" +
+            "      bases=[],\n" +
+            "      keywords=[],\n" +
+            "      body=[\n" +
+            "        FunctionDef(\n" +
+            "          name='__init__',\n" +
+            "          args=arguments(\n" +
+            "            posonlyargs=[],\n" +
+            "            args=[arg(arg='self'), arg(arg='value')],\n" +
+            "            kwonlyargs=[],\n" +
+            "            kw_defaults=[],\n" +
+            "            defaults=[]),\n" +
+            "          body=[\n" +
+            "            Assign(\n" +
+            "              targets=[\n" +
+            "                Attribute(\n" +
+            "                  value=Name(id='self', ctx=Load()),\n" +
+            "                  attr='value',\n" +
+            "                  ctx=Store())],\n" +
+            "              value=Name(id='value', ctx=Load()))],\n" +
+            "          decorator_list=[]),\n" +
+            "        FunctionDef(\n" +
+            "          name='get_value',\n" +
+            "          args=arguments(\n" +
+            "            posonlyargs=[],\n" +
+            "            args=[arg(arg='self')],\n" +
+            "            kwonlyargs=[],\n" +
+            "            kw_defaults=[],\n" +
+            "            defaults=[]),\n" +
+            "          body=[\n" +
+            "            Return(\n" +
+            "              value=Attribute(\n" +
+            "                value=Name(id='self', ctx=Load()),\n" +
+            "                attr='value',\n" +
+            "                ctx=Load()))],\n" +
+            "          decorator_list=[])],\n" +
+            "      decorator_list=[])],\n" +
+            "  type_ignores=[])";
+
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+
+        ClassDefNode classDef = (ClassDefNode) module.getBody().get(0);
+        assertEquals("Class name should be 'Calculator'", "Calculator", classDef.getName());
+        assertEquals("Class body should have 2 methods", 2, classDef.getBody().size());
+
+        FunctionDefNode initMethod = (FunctionDefNode) classDef.getBody().get(0);
+        assertEquals("First method should be '__init__'", "__init__", initMethod.getName());
+        assertEquals("__init__ body has 1 statement", 1, initMethod.getBody().size());
+        assertTrue("__init__ body[0] should be AssignNode",
+            initMethod.getBody().get(0) instanceof AssignNode);
+
+        AssignNode assignStmt = (AssignNode) initMethod.getBody().get(0);
+        assertTrue("Target should be AttributeNode",
+            assignStmt.getTargets().get(0) instanceof AttributeNode);
+        AttributeNode attrTarget = (AttributeNode) assignStmt.getTargets().get(0);
+        assertEquals("Attribute name should be 'value'", "value", attrTarget.getAttr());
+        assertEquals("Object should be 'self'", "self",
+            ((NameNode) attrTarget.getValue()).getId());
+
+        FunctionDefNode getValueMethod = (FunctionDefNode) classDef.getBody().get(1);
+        assertEquals("Second method should be 'get_value'", "get_value", getValueMethod.getName());
+        assertEquals("get_value should have 1 arg", 1, getValueMethod.getArgs().getArgs().size());
+        assertEquals("get_value arg should be 'self'", "self",
+            getValueMethod.getArgs().getArgs().get(0).getArg());
+
+        assertTrue("get_value body[0] should be ReturnNode",
+            getValueMethod.getBody().get(0) instanceof ReturnNode);
+        ReturnNode ret = (ReturnNode) getValueMethod.getBody().get(0);
+        assertTrue("Return value should be AttributeNode", ret.getValue() instanceof AttributeNode);
+        AttributeNode retAttr = (AttributeNode) ret.getValue();
+        assertEquals("Returned attr should be 'value'", "value", retAttr.getAttr());
+    }
+
+    @Test
+    public void testParseAttributeAssignment() throws CompilationException {
+        // self.name = value
+        String astDump =
+            "Module(\n" +
+            "  body=[\n" +
+            "    Assign(\n" +
+            "      targets=[\n" +
+            "        Attribute(\n" +
+            "          value=Name(id='self', ctx=Load()),\n" +
+            "          attr='name',\n" +
+            "          ctx=Store())],\n" +
+            "      value=Name(id='name', ctx=Load()))],\n" +
+            "  type_ignores=[])";
+
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+
+        assertEquals("Should have 1 statement", 1, module.getBody().size());
+        assertTrue("Should be AssignNode", module.getBody().get(0) instanceof AssignNode);
+
+        AssignNode assign = (AssignNode) module.getBody().get(0);
+        assertTrue("Target should be AttributeNode",
+            assign.getTargets().get(0) instanceof AttributeNode);
+
+        AttributeNode attr = (AttributeNode) assign.getTargets().get(0);
+        assertEquals("Attr name should be 'name'", "name", attr.getAttr());
+        assertEquals("Context should be Store", "Store", attr.getCtx());
+        assertTrue("Value should be NameNode", attr.getValue() instanceof NameNode);
+        assertEquals("Object should be 'self'", "self", ((NameNode) attr.getValue()).getId());
+
+        assertTrue("RHS should be NameNode", assign.getValue() instanceof NameNode);
+        assertEquals("RHS name should be 'name'", "name", ((NameNode) assign.getValue()).getId());
+    }
+
+    @Test
+    public void testParseAttributeRead() throws CompilationException {
+        // x = obj.value
+        String astDump =
+            "Module(\n" +
+            "  body=[\n" +
+            "    Assign(\n" +
+            "      targets=[Name(id='x', ctx=Store())],\n" +
+            "      value=Attribute(\n" +
+            "        value=Name(id='obj', ctx=Load()),\n" +
+            "        attr='value',\n" +
+            "        ctx=Load()))],\n" +
+            "  type_ignores=[])";
+
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+
+        AssignNode assign = (AssignNode) module.getBody().get(0);
+        assertTrue("Value should be AttributeNode", assign.getValue() instanceof AttributeNode);
+
+        AttributeNode attr = (AttributeNode) assign.getValue();
+        assertEquals("Attr should be 'value'", "value", attr.getAttr());
+        assertEquals("Context should be Load", "Load", attr.getCtx());
+        assertEquals("Object should be 'obj'", "obj", ((NameNode) attr.getValue()).getId());
+    }
+
+    @Test
+    public void testParseMethodCallAsStatement() throws CompilationException {
+        // obj.update(5)
+        String astDump =
+            "Module(\n" +
+            "  body=[\n" +
+            "    Expr(\n" +
+            "      value=Call(\n" +
+            "        func=Attribute(\n" +
+            "          value=Name(id='obj', ctx=Load()),\n" +
+            "          attr='update',\n" +
+            "          ctx=Load()),\n" +
+            "        args=[Constant(value=5)],\n" +
+            "        keywords=[]))],\n" +
+            "  type_ignores=[])";
+
+        AstParser parser = new AstParser();
+        ModuleNode module = parser.parse(astDump);
+
+        assertEquals("Should have 1 statement", 1, module.getBody().size());
+        assertTrue("Should be ExprNode", module.getBody().get(0) instanceof ExprNode);
+
+        ExprNode exprNode = (ExprNode) module.getBody().get(0);
+        assertTrue("Value should be CallNode", exprNode.getValue() instanceof CallNode);
+
+        CallNode call = (CallNode) exprNode.getValue();
+        assertTrue("func should be AttributeNode", call.getFunc() instanceof AttributeNode);
+
+        AttributeNode funcAttr = (AttributeNode) call.getFunc();
+        assertEquals("Method name should be 'update'", "update", funcAttr.getAttr());
+        assertEquals("Object should be 'obj'", "obj",
+            ((NameNode) funcAttr.getValue()).getId());
+        assertEquals("Should have 1 argument", 1, call.getArgs().size());
+        assertTrue("Argument should be ConstantNode", call.getArgs().get(0) instanceof ConstantNode);
+    }
 }

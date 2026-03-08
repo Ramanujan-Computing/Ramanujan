@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.021" tests="24" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.01" tests="8" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="17"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -53,28 +53,12 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="61.0"/>
   </properties>
-  <testcase name="testParseBinaryOperation" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseListCreation" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseWhileLoop" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseCompareAfterThreeAssignments" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseFunctionCall" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseAttributeAssignment" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseMethodCallAsStatement" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseAttributeRead" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.003"/>
-  <testcase name="testParseIfElseWithMultiLineFormat" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseSimpleClassDef" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseSimpleCompare" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseIfStatement" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testFunctionDefWithArgsFollowedByAssign" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseCompareAfterAssignments" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testFunctionDefWithBodyFollowedByAssign" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseClassWithMultipleMethods" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseArraySubscript" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseSimpleAssignment" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testParseFunctionDefinition" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testFunctionDefWithTwoBodyStatementsFollowedByAssign" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseFunctionDefWithDecoratorListAndTypeParams" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.0"/>
-  <testcase name="testSimpleFunctionDefFollowedByAssign" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseIfWithBodyAndElse" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
-  <testcase name="testParseMultipleStatements" classname="in.ramanujan.translation.codeConverter.ast.AstParserTest" time="0.001"/>
+  <testcase name="testObjectInstantiationCreatesObjectInstance" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.004"/>
+  <testcase name="testFieldVariableIdsAreSharedByReference" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
+  <testcase name="testClassDefinitionIsCreated" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.001"/>
+  <testcase name="testConstructorFunctionCallIsRegistered" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.002"/>
+  <testcase name="testConstructorCallReceivesFieldVariablesByReference" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
+  <testcase name="testNonConstructorMethodIsRegistered" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
+  <testcase name="testAstParserProducesClassDefNode" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.003"/>
+  <testcase name="testObjectInstantiationCreatesFieldVariables" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
 </testsuite>
