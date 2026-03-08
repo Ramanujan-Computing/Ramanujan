@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.01" tests="8" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.016" tests="8" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="17"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -7,13 +7,13 @@
     <property name="java.vm.vendor" value="Eclipse Adoptium"/>
     <property name="sun.arch.data.model" value="64"/>
     <property name="java.vendor.url" value="https://adoptium.net/"/>
-    <property name="user.timezone" value="Etc/UTC"/>
     <property name="os.name" value="Linux"/>
     <property name="java.vm.specification.version" value="17"/>
     <property name="sun.java.launcher" value="SUN_STANDARD"/>
     <property name="sun.boot.library.path" value="/usr/lib/jvm/temurin-17-jdk-amd64/lib"/>
-    <property name="sun.java.command" value="/home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/surefire/surefirebooter-20260308115055602_3.jar /home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/surefire 2026-03-08T11-50-55_536-jvmRun1 surefire-20260308115055602_1tmp surefire_0-20260308115055602_2tmp"/>
+    <property name="sun.java.command" value="/home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/surefire/surefirebooter-20260308115249453_3.jar /home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/surefire 2026-03-08T11-52-49_377-jvmRun1 surefire-20260308115249453_1tmp surefire_0-20260308115249453_2tmp"/>
     <property name="jdk.debug" value="release"/>
+    <property name="test" value="AstParserTest,OopIntegrationTest"/>
     <property name="surefire.test.class.path" value="/home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/test-classes:/home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/classes:/home/runner/.m2/repository/in/ramanujan/commons/1.0.3-SNAPSHOT/commons-1.0.3-SNAPSHOT.jar:/home/runner/.m2/repository/in/ramanujan/developer-console-model/1.0-SNAPSHOT/developer-console-model-1.0-SNAPSHOT.jar:/home/runner/.m2/repository/org/projectlombok/lombok/1.18.30/lombok-1.18.30.jar:/home/runner/.m2/repository/junit/junit/4.13.2/junit-4.13.2.jar:/home/runner/.m2/repository/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar:/home/runner/.m2/repository/org/mockito/mockito-core/3.5.13/mockito-core-3.5.13.jar:/home/runner/.m2/repository/net/bytebuddy/byte-buddy/1.10.15/byte-buddy-1.10.15.jar:/home/runner/.m2/repository/net/bytebuddy/byte-buddy-agent/1.10.15/byte-buddy-agent-1.10.15.jar:/home/runner/.m2/repository/org/objenesis/objenesis/3.1/objenesis-3.1.jar:/home/runner/.m2/repository/in/ramanujan/rule-engine/1.0.3-SNAPSHOT/rule-engine-1.0.3-SNAPSHOT.jar:/home/runner/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.19.0/jackson-databind-2.19.0.jar:/home/runner/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.19.0/jackson-core-2.19.0.jar:/home/runner/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.19.0/jackson-annotations-2.19.0.jar:"/>
     <property name="sun.cpu.endian" value="little"/>
     <property name="user.home" value="/home/runner"/>
@@ -27,7 +27,7 @@
     <property name="line.separator" value="&#10;"/>
     <property name="java.vm.specification.vendor" value="Oracle Corporation"/>
     <property name="java.specification.name" value="Java Platform API Specification"/>
-    <property name="surefire.real.class.path" value="/home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/surefire/surefirebooter-20260308115055602_3.jar"/>
+    <property name="surefire.real.class.path" value="/home/runner/work/Ramanujan/Ramanujan/middleware/translation/target/surefire/surefirebooter-20260308115249453_3.jar"/>
     <property name="sun.management.compiler" value="HotSpot 64-Bit Tiered Compilers"/>
     <property name="java.runtime.version" value="17.0.18+8"/>
     <property name="user.name" value="runner"/>
@@ -54,11 +54,11 @@
     <property name="java.class.version" value="61.0"/>
   </properties>
   <testcase name="testObjectInstantiationCreatesObjectInstance" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.004"/>
-  <testcase name="testFieldVariableIdsAreSharedByReference" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
+  <testcase name="testFieldVariableIdsAreSharedByReference" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.001"/>
   <testcase name="testClassDefinitionIsCreated" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.001"/>
   <testcase name="testConstructorFunctionCallIsRegistered" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.002"/>
   <testcase name="testConstructorCallReceivesFieldVariablesByReference" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
-  <testcase name="testNonConstructorMethodIsRegistered" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
-  <testcase name="testAstParserProducesClassDefNode" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.003"/>
-  <testcase name="testObjectInstantiationCreatesFieldVariables" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
+  <testcase name="testNonConstructorMethodIsRegistered" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.001"/>
+  <testcase name="testAstParserProducesClassDefNode" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.0"/>
+  <testcase name="testObjectInstantiationCreatesFieldVariables" classname="in.ramanujan.translation.codeConverter.ast.OopIntegrationTest" time="0.001"/>
 </testsuite>

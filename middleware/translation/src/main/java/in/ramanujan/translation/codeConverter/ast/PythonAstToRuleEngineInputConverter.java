@@ -3441,7 +3441,7 @@ public class PythonAstToRuleEngineInputConverter {
         }
 
         // Add the remaining explicit parameters (skip 'self' which is args[0])
-        List<ArgNode> argNodes = method.getArgs() != null ? method.getArgs().getArgs() : Collections.<ArgNode>emptyList();
+        List<ArgNode> argNodes = method.getArgs() != null ? method.getArgs().getArgs() : Collections.emptyList();
         boolean firstArg = true;
         List<String> paramNames = new ArrayList<>();
         for (ArgNode arg : argNodes) {
@@ -3750,7 +3750,7 @@ public class PythonAstToRuleEngineInputConverter {
         if ("self".equals(objectName)) {
             List<String> ids = new ArrayList<>();
             if (currentClassName != null) {
-                List<String> fields = classFieldNamesMap.getOrDefault(currentClassName, Collections.<String>emptyList());
+                List<String> fields = classFieldNamesMap.getOrDefault(currentClassName, Collections.emptyList());
                 for (String f : fields) {
                     String id = selfFieldParamIds.get(f);
                     if (id != null) ids.add(id);
