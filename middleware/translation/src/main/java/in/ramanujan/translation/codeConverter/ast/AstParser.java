@@ -459,15 +459,39 @@ public class AstParser {
     
     /**
      * Parses the list of assignment targets.
-     * 
+     *
+     * <p>Targets are the left-hand side expressions of an assignment statement.
+     * Each target may be one of the following node types:</p>
+     * <ul>
+     *   <li><b>Name</b> – a simple variable reference, e.g. {@code x}</li>
+     *   <li><b>Subscript</b> – an indexed array element, e.g. {@code arr[0]}</li>
+     *   <li><b>Attribute</b> – an object field access, e.g. {@code self.name} or
+     *       {@code obj.field}.  These arise from OOP code such as
+     *       {@code self.name = value} inside a class method body.</li>
+     * </ul>
+     *
      * <p><b>Examples:</b></p>
      * <pre>
-     * x = 5              # targets=[Name]
-     * arr[0] = 10        # targets=[Subscript]
-     * a = b = c = 0      # targets=[Name, Name, Name]
+     * # Simple variable assignment
+     * x = 5                   → targets=[Name(id='x', ctx=Store())]
+     *
+     * # Array element assignment
+     * arr[0] = 10             → targets=[Subscript(value=Name('arr'), slice=Constant(0))]
+     *
+     * # Multiple assignment targets
+     * a = b = c = 0           → targets=[Name('a'), Name('b'), Name('c')]
+     *
+     * # Object field assignment (OOP)
+     * self.name = name        → targets=[Attribute(value=Name('self'), attr='name', ctx=Store())]
+     * obj.value = 42          → targets=[Attribute(value=Name('obj'),  attr='value', ctx=Store())]
      * </pre>
-     * 
-     * @return List of target nodes (NameNode or SubscriptNode)
+     *
+     * <p><b>Attribute target handling:</b> When an {@code Attribute(} line is encountered
+     * the parser advances past it, delegates to {@link #parseAttribute()}, and then checks
+     * whether the last parsed line ends with {@code ],} or {@code ])} to determine whether
+     * the targets list is closed on that same line.</p>
+     *
+     * @return List of target nodes (NameNode, SubscriptNode, or AttributeNode)
      * @throws CompilationException If target parsing fails
      */
     private List<AstNode> parseTargetsList() throws CompilationException {
