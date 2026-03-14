@@ -11,12 +11,12 @@ import in.ramanujan.translation.codeConverter.CodeConverterLogicFactory;
 import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
 import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.NoConcatImpl;
+import in.ramanujan.translation.codeConverter.utils.PythonAstInvoker;
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
@@ -27,7 +27,7 @@ import static org.junit.Assert.*;
  *
  * <p>These tests verify that:
  * <ul>
- *   <li>ClassDef AST nodes are parsed correctly by {@link AstParser}.</li>
+ *   <li>ClassDef AST nodes are parsed correctly by {@link JsonAstParser}.</li>
  *   <li>{@link PythonAstToRuleEngineInputConverter} produces the expected
  *       {@link ClassDefinition}, {@link ObjectInstance}, method {@link FunctionCall}s,
  *       and field {@link Variable}s in the {@link RuleEngineInput}.</li>
@@ -35,8 +35,9 @@ import static org.junit.Assert.*;
  *       shared, not copied).</li>
  * </ul>
  *
- * <p>All tests use the text-based {@link AstParser} with hand-crafted AST dump strings
- * so that they work without a live Python interpreter.
+ * <p>All tests supply plain Python source code and run it through the
+ * {@link PythonAstInvoker} + {@link JsonAstParser} pipeline, matching exactly
+ * what the production {@code CodeConverter.interpretPython} path does.
  */
 public class OopIntegrationTest {
 
@@ -58,11 +59,16 @@ public class OopIntegrationTest {
     // =========================================================================
 
     /**
-     * Runs the full parse + convert pipeline for the given AST dump string.
+     * Runs the full parse + convert pipeline for the given Python source code.
+     * Uses {@link PythonAstInvoker} to obtain the JSON AST and {@link JsonAstParser}
+     * to build the Java AST tree – the same path taken by production code.
      */
-    private List<Command> convertAstDump(String astDump) throws CompilationException {
-        AstParser parser = new AstParser();
-        ModuleNode module = parser.parse(astDump);
+    private List<Command> convertPythonCode(String pythonCode) throws CompilationException {
+        PythonAstInvoker invoker = new PythonAstInvoker();
+        String astJson = invoker.invokeAstJson(pythonCode);
+
+        JsonAstParser parser = new JsonAstParser();
+        ModuleNode module = parser.parseJson(astJson);
 
         PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
             codeConverter, ruleEngineInput, debugLevelCodeCreator,
@@ -103,36 +109,16 @@ public class OopIntegrationTest {
 
     @Test
     public void testAstParserProducesClassDefNode() throws CompilationException {
-        String astDump =
-            "Module(\n" +
-            "  body=[\n" +
-            "    ClassDef(\n" +
-            "      name='Person',\n" +
-            "      bases=[],\n" +
-            "      keywords=[],\n" +
-            "      body=[\n" +
-            "        FunctionDef(\n" +
-            "          name='__init__',\n" +
-            "          args=arguments(\n" +
-            "            posonlyargs=[],\n" +
-            "            args=[arg(arg='self'), arg(arg='name')],\n" +
-            "            kwonlyargs=[],\n" +
-            "            kw_defaults=[],\n" +
-            "            defaults=[]),\n" +
-            "          body=[\n" +
-            "            Assign(\n" +
-            "              targets=[\n" +
-            "                Attribute(\n" +
-            "                  value=Name(id='self', ctx=Load()),\n" +
-            "                  attr='name',\n" +
-            "                  ctx=Store())],\n" +
-            "              value=Name(id='name', ctx=Load()))],\n" +
-            "          decorator_list=[])],\n" +
-            "      decorator_list=[])],\n" +
-            "  type_ignores=[])";
+        String pythonCode =
+            "class Person:\n" +
+            "    def __init__(self, name):\n" +
+            "        self.name = name\n";
 
-        AstParser parser = new AstParser();
-        ModuleNode module = parser.parse(astDump);
+        PythonAstInvoker invoker = new PythonAstInvoker();
+        String astJson = invoker.invokeAstJson(pythonCode);
+
+        JsonAstParser parser = new JsonAstParser();
+        ModuleNode module = parser.parseJson(astJson);
 
         assertEquals("Module has one statement", 1, module.getBody().size());
         assertTrue("Statement is ClassDefNode", module.getBody().get(0) instanceof ClassDefNode);
@@ -158,8 +144,8 @@ public class OopIntegrationTest {
      */
     @Test
     public void testClassDefinitionIsCreated() throws CompilationException {
-        String astDump = buildPersonClassAstDump();
-        convertAstDump(astDump);
+        String pythonCode = buildPersonClassPythonCode();
+        convertPythonCode(pythonCode);
 
         ClassDefinition cd = findClassDef("Person");
         assertNotNull("ClassDefinition should be created for 'Person'", cd);
@@ -170,8 +156,8 @@ public class OopIntegrationTest {
 
     @Test
     public void testConstructorFunctionCallIsRegistered() throws CompilationException {
-        String astDump = buildPersonClassAstDump();
-        convertAstDump(astDump);
+        String pythonCode = buildPersonClassPythonCode();
+        convertPythonCode(pythonCode);
 
         ClassDefinition cd = findClassDef("Person");
         assertNotNull("ClassDefinition must exist", cd);
@@ -188,8 +174,8 @@ public class OopIntegrationTest {
 
     @Test
     public void testNonConstructorMethodIsRegistered() throws CompilationException {
-        String astDump = buildPersonClassWithGreetAstDump();
-        convertAstDump(astDump);
+        String pythonCode = buildPersonClassWithGreetPythonCode();
+        convertPythonCode(pythonCode);
 
         ClassDefinition cd = findClassDef("Person");
         assertNotNull("ClassDefinition must exist", cd);
@@ -210,8 +196,8 @@ public class OopIntegrationTest {
 
     @Test
     public void testObjectInstantiationCreatesObjectInstance() throws CompilationException {
-        String astDump = buildPersonInstantiationAstDump();
-        convertAstDump(astDump);
+        String pythonCode = buildPersonInstantiationPythonCode();
+        convertPythonCode(pythonCode);
 
         ObjectInstance oi = findObjectInstance("p");
         assertNotNull("ObjectInstance should be created for 'p'", oi);
@@ -223,8 +209,8 @@ public class OopIntegrationTest {
 
     @Test
     public void testObjectInstantiationCreatesFieldVariables() throws CompilationException {
-        String astDump = buildPersonInstantiationAstDump();
-        convertAstDump(astDump);
+        String pythonCode = buildPersonInstantiationPythonCode();
+        convertPythonCode(pythonCode);
 
         Variable fieldVar = findVariable("p_name");
         assertNotNull("Field variable 'p_name' should be created", fieldVar);
@@ -241,8 +227,8 @@ public class OopIntegrationTest {
      */
     @Test
     public void testFieldVariableIdsAreSharedByReference() throws CompilationException {
-        String astDump = buildPersonInstantiationAstDump();
-        convertAstDump(astDump);
+        String pythonCode = buildPersonInstantiationPythonCode();
+        convertPythonCode(pythonCode);
 
         ObjectInstance oi = findObjectInstance("p");
         assertNotNull("ObjectInstance must exist", oi);
@@ -265,8 +251,8 @@ public class OopIntegrationTest {
     @Test
     public void testConstructorCallReceivesFieldVariablesByReference()
             throws CompilationException {
-        String astDump = buildPersonInstantiationAstDump();
-        List<Command> commands = convertAstDump(astDump);
+        String pythonCode = buildPersonInstantiationPythonCode();
+        List<Command> commands = convertPythonCode(pythonCode);
 
         // The instantiation command's FunctionCall should reference the field variable
         ObjectInstance oi = findObjectInstance("p");
@@ -286,49 +272,26 @@ public class OopIntegrationTest {
     }
 
     // =========================================================================
-    // AST dump builders (no Python runtime required)
+    // Python source code builders
     // =========================================================================
 
     /**
-     * Produces the AST dump for:
+     * Python source for:
      * <pre>
      * class Person:
      *     def __init__(self, name):
      *         self.name = name
      * </pre>
      */
-    private String buildPersonClassAstDump() {
+    private String buildPersonClassPythonCode() {
         return
-            "Module(\n" +
-            "  body=[\n" +
-            "    ClassDef(\n" +
-            "      name='Person',\n" +
-            "      bases=[],\n" +
-            "      keywords=[],\n" +
-            "      body=[\n" +
-            "        FunctionDef(\n" +
-            "          name='__init__',\n" +
-            "          args=arguments(\n" +
-            "            posonlyargs=[],\n" +
-            "            args=[arg(arg='self'), arg(arg='name')],\n" +
-            "            kwonlyargs=[],\n" +
-            "            kw_defaults=[],\n" +
-            "            defaults=[]),\n" +
-            "          body=[\n" +
-            "            Assign(\n" +
-            "              targets=[\n" +
-            "                Attribute(\n" +
-            "                  value=Name(id='self', ctx=Load()),\n" +
-            "                  attr='name',\n" +
-            "                  ctx=Store())],\n" +
-            "              value=Name(id='name', ctx=Load()))],\n" +
-            "          decorator_list=[])],\n" +
-            "      decorator_list=[])],\n" +
-            "  type_ignores=[])";
+            "class Person:\n" +
+            "    def __init__(self, name):\n" +
+            "        self.name = name\n";
     }
 
     /**
-     * Produces the AST dump for:
+     * Python source for:
      * <pre>
      * class Person:
      *     def __init__(self, name):
@@ -337,53 +300,17 @@ public class OopIntegrationTest {
      *         return self.name
      * </pre>
      */
-    private String buildPersonClassWithGreetAstDump() {
+    private String buildPersonClassWithGreetPythonCode() {
         return
-            "Module(\n" +
-            "  body=[\n" +
-            "    ClassDef(\n" +
-            "      name='Person',\n" +
-            "      bases=[],\n" +
-            "      keywords=[],\n" +
-            "      body=[\n" +
-            "        FunctionDef(\n" +
-            "          name='__init__',\n" +
-            "          args=arguments(\n" +
-            "            posonlyargs=[],\n" +
-            "            args=[arg(arg='self'), arg(arg='name')],\n" +
-            "            kwonlyargs=[],\n" +
-            "            kw_defaults=[],\n" +
-            "            defaults=[]),\n" +
-            "          body=[\n" +
-            "            Assign(\n" +
-            "              targets=[\n" +
-            "                Attribute(\n" +
-            "                  value=Name(id='self', ctx=Load()),\n" +
-            "                  attr='name',\n" +
-            "                  ctx=Store())],\n" +
-            "              value=Name(id='name', ctx=Load()))],\n" +
-            "          decorator_list=[]),\n" +
-            "        FunctionDef(\n" +
-            "          name='greet',\n" +
-            "          args=arguments(\n" +
-            "            posonlyargs=[],\n" +
-            "            args=[arg(arg='self')],\n" +
-            "            kwonlyargs=[],\n" +
-            "            kw_defaults=[],\n" +
-            "            defaults=[]),\n" +
-            "          body=[\n" +
-            "            Return(\n" +
-            "              value=Attribute(\n" +
-            "                value=Name(id='self', ctx=Load()),\n" +
-            "                attr='name',\n" +
-            "                ctx=Load()))],\n" +
-            "          decorator_list=[])],\n" +
-            "      decorator_list=[])],\n" +
-            "  type_ignores=[])";
+            "class Person:\n" +
+            "    def __init__(self, name):\n" +
+            "        self.name = name\n" +
+            "    def greet(self):\n" +
+            "        return self.name\n";
     }
 
     /**
-     * Produces the AST dump for:
+     * Python source for:
      * <pre>
      * class Person:
      *     def __init__(self, name):
@@ -392,39 +319,12 @@ public class OopIntegrationTest {
      * p = Person("Alice")
      * </pre>
      */
-    private String buildPersonInstantiationAstDump() {
+    private String buildPersonInstantiationPythonCode() {
         return
-            "Module(\n" +
-            "  body=[\n" +
-            "    ClassDef(\n" +
-            "      name='Person',\n" +
-            "      bases=[],\n" +
-            "      keywords=[],\n" +
-            "      body=[\n" +
-            "        FunctionDef(\n" +
-            "          name='__init__',\n" +
-            "          args=arguments(\n" +
-            "            posonlyargs=[],\n" +
-            "            args=[arg(arg='self'), arg(arg='name')],\n" +
-            "            kwonlyargs=[],\n" +
-            "            kw_defaults=[],\n" +
-            "            defaults=[]),\n" +
-            "          body=[\n" +
-            "            Assign(\n" +
-            "              targets=[\n" +
-            "                Attribute(\n" +
-            "                  value=Name(id='self', ctx=Load()),\n" +
-            "                  attr='name',\n" +
-            "                  ctx=Store())],\n" +
-            "              value=Name(id='name', ctx=Load()))],\n" +
-            "          decorator_list=[])],\n" +
-            "      decorator_list=[]),\n" +
-            "    Assign(\n" +
-            "      targets=[Name(id='p', ctx=Store())],\n" +
-            "      value=Call(\n" +
-            "        func=Name(id='Person', ctx=Load()),\n" +
-            "        args=[Constant(value='Alice')],\n" +
-            "        keywords=[]))],\n" +
-            "  type_ignores=[])";
+            "class Person:\n" +
+            "    def __init__(self, name):\n" +
+            "        self.name = name\n" +
+            "\n" +
+            "p = Person(\"Alice\")\n";
     }
 }
