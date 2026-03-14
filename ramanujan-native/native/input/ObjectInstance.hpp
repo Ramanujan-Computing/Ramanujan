@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <json/value.h>
+#include "RuleEngineInputUnit.hpp"
 
 /**
  * Represents a concrete object instance created from a class definition.
@@ -30,11 +31,8 @@
  *   }
  * }
  */
-class ObjectInstance {
+class ObjectInstance : public RuleEngineInputUnit {
 public:
-    /** Unique identifier for this object instance. */
-    std::string id;
-
     /** Variable name used in source code, e.g. "p". */
     std::string instanceName;
 
@@ -57,6 +55,8 @@ public:
             this->fieldVariableIds[it.key().asString()] = it->asString();
         }
     }
+
+    RuleEngineInputUnits* getInternalAnalogy();
 };
 
 #endif // OBJECT_INSTANCE_H

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <json/value.h>
+#include "RuleEngineInputUnit.hpp"
 
 /**
  * Represents the definition (blueprint) of a class parsed from RuleEngineInput JSON.
@@ -27,11 +28,8 @@
  *   "methodFunctionIds": ["Person_greet"]
  * }
  */
-class ClassDefinition {
+class ClassDefinition : public RuleEngineInputUnit {
 public:
-    /** Unique identifier for this class definition. */
-    std::string id;
-
     /** Unqualified class name, e.g. "Person". */
     std::string className;
 
@@ -66,6 +64,8 @@ public:
             this->methodFunctionIds.push_back(methodIdsJson[i].asString());
         }
     }
+
+    RuleEngineInputUnits* getInternalAnalogy();
 };
 
 #endif // CLASS_DEFINITION_H

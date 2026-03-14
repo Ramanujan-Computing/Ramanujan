@@ -16,6 +16,8 @@
 #include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
 #include "../ruleEngineObject/WhileRE.h"
 #include "../ruleEngineObject/IfRE.h"
+#include "../ruleEngineObject/ClassDefinitionRE.h"
+#include "../ruleEngineObject/ObjectInstanceRE.h"
 #include <json/json.h>
 //#include <boost/stacktrace.hpp>
 #include <DebugPoint.h>
@@ -166,6 +168,8 @@ std::unordered_map<std::string, RuleEngineInputUnits*>* Processor::createMap(Rul
     storeInIdMap(map, ruleEngineInput.commands);
     storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
     storeInIdMap(map, ruleEngineInput.returnOperations);
+    storeInIdMap(map, ruleEngineInput.classDefinitions);
+    storeInIdMap(map, ruleEngineInput.objectInstances);
     return map;
 }
 
@@ -290,6 +294,18 @@ void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnit
 
 void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<ReturnOperation*>* list1) {
     for(std::vector<ReturnOperation*>::iterator itr = list1->begin(); itr !=  list1->end(); itr++) {
+        pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+    }
+}
+
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<ClassDefinition*>* list1) {
+    for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
+        pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+    }
+}
+
+void Processor::storeInIdMap(std::unordered_map<std::string, RuleEngineInputUnits*> *pMap, std::vector<ObjectInstance*>* list1) {
+    for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
         pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
     }
 }
