@@ -45,6 +45,8 @@ set(SOURCE_FILES
         input/Operation.hpp
         input/RuleEngineInput.hpp
         input/RuleEngineInputUnit.hpp
+        input/ClassDefinition.hpp
+        input/ObjectInstance.hpp
         input/Variable.hpp
         input/While.hpp
         input/RedefineArrayCommand.hpp
