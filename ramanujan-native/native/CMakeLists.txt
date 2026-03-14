@@ -70,6 +70,7 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/VariableRE.h
         ruleEngineObject/dataContainer/AbstractDataContainer.h
         ruleEngineObject/dataContainer/DataContainerRE.h
+        ruleEngineObject/dataContainer/ObjectDataContainerValue.h
         ruleEngineObject/CommandRE.cpp
         ruleEngineObject/RedefineArrayCommandRE.h
         ruleEngineObject/RedefineArrayCommandRE.cpp

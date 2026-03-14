@@ -7,9 +7,14 @@
 
 #include "RuleEngineInputUnits.hpp"
 #include "dataContainer/VariableRE.h"
+#include "dataContainer/AbstractDataContainer.h"
 #include "../input/ObjectInstance.hpp"
 #include <unordered_map>
 #include <string>
+
+// Forward declaration to break circular dependency
+// (ObjectDataContainerValue.h includes ObjectInstanceRE.h via this header)
+class ObjectDataContainerValue;
 
 /**
  * Rule engine representation of a concrete object instance (ObjectInstanceRE).
@@ -19,32 +24,35 @@
  * specific instance, enabling O(1) field lookup by name and providing a
  * single authoritative location for field introspection at debug / trace time.
  *
+ * ObjectInstanceRE also implements AbstractDataContainer so that class objects
+ * can be passed as single-unit arguments to functions, with FunctionCommandRE
+ * handling the by-reference semantics via ObjectDataContainerValue.
+ *
  * ─────────────────────────────────────────────────────────────────────────────
  * COPY-BY-REFERENCE SEMANTICS
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * When the compiler emits a method call on an object, it passes the object's
- * field Variable IDs directly as method arguments.  Inside FunctionCommandRE
- * these IDs are resolved with:
+ * TWO mechanisms provide by-reference object passing:
  *
- *     callingArg = map->at(functionCommandInfo->arguments[i])  // → VariableRE*
+ * 1. FIELD-EXPANSION (current compiler strategy for method/constructor calls):
+ *    The compiler expands obj.method() into a FunctionCall whose arguments list
+ *    contains each field Variable ID directly.  Inside FunctionCommandRE these
+ *    IDs resolve to the same VariableRE objects as the caller's fields, so any
+ *    mutation is immediately visible at the call site.
  *
- * Because FunctionCommandRE stores only DataContainerValue* pointers (not
- * copies of the values), the method and the caller share the *same* VariableRE
- * and therefore the same underlying double storage.  Any write to a field
- * inside the callee is immediately visible in the calling scope once the method
- * returns — this is the copy-by-reference contract described in ObjectInstance.
+ * 2. OBJECT-AS-SINGLE-ARG (ObjectDataContainerValue mechanism):
+ *    When the compiler passes an ObjectInstance ID as a function argument,
+ *    FunctionCommandRE detects that the argument resolves to an ObjectInstanceRE
+ *    (an AbstractDataContainer backed by ObjectDataContainerValue).
+ *    ObjectDataContainerValue::saveValueAndCopyFrom() replaces the callee
+ *    parameter's ObjectInstanceRE pointer with the caller's, so both share the
+ *    same field VariableREs.  On return, saveRestoreAndPropagate() restores the
+ *    original pointer — no value copying is needed since changes are already in
+ *    the caller's VariableREs.
  *
- * ObjectInstanceRE does NOT participate in value computation; process() is a
- * no-op.  It exists to:
- *   • provide a clean API for looking up the VariableRE of any field by name,
- *   • allow the debugger / trace layer to enumerate all live fields of an
- *     instance without iterating the whole global map, and
- *   • make the boundary between "object metadata" and "plain variables" explicit
- *     in the runtime object graph.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-class ObjectInstanceRE : public RuleEngineInputUnits {
+class ObjectInstanceRE : public RuleEngineInputUnits, public AbstractDataContainer {
     ObjectInstance* objectInstance;
 
     /**
@@ -54,22 +62,24 @@ class ObjectInstanceRE : public RuleEngineInputUnits {
      */
     std::unordered_map<std::string, VariableRE*> fieldREMap;
 
+    /** DataContainerValue backing AbstractDataContainer::valPtr for this object. */
+    ObjectDataContainerValue* objectDataContainerValue = nullptr;
+
 public:
     /**
      * Constructs an ObjectInstanceRE from the corresponding input struct.
      * Field pointer resolution is deferred to setFields().
      */
-    explicit ObjectInstanceRE(ObjectInstance* instance) {
-        this->objectInstance = instance;
-        this->id = instance->id;
-    }
+    explicit ObjectInstanceRE(ObjectInstance* instance);
+
+    ~ObjectInstanceRE();
 
     /**
      * Resolves each field's Variable ID to its live VariableRE* from the map.
      * Called during Processor::fixGraph() after all Variable RE objects have
      * been registered.
      *
-     * @param map  Global ID → RuleEngineInputUnits* map
+     * @param map  Global ID -> RuleEngineInputUnits* map
      */
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits*>* map) override {
         for (const auto& entry : objectInstance->fieldVariableIds) {
@@ -93,7 +103,7 @@ public:
         return nullptr;
     }
 
-    // ── Accessors ──────────────────────────────────────────────────────────
+    // Accessors
 
     /** @return The source-code variable name for this instance, e.g. "p". */
     const std::string& getInstanceName() const {
@@ -117,7 +127,7 @@ public:
     }
 
     /**
-     * @return  The full field-name → VariableRE* map for this instance.
+     * @return  The full field-name -> VariableRE* map for this instance.
      *          Useful for iterating all fields (e.g. in a debugger).
      */
     const std::unordered_map<std::string, VariableRE*>& getFieldREMap() const {
@@ -126,5 +136,25 @@ public:
 
     void destroy() override {}
 };
+
+// Include the full definition of ObjectDataContainerValue after ObjectInstanceRE
+// is fully declared, so that ObjectDataContainerValue can use ObjectInstanceRE*.
+#include "dataContainer/ObjectDataContainerValue.h"
+
+// Inline constructor/destructor implementations
+
+inline ObjectInstanceRE::ObjectInstanceRE(ObjectInstance* instance) {
+    this->objectInstance = instance;
+    this->id = instance->id;
+    // Allocate the ObjectDataContainerValue that backs AbstractDataContainer::valPtr.
+    // Caller (Processor/storeInIdMap) owns this ObjectInstanceRE and is responsible
+    // for its lifetime.
+    objectDataContainerValue = new ObjectDataContainerValue(this);
+    valPtr = objectDataContainerValue;
+}
+
+inline ObjectInstanceRE::~ObjectInstanceRE() {
+    delete objectDataContainerValue;
+}
 
 #endif // NATIVE_OBJECTINSTANCERE_H

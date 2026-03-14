@@ -84,6 +84,18 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
      * ARGUMENT CATEGORIZATION LOOP:
      * Iterate through all function parameters to separate variables from arrays
      * and establish bidirectional address mappings between caller and callee contexts.
+     *
+     * CLASS OBJECT ARGUMENTS (copy-by-reference):
+     * When an argument resolves to an ObjectInstanceRE, its valPtr is an
+     * ObjectDataContainerValue.  The existing saveValueAndCopyFrom /
+     * saveRestoreAndPropagate dispatch handles by-reference semantics:
+     *   - saveValueAndCopyFrom: saves the callee parameter's current
+     *     ObjectInstanceRE* and replaces it with the caller's ObjectInstanceRE*,
+     *     so both share the same field VariableREs.
+     *   - saveRestoreAndPropagate: restores the callee's original
+     *     ObjectInstanceRE* and performs NO value propagation, because any field
+     *     mutations are already visible in the caller's VariableREs (true
+     *     pass-by-reference with zero extra bookkeeping).
      */
     for(int i = 0; i < functionInfoRE->argSize; i++) {
         AbstractDataContainer* calledArg = dynamic_cast<AbstractDataContainer*>(functionInfoRE->arguments[i]);
@@ -99,6 +111,13 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
             // Build name mapping for debugging purposes
 //            dataContainerNameMethodMap.insert(std::make_pair(((ArrayRE *) map->at(functionCommandInfo->arguments[i]))->name,
 //                                                ((ArrayRE *) functionInfoRE->arguments[i])->name));
+        } else if(dynamic_cast<ObjectInstanceRE*>(functionInfoRE->arguments[i]) != nullptr) {
+            // Class-object parameter: passed by reference via ObjectDataContainerValue.
+            // The caller's ObjectInstanceRE* is shared with the callee so that all
+            // field accesses inside the method operate on the caller's VariableREs.
+            // No value copying is needed — see ObjectDataContainerValue::saveValueAndCopyFrom
+            // and saveRestoreAndPropagate for the full mechanism.
+            varCount++;  // object params counted with scalars for allVariablesInMethod sizing
         } else {
             // Variable parameter found
             varCount++;

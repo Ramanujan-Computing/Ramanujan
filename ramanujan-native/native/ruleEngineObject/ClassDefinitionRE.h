@@ -47,9 +47,12 @@
  * Python:
  *     p.greet()
  *
- * What the compiler emits:
- *   A FunctionCall for the method: id="Person_greet",
+ * What the compiler emits (verified in convertMethodCall / convertClassMethod):
+ *   A FunctionCall call-site: id="Person_greet",
  *   arguments=["var_person_name", "var_person_age"]  (object's field Variable IDs).
+ *   The function definition: id="Person_greet", arguments=[self_name_param, ...],
+ *   firstCommandId=<first command>, allVariablesInMethod=[...].
+ *   The call-site argument count matches the definition parameter count exactly.
  *
  * What the interpreter sees:
  *   A plain FunctionCommandRE executed against the "Person_greet" FunctionCallRE.
@@ -61,19 +64,23 @@
  * Python:
  *     foo(p)   # where p is a Person instance
  *
- * What the compiler emits:
+ * MECHANISM A — field-expansion (current compiler strategy for method calls):
  *   arguments=["var_person_name", "var_person_age"]
  *   The object is *expanded* into its field Variable IDs at compile time.
- *
- * What the interpreter sees (inside FunctionCommandRE::setFields):
- *   ```
- *   callingArg = map->at(functionCommandInfo->arguments[i])  // → VariableRE*
- *   ```
  *   Each field ID resolves to the same VariableRE that the calling scope uses.
- *   Because FunctionCommandRE propagates the final value of each parameter
- *   back to the calling argument via saveRestoreAndPropagate(), any mutation of
- *   a field inside the callee is visible to the caller after the call returns.
- *   Objects are therefore always passed by reference with zero extra bookkeeping.
+ *   FunctionCommandRE propagates the final value of each parameter back to the
+ *   calling argument via saveRestoreAndPropagate(), so any mutation inside the
+ *   callee is visible to the caller after the call returns.
+ *
+ * MECHANISM B — object-as-single-arg (ObjectDataContainerValue / ObjectInstanceRE):
+ *   When the compiler passes an ObjectInstance ID as the argument (future path),
+ *   FunctionCommandRE detects that both the called parameter and the calling
+ *   argument are ObjectInstanceRE objects (AbstractDataContainer backed by
+ *   ObjectDataContainerValue).  ObjectDataContainerValue::saveValueAndCopyFrom
+ *   replaces the callee's ObjectInstanceRE* with the caller's, sharing all field
+ *   VariableREs.  On return, saveRestoreAndPropagate() restores the callee's
+ *   original pointer — no value copying is needed since mutations are already in
+ *   the caller's VariableREs (see ObjectDataContainerValue.h for full details).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  *

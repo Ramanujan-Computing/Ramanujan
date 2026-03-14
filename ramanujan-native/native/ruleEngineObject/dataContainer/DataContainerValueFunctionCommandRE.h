@@ -21,6 +21,13 @@ public:
         double *arrayValuePtr = nullptr;
     //};
 
+    /**
+     * Generic pointer slot used to save/restore class-object references during
+     * function calls.  Set and read exclusively by ObjectDataContainerValue's
+     * save/restore/propagate methods.  nullptr when the argument is not an object.
+     */
+    void* objectPtr = nullptr;
+
     // Ultra-fast destructor - only cleanup when needed
     ~DataContainerValueFunctionCommandRE()  = default;
     
