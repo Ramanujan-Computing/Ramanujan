@@ -1565,6 +1565,262 @@ public class PythonCodeRunTest {
         System.out.println("\n=== TUPLE UNPACKING TEST COMPLETE ===");
     }
 
+    // ========== OOP TESTS ==========
+
+    /**
+     * Tests basic class instantiation: a single-field Counter class is created and the
+     * field value set by the constructor is visible after execution.
+     */
+    @Test(timeout = 5000)
+    public void testOopBasicObjectCreationAndFieldAccess() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    def __init__(self, initial):\n" +
+            "        self.count = initial\n" +
+            "\n" +
+            "c = Counter(5)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("c_count", 5d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests that two instances of the same class maintain independent field values
+     * (one instantiation must not overwrite another's field variable).
+     */
+    @Test(timeout = 5000)
+    public void testOopTwoInstancesAreIndependent() throws Exception {
+        String pythonCode =
+            "class Box:\n" +
+            "    def __init__(self, val):\n" +
+            "        self.value = val\n" +
+            "\n" +
+            "b1 = Box(10)\n" +
+            "b2 = Box(20)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("b1_value", 10d);
+        variablesToAssert.put("b2_value", 20d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests that a non-constructor method mutates an object field: two successive
+     * calls to Accumulator.add() should accumulate in self.total.
+     */
+    @Test(timeout = 5000)
+    public void testOopMethodCallMutatesField() throws Exception {
+        String pythonCode =
+            "class Accumulator:\n" +
+            "    def __init__(self, start):\n" +
+            "        self.total = start\n" +
+            "    def add(self, n):\n" +
+            "        self.total = self.total + n\n" +
+            "\n" +
+            "acc = Accumulator(0)\n" +
+            "acc.add(5)\n" +
+            "acc.add(10)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("acc_total", 15d); // 0 + 5 + 10
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests a class with multiple fields and a method that writes a derived value back
+     * to a field: Rectangle.computeArea() sets self.area = self.width * self.height.
+     */
+    @Test(timeout = 5000)
+    public void testOopMultipleFieldsAndDerivedValue() throws Exception {
+        String pythonCode =
+            "class Rectangle:\n" +
+            "    def __init__(self, width, height):\n" +
+            "        self.width = width\n" +
+            "        self.height = height\n" +
+            "    def computeArea(self):\n" +
+            "        self.area = self.width * self.height\n" +
+            "\n" +
+            "r = Rectangle(4, 3)\n" +
+            "r.computeArea()\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("r_width", 4d);
+        variablesToAssert.put("r_height", 3d);
+        variablesToAssert.put("r_area", 12d); // 4 * 3
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests pass-by-reference semantics for object fields: mutations made inside a
+     * standalone function (translate) on a Point object must be visible at the call site.
+     */
+    @Test(timeout = 5000)
+    public void testOopObjectFieldsMutatedInsideStandaloneFunction() throws Exception {
+        String pythonCode =
+            "class Point:\n" +
+            "    def __init__(self, x, y):\n" +
+            "        self.x = x\n" +
+            "        self.y = y\n" +
+            "\n" +
+            "def translate(p, dx, dy):\n" +
+            "    p.x = p.x + dx\n" +
+            "    p.y = p.y + dy\n" +
+            "\n" +
+            "pt = Point(1, 2)\n" +
+            "translate(pt, 3, 4)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("pt_x", 4d); // 1 + 3
+        variablesToAssert.put("pt_y", 6d); // 2 + 4
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests multiple method calls on the same object with different methods:
+     * BankAccount.deposit() and BankAccount.withdraw() both mutate self.balance.
+     */
+    @Test(timeout = 5000)
+    public void testOopMultipleMethodCallsOnSameObject() throws Exception {
+        String pythonCode =
+            "class BankAccount:\n" +
+            "    def __init__(self, balance):\n" +
+            "        self.balance = balance\n" +
+            "    def deposit(self, amount):\n" +
+            "        self.balance = self.balance + amount\n" +
+            "    def withdraw(self, amount):\n" +
+            "        self.balance = self.balance - amount\n" +
+            "\n" +
+            "acc = BankAccount(100)\n" +
+            "acc.deposit(50)\n" +
+            "acc.withdraw(30)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("acc_balance", 120d); // 100 + 50 - 30
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests a method that reads from another field and conditionally updates a third:
+     * Counter.increment() only increments if self.count is below the cap.
+     */
+    @Test(timeout = 5000)
+    public void testOopMethodWithConditionalFieldUpdate() throws Exception {
+        String pythonCode =
+            "class BoundedCounter:\n" +
+            "    def __init__(self, initial, cap):\n" +
+            "        self.count = initial\n" +
+            "        self.cap = cap\n" +
+            "    def increment(self):\n" +
+            "        if self.count < self.cap:\n" +
+            "            self.count = self.count + 1\n" +
+            "\n" +
+            "bc = BoundedCounter(3, 5)\n" +
+            "bc.increment()\n" + // count -> 4
+            "bc.increment()\n" + // count -> 5
+            "bc.increment()\n";  // count stays 5 (cap reached)
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("bc_count", 5d);
+        variablesToAssert.put("bc_cap",   5d);
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests a class whose method returns a value computed from its own field:
+     * Circle.getCircumference() returns 2 * self.radius.
+     */
+    @Test(timeout = 5000)
+    public void testOopMethodReturnValue() throws Exception {
+        String pythonCode =
+            "class Circle:\n" +
+            "    def __init__(self, radius):\n" +
+            "        self.radius = radius\n" +
+            "    def getCircumference(self):\n" +
+            "        return 2 * self.radius\n" +
+            "\n" +
+            "c = Circle(5)\n" +
+            "circ = c.getCircumference()\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("circ", 10d); // 2 * 5
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests two objects of different classes interacting: a Wallet stores a balance and
+     * a Tax object computes a fee; the result is assigned back to the Wallet's balance.
+     */
+    @Test(timeout = 5000)
+    public void testOopTwoDifferentClassesInteracting() throws Exception {
+        String pythonCode =
+            "class Wallet:\n" +
+            "    def __init__(self, balance):\n" +
+            "        self.balance = balance\n" +
+            "\n" +
+            "class Tax:\n" +
+            "    def __init__(self, rate):\n" +
+            "        self.rate = rate\n" +
+            "    def computeFee(self, amount):\n" +
+            "        return self.rate * amount\n" +
+            "\n" +
+            "w = Wallet(200)\n" +
+            "t = Tax(10)\n" +
+            "fee = t.computeFee(w.balance)\n" +
+            "w.balance = w.balance - fee\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("t_rate",    10d);
+        variablesToAssert.put("fee",       2000d); // 10 * 200
+        variablesToAssert.put("w_balance", -1800d); // 200 - 2000
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     // ========== HELPER METHODS ==========
 
     /**

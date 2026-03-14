@@ -276,6 +276,38 @@ public class PythonAstToRuleEngineInputConverter {
      * Used to associate return statements with their function.
      */
     private String currentFunctionName;
+
+    // =========================================================================
+    // OOP support fields
+    // =========================================================================
+
+    /**
+     * Maps class name to the ordered list of instance-field names discovered in
+     * the class's {@code __init__} body (via {@code self.field = …} assignments).
+     * Populated during {@link #convertClassDef}.
+     */
+    private Map<String, List<String>> classFieldNamesMap = new HashMap<>();
+
+    /**
+     * Maps class name to its compiled {@link ClassDefinition}.
+     * Populated during {@link #convertClassDef}.
+     */
+    private Map<String, ClassDefinition> classDefinitionMap = new HashMap<>();
+
+    /**
+     * Maps instance-field name → parameter Variable/MethodArg ID for the
+     * <em>current</em> class method being compiled.
+     * Set at the start of each method within a class and cleared afterward.
+     * Used to resolve {@code self.fieldName} references inside method bodies.
+     */
+    private Map<String, String> selfFieldParamIds = new HashMap<>();
+
+    /**
+     * Name of the class currently being compiled (set during
+     * {@link #convertClassDef}, reset after).  Allows method-body processing to
+     * know which class owns the current {@code self}.
+     */
+    private String currentClassName;
     
     /**
      * Constructs a new converter for transforming Python AST to RuleEngineInput.
@@ -337,12 +369,20 @@ public class PythonAstToRuleEngineInputConverter {
         Command previousCommand = null;
         List<AstNode> nonFunctionDefNodes = new ArrayList<>();
         List<AstNode> functionDefNodes = new ArrayList<>();
+        List<AstNode> classDefNodes = new ArrayList<>();
         for (AstNode node : module.getBody()) {
             if (node instanceof FunctionDefNode) {
                 functionDefNodes.add(node);
+            } else if (node instanceof ClassDefNode) {
+                classDefNodes.add(node);
             } else {
                 nonFunctionDefNodes.add(node);
             }
+        }
+
+        // Process class definitions first so object instantiations below can reference them
+        for (AstNode node : classDefNodes) {
+            convertClassDef((ClassDefNode) node, variableScope);
         }
         
         for (AstNode node : nonFunctionDefNodes) {
@@ -424,6 +464,9 @@ public class PythonAstToRuleEngineInputConverter {
         } else if (node instanceof FunctionDefNode) {
             convertFunctionDef((FunctionDefNode) node, command, variableScope, parentScopeUnit);
             return null; // Functions don't create commands in main flow
+        } else if (node instanceof ClassDefNode) {
+            convertClassDef((ClassDefNode) node, variableScope);
+            return null; // Class definitions don't create commands in main flow
         } else if (node instanceof ExprNode) {
             convertExpr((ExprNode) node, command, variableScope);
         } else if (node instanceof ReturnNode) {
@@ -641,8 +684,11 @@ public class PythonAstToRuleEngineInputConverter {
                         variableFrameMap.put(counter[0]++, variable);
                     }
                     
-                    // Check if value is a function call
-                    if (value instanceof CallNode) {
+                    // Check if value is an object constructor call
+                    if (value instanceof CallNode && isConstructorCall((CallNode) value)) {
+                        convertObjectInstantiation(varName, (CallNode) value, command, variableScope,
+                                variableFrameMap, counter);
+                    } else if (value instanceof CallNode) {
                         FunctionCall functionCall = convertFunctionCallWithReturnTargets(
                             (CallNode) value, variableScope, Arrays.asList(variable.getId()));
                         command.setFunctionCall(functionCall);
@@ -673,6 +719,8 @@ public class PythonAstToRuleEngineInputConverter {
             convertArrayAssignment((SubscriptNode) target, value, command, variableScope);
         } else if (target instanceof TupleNode) {
             convertTupleUnpackingAssignment((TupleNode) target, value, command, variableScope, variableFrameMap, counter);
+        } else if (target instanceof AttributeNode) {
+            convertAttributeAssignment((AttributeNode) target, value, command, variableScope);
         }
     }
     
@@ -1556,7 +1604,12 @@ public class PythonAstToRuleEngineInputConverter {
         
         if (value instanceof CallNode) {
             CallNode call = (CallNode) value;
-            convertFunctionCall(call, command, variableScope);
+            if (call.getFunc() instanceof AttributeNode) {
+                // Method call like obj.method(args) or self.method(args) as a statement
+                convertMethodCall((AttributeNode) call.getFunc(), call.getArgs(), command, variableScope, null);
+            } else {
+                convertFunctionCall(call, command, variableScope);
+            }
         }
         
         debugLevelCodeCreator.nextLine();
@@ -1681,6 +1734,16 @@ public class PythonAstToRuleEngineInputConverter {
     private FunctionCall convertFunctionCallWithReturnTargets(CallNode call, List<String> variableScope,
                                                                List<String> returnTargetIds) 
             throws CompilationException {
+        
+        // Handle method calls like result = obj.method(args)
+        if (call.getFunc() instanceof AttributeNode) {
+            AttributeNode attr = (AttributeNode) call.getFunc();
+            Command dummyCommand = new Command();
+            dummyCommand.setId("command_" + UUID.randomUUID().toString());
+            convertMethodCall(attr, call.getArgs(), dummyCommand, variableScope, returnTargetIds);
+            ruleEngineInput.getCommands().add(dummyCommand);
+            return dummyCommand.getFunctionCall();
+        }
         
         if (!(call.getFunc() instanceof NameNode)) {
             throw new CompilationException(null, null, "Complex function calls not yet supported");
@@ -2309,6 +2372,8 @@ public class PythonAstToRuleEngineInputConverter {
             return convertConstantToCommand((ConstantNode) expr);
         } else if (expr instanceof NameNode) {
             return convertNameToCommand((NameNode) expr, variableScope);
+        } else if (expr instanceof AttributeNode) {
+            return convertAttributeToCommand((AttributeNode) expr, variableScope);
         } else if (expr instanceof BinOpNode) {
             return convertBinOpToCommand((BinOpNode) expr, variableScope);
         } else if (expr instanceof UnaryOpNode) {
@@ -2668,6 +2733,11 @@ public class PythonAstToRuleEngineInputConverter {
             // Handle array subscripting for return statements only
             SubscriptNode subscript = (SubscriptNode) arg;
             return convertSubscriptToCommand(subscript, variableScope);
+        }
+
+        // Handle attribute access as argument (e.g., func(obj.field) or return self.field)
+        if (arg instanceof AttributeNode) {
+            return resolveAttributeId((AttributeNode) arg, variableScope);
         }
         
         if (!(arg instanceof NameNode)) {
@@ -3218,4 +3288,529 @@ public class PythonAstToRuleEngineInputConverter {
         
         return null;
     }
+
+    // =========================================================================
+    // OOP support methods
+    // =========================================================================
+
+    /**
+     * Returns true if the given CallNode is a constructor invocation, i.e. the
+     * function being called is the name of a known class.
+     */
+    private boolean isConstructorCall(CallNode call) {
+        if (!(call.getFunc() instanceof NameNode)) {
+            return false;
+        }
+        String name = ((NameNode) call.getFunc()).getId();
+        return classDefinitionMap.containsKey(name);
+    }
+
+    /**
+     * Converts a class definition into a {@link ClassDefinition} and the
+     * corresponding method {@link FunctionCall} entries.
+     *
+     * <p>Algorithm:</p>
+     * <ol>
+     *   <li>Scan {@code __init__} body to discover field names ({@code self.x = …}).</li>
+     *   <li>For each method (FunctionDefNode in the class body):
+     *       <ul>
+     *         <li>Replace the {@code self} parameter with one parameter per field.</li>
+     *         <li>Register the function as {@code ClassName_methodName}.</li>
+     *       </ul>
+     *   </li>
+     *   <li>Add the ClassDefinition to {@link RuleEngineInput}.</li>
+     * </ol>
+     */
+    private void convertClassDef(ClassDefNode classDef, List<String> outerScope) 
+            throws CompilationException {
+        String className = classDef.getName();
+        debugLevelCodeCreator.concat("class " + className + ":");
+        debugLevelCodeCreator.nextLine();
+
+        // Step 1: Discover field names from __init__
+        List<String> fieldNames = discoverFieldNames(classDef);
+        classFieldNamesMap.put(className, fieldNames);
+
+        // Step 2: Build ClassDefinition skeleton
+        ClassDefinition classDefinition = new ClassDefinition();
+        classDefinition.setId("class_" + className);
+        classDefinition.setClassName(className);
+        classDefinition.setFieldNames(new ArrayList<>(fieldNames));
+        classDefinitionMap.put(className, classDefinition);
+
+        // Step 3: Convert each method
+        String previousClassName = this.currentClassName;
+        this.currentClassName = className;
+
+        for (AstNode node : classDef.getBody()) {
+            if (!(node instanceof FunctionDefNode)) {
+                continue; // skip class-level variable declarations for now
+            }
+            FunctionDefNode method = (FunctionDefNode) node;
+            String methodFunctionId = className + "_" + method.getName();
+
+            convertClassMethod(method, className, fieldNames, methodFunctionId, outerScope);
+
+            if ("__init__".equals(method.getName())) {
+                classDefinition.setConstructorFunctionId(methodFunctionId);
+            } else {
+                classDefinition.getMethodFunctionIds().add(methodFunctionId);
+            }
+        }
+
+        this.currentClassName = previousClassName;
+
+        ruleEngineInput.getClassDefinitions().add(classDefinition);
+    }
+
+    /**
+     * Scans the {@code __init__} method of a class to find all fields declared via
+     * {@code self.fieldName = …} assignments.
+     *
+     * @return Ordered list of discovered field names (order of first appearance).
+     */
+    private List<String> discoverFieldNames(ClassDefNode classDef) {
+        List<String> fields = new ArrayList<>();
+        for (AstNode node : classDef.getBody()) {
+            if (!(node instanceof FunctionDefNode)) continue;
+            FunctionDefNode method = (FunctionDefNode) node;
+            if (!"__init__".equals(method.getName())) continue;
+
+            for (AstNode stmt : method.getBody()) {
+                if (!(stmt instanceof AssignNode)) continue;
+                AssignNode assign = (AssignNode) stmt;
+                if (assign.getTargets().isEmpty()) continue;
+                AstNode target = assign.getTargets().get(0);
+                if (!(target instanceof AttributeNode)) continue;
+                AttributeNode attr = (AttributeNode) target;
+                if (!(attr.getValue() instanceof NameNode)) continue;
+                String objName = ((NameNode) attr.getValue()).getId();
+                if (!"self".equals(objName)) continue;
+                String fieldName = attr.getAttr();
+                if (!fields.contains(fieldName)) {
+                    fields.add(fieldName);
+                }
+            }
+        }
+        return fields;
+    }
+
+    /**
+     * Converts a single class method.
+     *
+     * <p>The {@code self} parameter is replaced by one {@link MethodDataTypeAgnosticArg}
+     * per field in the class, all registered in the function scope under the names
+     * {@code self.<fieldName>} so that {@code self.field} accesses inside the body
+     * resolve correctly.</p>
+     *
+     * <p>The method function is registered in {@link RuleEngineInput#getFunctionCalls()}
+     * under the ID {@code ClassName_methodName}.</p>
+     */
+    private void convertClassMethod(FunctionDefNode method, String className,
+                                    List<String> fieldNames, String methodFunctionId,
+                                    List<String> outerScope) throws CompilationException {
+        debugLevelCodeCreator.concat("    def " + methodFunctionId + "(");
+
+        int[] counter = new int[]{0};
+        Map<Integer, RuleEngineInputUnits> variableFrameMap = new HashMap<>();
+        List<String> variableScope = new ArrayList<>();
+        variableScope.add("");
+        variableScope.add("func_" + methodFunctionId + "_");
+
+        String previousFunctionName = this.currentFunctionName;
+        this.currentFunctionName = methodFunctionId;
+
+        Map<String, String> previousSelfFieldParamIds = new HashMap<>(this.selfFieldParamIds);
+        this.selfFieldParamIds = new HashMap<>();
+
+        List<String> paramIds = new ArrayList<>();
+
+        // Add one parameter per field (replacing 'self')
+        for (String fieldName : fieldNames) {
+            MethodDataTypeAgnosticArg fieldArg = new MethodDataTypeAgnosticArg();
+            fieldArg.setName("self." + fieldName);
+            fieldArg.setFrameCount(counter[0]);
+            fieldArg.setId("arg_" + UUID.randomUUID().toString());
+            paramIds.add(fieldArg.getId());
+            selfFieldParamIds.put(fieldName, fieldArg.getId());
+
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().add(fieldArg);
+            codeConverter.setMethodDataTypeAgnosticArgMap(fieldArg,
+                    variableScope.get(variableScope.size() - 1));
+            variableFrameMap.put(counter[0]++, fieldArg);
+        }
+
+        // Add the remaining explicit parameters (skip 'self' which is args[0])
+        List<ArgNode> argNodes = method.getArgs() != null ? method.getArgs().getArgs() : Collections.emptyList();
+        boolean firstArg = true;
+        List<String> paramNames = new ArrayList<>();
+        for (ArgNode arg : argNodes) {
+            if (firstArg && "self".equals(arg.getArg())) {
+                firstArg = false;
+                continue; // skip self
+            }
+            firstArg = false;
+            String argStr = arg.getArg();
+            paramNames.add(argStr);
+            MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
+            methodArg.setName(argStr);
+            methodArg.setFrameCount(counter[0]);
+            methodArg.setId("arg_" + UUID.randomUUID().toString());
+            paramIds.add(methodArg.getId());
+
+            ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodArg);
+            codeConverter.setMethodDataTypeAgnosticArgMap(methodArg,
+                    variableScope.get(variableScope.size() - 1));
+            variableFrameMap.put(counter[0]++, methodArg);
+        }
+        debugLevelCodeCreator.concat(String.join(", ", paramNames) + "):");
+        debugLevelCodeCreator.nextLine();
+
+        // Check if return targets need to be added
+        Integer returnCount = functionReturnCounts.get(methodFunctionId);
+        if (returnCount != null && returnCount > 0) {
+            for (int i = 0; i < returnCount; i++) {
+                Variable returnTargetArg = new Variable();
+                returnTargetArg.setName("_return_target_" + i);
+                returnTargetArg.setFrameCount(counter[0]);
+                returnTargetArg.setId("return_target_arg_" + UUID.randomUUID().toString());
+                paramIds.add(returnTargetArg.getId());
+                ruleEngineInput.getVariables().add(returnTargetArg);
+                codeConverter.setVariable(returnTargetArg, variableScope.get(variableScope.size() - 1));
+                variableFrameMap.put(counter[0]++, returnTargetArg);
+            }
+        }
+
+        functionDefinitionArgs.put(methodFunctionId, new ArrayList<>(paramIds));
+
+        FunctionCall functionCall = new FunctionCall();
+        functionCall.setId(methodFunctionId);
+
+        List<Command> bodyCommands = convertBody(method.getBody(), variableScope, variableFrameMap, counter, functionCall);
+        if (!bodyCommands.isEmpty()) {
+            functionCall.setFirstCommandId(bodyCommands.get(0).getId());
+        }
+        functionCall.setArguments(paramIds);
+
+        List<String> variablesInFunction = new ArrayList<>();
+        int fc = 0;
+        while (true) {
+            RuleEngineInputUnits units = variableFrameMap.get(fc);
+            if (units == null) break;
+            variablesInFunction.add(units.getId());
+            fc++;
+        }
+        functionCall.setAllVariablesInMethod(variablesInFunction);
+        ruleEngineInput.getFunctionCalls().add(functionCall);
+
+        this.currentFunctionName = previousFunctionName;
+        this.selfFieldParamIds = previousSelfFieldParamIds;
+    }
+
+    /**
+     * Converts an object instantiation statement {@code obj = ClassName(arg1, arg2)}.
+     *
+     * <p>Steps:</p>
+     * <ol>
+     *   <li>Create a {@link Variable} with {@code dataType = className} for {@code obj}.</li>
+     *   <li>Create per-field {@link Variable}s (e.g. {@code p_name}, {@code p_age}).</li>
+     *   <li>Create an {@link ObjectInstance} recording the field Variable IDs.</li>
+     *   <li>Emit a constructor call passing field Variables first (by reference),
+     *       then the explicit constructor arguments.</li>
+     * </ol>
+     *
+     * <p>Because field Variables are passed by reference to the constructor, any
+     * {@code self.field = …} assignment inside {@code __init__} directly modifies the
+     * caller's field Variable — this is how copy-by-reference semantics are achieved.</p>
+     */
+    private void convertObjectInstantiation(String instanceName, CallNode constructorCall,
+                                            Command command, List<String> variableScope,
+                                            Map<Integer, RuleEngineInputUnits> variableFrameMap,
+                                            int[] counter) throws CompilationException {
+        if (!(constructorCall.getFunc() instanceof NameNode)) {
+            throw new CompilationException(null, null, "Constructor must be a simple class name");
+        }
+        String className = ((NameNode) constructorCall.getFunc()).getId();
+        ClassDefinition classDef = classDefinitionMap.get(className);
+        if (classDef == null) {
+            throw new CompilationException(null, null, "Unknown class: " + className);
+        }
+
+        String scope = getScope(variableScope);
+
+        // Update the object variable's dataType to className (already created by caller)
+        Variable objVar = getExistingVariable(instanceName, variableScope);
+        if (objVar != null) {
+            objVar.setDataType(className);
+        }
+
+        // Record the class of this instance so later field/method accesses can resolve it
+        codeConverter.setObjectClass(scope, instanceName, className);
+
+        // Create per-field Variables for this instance
+        ObjectInstance objectInstance = new ObjectInstance();
+        objectInstance.setId("obj_" + UUID.randomUUID().toString());
+        objectInstance.setInstanceName(instanceName);
+        objectInstance.setClassName(className);
+
+        List<String> fieldVarIds = new ArrayList<>();
+        for (String fieldName : classDef.getFieldNames()) {
+            Variable fieldVar = new Variable();
+            fieldVar.setId(UUID.randomUUID().toString());
+            fieldVar.setName(instanceName + "_" + fieldName);
+            fieldVar.setDataType("Double"); // default; can be refined by type inference
+            fieldVar.setReturnable(false);
+
+            ruleEngineInput.getVariables().add(fieldVar);
+            // Register field variable in scope so it can be looked up later
+            codeConverter.setVariable(fieldVar, scope);
+
+            objectInstance.getFieldVariableIds().put(fieldName, fieldVar.getId());
+            fieldVarIds.add(fieldVar.getId());
+
+            // Track in function frame if inside a function
+            if (variableFrameMap != null && counter != null) {
+                fieldVar.setFrameCount(counter[0]);
+                variableFrameMap.put(counter[0]++, fieldVar);
+            }
+        }
+
+        ruleEngineInput.getObjectInstances().add(objectInstance);
+
+        // Build the constructor call: field vars (by reference) + explicit args
+        String constructorFunctionId = classDef.getConstructorFunctionId();
+        if (constructorFunctionId != null) {
+            FunctionCall constructorFunctionCall = new FunctionCall();
+            constructorFunctionCall.setId(constructorFunctionId);
+
+            List<String> argumentIds = new ArrayList<>(fieldVarIds);
+            for (AstNode arg : constructorCall.getArgs()) {
+                String argId = getArgumentId(arg, variableScope, false);
+                argumentIds.add(argId);
+            }
+            constructorFunctionCall.setArguments(argumentIds);
+            command.setFunctionCall(constructorFunctionCall);
+        }
+
+        debugLevelCodeCreator.concat(instanceName + " = " + className + "(...)");
+        debugLevelCodeCreator.nextLine();
+    }
+
+    /**
+     * Converts an attribute assignment {@code obj.field = value} or
+     * {@code self.field = value} into an operation that assigns to the correct
+     * backing Variable.
+     *
+     * <p>If the object is {@code self} we look up {@link #selfFieldParamIds}.
+     * For any other object we look up the {@link ObjectInstance} in
+     * {@link RuleEngineInput#getObjectInstances()}.</p>
+     */
+    private void convertAttributeAssignment(AttributeNode target, AstNode value,
+                                            Command command, List<String> variableScope)
+            throws CompilationException {
+        if (!(target.getValue() instanceof NameNode)) {
+            throw new CompilationException(null, null,
+                    "Only simple object field assignments are supported (e.g. obj.field = ...)");
+        }
+        String objectName = ((NameNode) target.getValue()).getId();
+        String fieldName = target.getAttr();
+
+        String fieldVariableId = resolveFieldVariableId(objectName, fieldName, variableScope);
+        if (fieldVariableId == null) {
+            throw new CompilationException(null, null,
+                    "Unknown field '" + fieldName + "' on object '" + objectName + "'");
+        }
+
+        Operation operation = createAssignmentOperation(fieldVariableId, value, variableScope);
+        command.setOperation(operation.getId());
+
+        debugLevelCodeCreator.concat(objectName + "." + fieldName + " = ");
+        appendValueToDebug(value);
+        debugLevelCodeCreator.nextLine();
+    }
+
+    /**
+     * Converts a method call {@code obj.method(args)} or {@code self.method(args)}.
+     *
+     * <p>Generates a {@link FunctionCall} for {@code ClassName_methodName} passing
+     * the instance's field Variables (by reference) as the first arguments followed
+     * by any explicit call arguments.</p>
+     *
+     * @param attr            The AttributeNode identifying the object and method name.
+     * @param callArgs        The explicit arguments supplied at the call site.
+     * @param command         The Command to populate with the FunctionCall.
+     * @param variableScope   Current scope for variable resolution.
+     * @param returnTargetIds Optional return target variable IDs; may be null or empty.
+     */
+    private void convertMethodCall(AttributeNode attr, List<AstNode> callArgs,
+                                   Command command, List<String> variableScope,
+                                   List<String> returnTargetIds) throws CompilationException {
+        if (!(attr.getValue() instanceof NameNode)) {
+            throw new CompilationException(null, null,
+                    "Only simple method calls are supported (e.g. obj.method(...))");
+        }
+        String objectName = ((NameNode) attr.getValue()).getId();
+        String methodName = attr.getAttr();
+
+        // Resolve field Variable IDs for the object (self or a named instance)
+        List<String> fieldVarIds = resolveObjectFieldVarIds(objectName, variableScope);
+
+        // Determine the fully-qualified function ID
+        String qualifiedMethodId = resolveMethodFunctionId(objectName, methodName, variableScope);
+
+        FunctionCall functionCall = new FunctionCall();
+        functionCall.setId(qualifiedMethodId);
+
+        List<String> argumentIds = new ArrayList<>(fieldVarIds);
+        for (AstNode arg : callArgs) {
+            argumentIds.add(getArgumentId(arg, variableScope, false));
+        }
+        if (returnTargetIds != null) {
+            argumentIds.addAll(returnTargetIds);
+        }
+        functionCall.setArguments(argumentIds);
+        command.setFunctionCall(functionCall);
+
+        debugLevelCodeCreator.concat(objectName + "." + methodName + "(...)");
+    }
+
+    /**
+     * Converts an attribute read expression {@code obj.field} into a Command that
+     * references the backing field Variable, and returns the Command ID.
+     */
+    private String convertAttributeToCommand(AttributeNode attr, List<String> variableScope)
+            throws CompilationException {
+        String fieldVarId = resolveAttributeId(attr, variableScope);
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        command.setVariableId(fieldVarId);
+        ruleEngineInput.getCommands().add(command);
+        return command.getId();
+    }
+
+    /**
+     * Resolves an {@link AttributeNode} to the ID of the backing field Variable.
+     *
+     * <p>Handles both {@code self.field} (inside a class method) and
+     * {@code obj.field} (from an object reference).</p>
+     */
+    private String resolveAttributeId(AttributeNode attr, List<String> variableScope)
+            throws CompilationException {
+        if (!(attr.getValue() instanceof NameNode)) {
+            throw new CompilationException(null, null,
+                    "Only simple attribute access is supported (e.g. obj.field)");
+        }
+        String objectName = ((NameNode) attr.getValue()).getId();
+        String fieldName = attr.getAttr();
+
+        String fieldVarId = resolveFieldVariableId(objectName, fieldName, variableScope);
+        if (fieldVarId == null) {
+            throw new CompilationException(null, null,
+                    "Unknown field '" + fieldName + "' on object '" + objectName + "'");
+        }
+        return fieldVarId;
+    }
+
+    /**
+     * Resolves a field's backing Variable ID for a given object and field name.
+     *
+     * <ul>
+     *   <li>If {@code objectName} is {@code "self"}, looks up {@link #selfFieldParamIds}.</li>
+     *   <li>Otherwise, finds the {@link ObjectInstance} for that variable name.</li>
+     * </ul>
+     *
+     * @return The Variable ID, or {@code null} if not found.
+     */
+    private String resolveFieldVariableId(String objectName, String fieldName,
+                                          List<String> variableScope) {
+        if ("self".equals(objectName)) {
+            return selfFieldParamIds.get(fieldName);
+        }
+
+        // Look up ObjectInstance by instance name (search outer scopes too)
+        for (ObjectInstance oi : ruleEngineInput.getObjectInstances()) {
+            if (objectName.equals(oi.getInstanceName())) {
+                return oi.getFieldVariableIds().get(fieldName);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the ordered list of field Variable IDs for an object.
+     *
+     * <ul>
+     *   <li>For {@code self}: returns the values of {@link #selfFieldParamIds}
+     *       in the canonical field order given by the current class's field list.</li>
+     *   <li>For any other object: looks up its {@link ObjectInstance}.</li>
+     * </ul>
+     */
+    private List<String> resolveObjectFieldVarIds(String objectName, List<String> variableScope)
+            throws CompilationException {
+        if ("self".equals(objectName)) {
+            List<String> ids = new ArrayList<>();
+            if (currentClassName != null) {
+                List<String> fields = classFieldNamesMap.getOrDefault(currentClassName, Collections.emptyList());
+                for (String f : fields) {
+                    String id = selfFieldParamIds.get(f);
+                    if (id != null) ids.add(id);
+                }
+            }
+            return ids;
+        }
+
+        for (ObjectInstance oi : ruleEngineInput.getObjectInstances()) {
+            if (objectName.equals(oi.getInstanceName())) {
+                return new ArrayList<>(oi.getFieldVariableIds().values());
+            }
+        }
+
+        // Object may be a function parameter of class type — look up via objectClassMap
+        String scope = getScope(variableScope);
+        String className = codeConverter.getObjectClass(scope, objectName);
+        if (className == null) {
+            throw new CompilationException(null, null,
+                    "Cannot resolve object '" + objectName + "' for method call");
+        }
+        // When inside a method that receives an object param, we won't have an ObjectInstance
+        // — the field vars are passed as selfFieldParamIds-style params under "self." prefix
+        // but the argument name may differ.  Return the selfFieldParamIds for now.
+        return new ArrayList<>(selfFieldParamIds.values());
+    }
+
+    /**
+     * Resolves the fully-qualified function ID for a method call.
+     *
+     * <ul>
+     *   <li>For {@code self.method}: uses {@link #currentClassName}.</li>
+     *   <li>For {@code obj.method}: looks up the class via {@link ObjectInstance} or
+     *       {@code objectClassMap}.</li>
+     * </ul>
+     */
+    private String resolveMethodFunctionId(String objectName, String methodName,
+                                           List<String> variableScope) throws CompilationException {
+        String className;
+        if ("self".equals(objectName)) {
+            className = currentClassName;
+        } else {
+            // Try ObjectInstance first
+            className = null;
+            for (ObjectInstance oi : ruleEngineInput.getObjectInstances()) {
+                if (objectName.equals(oi.getInstanceName())) {
+                    className = oi.getClassName();
+                    break;
+                }
+            }
+            if (className == null) {
+                String scope = getScope(variableScope);
+                className = codeConverter.getObjectClass(scope, objectName);
+            }
+        }
+        if (className == null) {
+            throw new CompilationException(null, null,
+                    "Cannot determine class for object '" + objectName + "'");
+        }
+        return className + "_" + methodName;
+    }
 }
+

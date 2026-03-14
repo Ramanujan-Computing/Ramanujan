@@ -28,6 +28,13 @@ public class CodeConverter {
     private Map<String, Array> arrayMap;
     private Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap;
     private Map<String, String> csvDataMap;
+    /**
+     * Maps variable/argument names (scoped) to their class name.
+     * Used to resolve object types when compiling field access and method calls.
+     * Key: scope + variableName  (same scoping as variableMap)
+     * Value: class name, e.g. "Person"
+     */
+    private Map<String, String> objectClassMap;
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
 //        return variable;
@@ -71,6 +78,7 @@ public class CodeConverter {
         variableMap = new HashMap<>();
         arrayMap = new HashMap<>();
         methodDataTypeAgnosticArgMap = new HashMap<>();
+        objectClassMap = new HashMap<>();
     }
 
     public Map<String, Variable> getVariableMap() {
@@ -83,6 +91,22 @@ public class CodeConverter {
 
     public Map<String, MethodDataTypeAgnosticArg> getMethodDataTypeAgnosticArgMap() {
         return methodDataTypeAgnosticArgMap;
+    }
+
+    public Map<String, String> getObjectClassMap() {
+        return objectClassMap;
+    }
+
+    public void setObjectClass(String variableScope, String variableName, String className) {
+        objectClassMap.put(variableScope + variableName, className);
+    }
+
+    public String getObjectClass(String variableScope, String variableName) {
+        String result = objectClassMap.get(variableScope + variableName);
+        if (result == null && !variableScope.isEmpty()) {
+            result = objectClassMap.get(variableName);
+        }
+        return result;
     }
 
     public void setVariableMap(Map<String, Variable> map) {

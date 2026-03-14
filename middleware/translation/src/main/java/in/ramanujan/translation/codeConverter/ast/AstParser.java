@@ -357,6 +357,8 @@ public class AstParser {
             return parseWhile();
         } else if (line.startsWith("FunctionDef(")) {
             return parseFunctionDef();
+        } else if (line.startsWith("ClassDef(")) {
+            return parseClassDef();
         } else if (line.startsWith("Expr(")) {
             return parseExpr();
         } else if (line.startsWith("Return(")) {
@@ -457,15 +459,39 @@ public class AstParser {
     
     /**
      * Parses the list of assignment targets.
-     * 
+     *
+     * <p>Targets are the left-hand side expressions of an assignment statement.
+     * Each target may be one of the following node types:</p>
+     * <ul>
+     *   <li><b>Name</b> – a simple variable reference, e.g. {@code x}</li>
+     *   <li><b>Subscript</b> – an indexed array element, e.g. {@code arr[0]}</li>
+     *   <li><b>Attribute</b> – an object field access, e.g. {@code self.name} or
+     *       {@code obj.field}.  These arise from OOP code such as
+     *       {@code self.name = value} inside a class method body.</li>
+     * </ul>
+     *
      * <p><b>Examples:</b></p>
      * <pre>
-     * x = 5              # targets=[Name]
-     * arr[0] = 10        # targets=[Subscript]
-     * a = b = c = 0      # targets=[Name, Name, Name]
+     * # Simple variable assignment
+     * x = 5                   → targets=[Name(id='x', ctx=Store())]
+     *
+     * # Array element assignment
+     * arr[0] = 10             → targets=[Subscript(value=Name('arr'), slice=Constant(0))]
+     *
+     * # Multiple assignment targets
+     * a = b = c = 0           → targets=[Name('a'), Name('b'), Name('c')]
+     *
+     * # Object field assignment (OOP)
+     * self.name = name        → targets=[Attribute(value=Name('self'), attr='name', ctx=Store())]
+     * obj.value = 42          → targets=[Attribute(value=Name('obj'),  attr='value', ctx=Store())]
      * </pre>
-     * 
-     * @return List of target nodes (NameNode or SubscriptNode)
+     *
+     * <p><b>Attribute target handling:</b> When an {@code Attribute(} line is encountered
+     * the parser advances past it, delegates to {@link #parseAttribute()}, and then checks
+     * whether the last parsed line ends with {@code ],} or {@code ])} to determine whether
+     * the targets list is closed on that same line.</p>
+     *
+     * @return List of target nodes (NameNode, SubscriptNode, or AttributeNode)
      * @throws CompilationException If target parsing fails
      */
     private List<AstNode> parseTargetsList() throws CompilationException {
@@ -491,6 +517,14 @@ public class AstParser {
             } else if (line.startsWith("Subscript(")) {
                 currentLine++;  // Move past "Subscript(" line before calling parseSubscript
                 targets.add(parseSubscript());
+                // Check if the previous line ended the list
+                String prevLine = lines[currentLine - 1].trim();
+                if (prevLine.endsWith("],") || prevLine.endsWith("])")) {
+                    break;
+                }
+            } else if (line.startsWith("Attribute(")) {
+                currentLine++;  // Move past "Attribute(" line
+                targets.add(parseAttribute());
                 // Check if the previous line ended the list
                 String prevLine = lines[currentLine - 1].trim();
                 if (prevLine.endsWith("],") || prevLine.endsWith("])")) {
@@ -666,6 +700,10 @@ public class AstParser {
             }
             currentLine++;
             return parseBinOp();
+        } else if (line.contains("Attribute(")) {
+            // Must check before Name( since Attribute contains Name in its value
+            currentLine++;
+            return parseAttribute();
         } else if (line.contains("Name(")) {
             // Name can be inline (e.g., "left=Name(id='a', ctx=Load()),")
             // or on its own line
@@ -1418,6 +1456,75 @@ public class AstParser {
         
         return funcDef;
     }
+
+    /**
+     * Parses an Attribute node, e.g. {@code self.name} or {@code obj.value}.
+     *
+     * <p><b>AST Format:</b></p>
+     * <pre>
+     * Attribute(
+     *   value=Name(id='self', ctx=Load()),
+     *   attr='name',
+     *   ctx=Store())
+     * </pre>
+     *
+     * @return AttributeNode with value, attr, and ctx fields set
+     * @throws CompilationException If attribute structure is invalid
+     */
+    private AttributeNode parseAttribute() throws CompilationException {
+        AttributeNode attr = new AttributeNode();
+
+        while (currentLine < lines.length) {
+            String line = lines[currentLine].trim();
+
+            if (line.startsWith("value=")) {
+                attr.setValue(parseValue(line));
+            } else if (line.startsWith("attr='")) {
+                Pattern attrPattern = Pattern.compile("attr='([^']+)'");
+                Matcher attrMatcher = attrPattern.matcher(line);
+                if (attrMatcher.find()) {
+                    attr.setAttr(attrMatcher.group(1));
+                }
+                currentLine++;
+            } else if (line.startsWith("ctx=")) {
+                // e.g. ctx=Store() or ctx=Load()
+                Pattern ctxPattern = Pattern.compile("ctx=([A-Za-z]+)\\(\\)");
+                Matcher ctxMatcher = ctxPattern.matcher(line);
+                if (ctxMatcher.find()) {
+                    attr.setCtx(ctxMatcher.group(1));
+                }
+                // Check closing patterns on this line
+                if (isAttributeClosedOnLine(line)) {
+                    currentLine++;
+                    break;
+                }
+                currentLine++;
+            } else if (line.equals(")") || line.startsWith("),") || line.startsWith(")]")) {
+                currentLine++;
+                break;
+            } else {
+                currentLine++;
+            }
+        }
+
+        return attr;
+    }
+
+    /**
+     * Returns true when the ctx= line also closes the Attribute node.
+     * This happens for patterns like:
+     * <ul>
+     *   <li>{@code ctx=Store())} – closes Attribute</li>
+     *   <li>{@code ctx=Store()),} – closes Attribute with trailing comma</li>
+     *   <li>{@code ctx=Store()],} – closes Attribute and surrounding list</li>
+     *   <li>{@code ctx=Load())],} – closes Attribute and surrounding list</li>
+     *   <li>{@code ctx=Load()))],} – closes Attribute, Return/BinOp, and body list</li>
+     * </ul>
+     */
+    private boolean isAttributeClosedOnLine(String line) {
+        // ctx=Store()) or ctx=Load())  → attribute closed (+ parent if more )'s)
+        return line.contains("())") || line.contains("),") || line.contains(")]");
+    }
     
     /**
      * Checks if a FunctionDef is closed on the given line.
@@ -1428,7 +1535,9 @@ public class AstParser {
     private boolean isFunctionDefClosedOnLine(String line) {
         // Look for pattern like "...[])" or "...])," at the end of line
         // Must have ] followed by ) - not just ] followed by ,
-        return line.endsWith("[])") || line.endsWith("[]),");
+        // Also handle "...[])," + "]," for cases where body list also closes on the same line
+        return line.endsWith("[])") || line.endsWith("[]),") ||
+               line.endsWith("[])],") || line.endsWith("[])],)");
     }
     
     /**
@@ -2261,5 +2370,89 @@ public class AstParser {
         }
         
         return augAssign;
+    }
+
+    /**
+     * Parses a class definition statement.
+     *
+     * <p><b>Python Example:</b></p>
+     * <pre>
+     * class Person:
+     *     def __init__(self, name):
+     *         self.name = name
+     * </pre>
+     *
+     * <p><b>AST Format (abbreviated):</b></p>
+     * <pre>
+     * ClassDef(
+     *   name='Person',
+     *   bases=[],
+     *   keywords=[],
+     *   body=[
+     *     FunctionDef(name='__init__', ...)],
+     *   decorator_list=[])
+     * </pre>
+     *
+     * @return ClassDefNode with name, bases, and body
+     * @throws CompilationException If class definition structure is invalid
+     */
+    private ClassDefNode parseClassDef() throws CompilationException {
+        ClassDefNode classDef = new ClassDefNode();
+        currentLine++; // skip "ClassDef(" line
+
+        while (currentLine < lines.length) {
+            String line = lines[currentLine].trim();
+
+            if (line.startsWith("name='")) {
+                Pattern namePattern = Pattern.compile("name='([^']+)'");
+                Matcher nameMatcher = namePattern.matcher(line);
+                if (nameMatcher.find()) {
+                    classDef.setName(nameMatcher.group(1));
+                }
+                currentLine++;
+            } else if (line.startsWith("bases=[")) {
+                // Skip bases section (inheritance); consume but do not parse
+                if (line.contains("],") || line.endsWith("]")) {
+                    currentLine++;
+                } else {
+                    skipBracketedSection();
+                }
+            } else if (line.startsWith("keywords=[")) {
+                // Skip keywords
+                if (line.contains("],") || line.endsWith("]")) {
+                    currentLine++;
+                } else {
+                    skipBracketedSection();
+                }
+            } else if (line.startsWith("body=[")) {
+                currentLine++;
+                classDef.setBody(parseBodyList());
+                if (currentLine > 0) {
+                    String lastLine = lines[currentLine - 1].trim();
+                    if (lineClosesBodyAndParent(lastLine)) {
+                        break;
+                    }
+                }
+            } else if (line.startsWith("decorator_list=[")) {
+                if (line.endsWith("[])") || line.endsWith("[]),")) {
+                    currentLine++;
+                    break;
+                }
+                skipBracketedSection();
+            } else if (line.startsWith("type_params=[")) {
+                if (line.endsWith("[])") || line.endsWith("[]),")) {
+                    currentLine++;
+                    break;
+                }
+                skipBracketedSection();
+            } else if (line.equals(")") || line.startsWith("),")) {
+                currentLine++;
+                break;
+            } else {
+                currentLine++;
+            }
+        }
+
+        return classDef;
     }
 }

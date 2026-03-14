@@ -45,6 +45,10 @@ set(SOURCE_FILES
         input/Operation.hpp
         input/RuleEngineInput.hpp
         input/RuleEngineInputUnit.hpp
+        input/ClassDefinition.hpp
+        input/ClassDefinition.cpp
+        input/ObjectInstance.hpp
+        input/ObjectInstance.cpp
         input/Variable.hpp
         input/While.hpp
         input/RedefineArrayCommand.hpp
@@ -66,6 +70,7 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/VariableRE.h
         ruleEngineObject/dataContainer/AbstractDataContainer.h
         ruleEngineObject/dataContainer/DataContainerRE.h
+        ruleEngineObject/dataContainer/ObjectDataContainerValue.h
         ruleEngineObject/CommandRE.cpp
         ruleEngineObject/RedefineArrayCommandRE.h
         ruleEngineObject/RedefineArrayCommandRE.cpp
@@ -80,6 +85,8 @@ set(SOURCE_FILES
         input/If.cpp
         input/While.cpp
         ruleEngineObject/FunctionCommandRE.cpp
+        ruleEngineObject/ClassDefinitionRE.h
+        ruleEngineObject/ObjectInstanceRE.h
         input/Array.cpp
         ruleEngineObject/CommandProcessing.cpp
         ruleEngineObject/CommandProcessing.h

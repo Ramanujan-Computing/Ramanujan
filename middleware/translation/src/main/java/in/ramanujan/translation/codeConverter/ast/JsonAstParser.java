@@ -89,6 +89,8 @@ public class JsonAstParser {
                 return parseWhile(node);
             case "FunctionDef":
                 return parseFunctionDef(node);
+            case "ClassDef":
+                return parseClassDef(node);
             case "Return":
                 return parseReturn(node);
             case "Name":
@@ -232,6 +234,32 @@ public class JsonAstParser {
         
         setLineInfo(funcDef, node);
         return funcDef;
+    }
+
+    private ClassDefNode parseClassDef(JsonNode node) throws CompilationException {
+        ClassDefNode classDef = new ClassDefNode();
+
+        if (node.has("name")) {
+            classDef.setName(node.get("name").asText());
+        }
+
+        if (node.has("bases")) {
+            List<AstNode> bases = new ArrayList<>();
+            for (JsonNode base : node.get("bases")) {
+                AstNode baseNode = parseNode(base);
+                if (baseNode != null) {
+                    bases.add(baseNode);
+                }
+            }
+            classDef.setBases(bases);
+        }
+
+        if (node.has("body")) {
+            classDef.setBody(parseBody(node.get("body")));
+        }
+
+        setLineInfo(classDef, node);
+        return classDef;
     }
     
     private ArgumentsNode parseArguments(JsonNode node) throws CompilationException {

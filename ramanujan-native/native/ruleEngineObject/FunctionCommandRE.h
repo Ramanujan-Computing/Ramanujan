@@ -12,6 +12,8 @@
 #include "dataContainer/ArrayRE.h"
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/DataContainerValue.h"
+#include "dataContainer/ObjectDataContainerValue.h"
+#include "ObjectInstanceRE.h"
 #include "FunctionCallRE.h"
 #include "dataContainer/DataContainerValueFunctionCommandRE.h"
 #include "DataContainerValueFunctionCommandREMemMaintainer.h"
