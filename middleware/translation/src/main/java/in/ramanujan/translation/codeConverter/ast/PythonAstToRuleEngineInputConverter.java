@@ -1352,6 +1352,33 @@ public class PythonAstToRuleEngineInputConverter {
         }
 
         functionCall.setAllVariablesInMethod(variablesInFunction);
+
+        // ---- GPU function handling ----
+        // Functions ending with "_GPU" are executed as OpenCL kernels.
+        // Convention: def func_GPU(arg1..N, rangeKernelDim1..M, M)
+        //   - Last param (M) carries work_dim at call time.
+        //   - Params used as subscript indices → range dims → get_global_id(n) declarations.
+        //   - Remaining params (except M) → __global float* data args.
+        if (funcDef.getName().endsWith("_GPU")) {
+            try {
+                GpuFunctionBodyConverter gpuConverter = new GpuFunctionBodyConverter();
+                GpuFunctionBodyConverter.GpuConversionResult gpuResult = gpuConverter.convert(funcDef);
+                functionCall.setIsGpu(true);
+                functionCall.setOpenClCode(gpuResult.kernelCode);
+                functionCall.setGpuParallelismArgIndices(gpuResult.parallelismArgIndices);
+                functionCall.setGpuWorkDimArgIndex(gpuResult.gpuWorkDimArgIndex);
+                System.out.println("========== GPU FUNCTION DETECTED: " + funcDef.getName() + " ==========");
+                System.out.println("OpenCL kernel code:\n" + gpuResult.kernelCode);
+                System.out.println("GPU parallelism arg indices (work_dim=" + gpuResult.parallelismArgIndices.size() + "): " + gpuResult.parallelismArgIndices);
+                System.out.println("GPU work_dim arg index: " + gpuResult.gpuWorkDimArgIndex);
+                System.out.println("=======================================================");
+            } catch (Exception e) {
+                throw new CompilationException(null, null,
+                        "Failed to generate OpenCL kernel for GPU function '"
+                        + funcDef.getName() + "': " + e.getMessage());
+            }
+        }
+
         ruleEngineInput.getFunctionCalls().add(functionCall);
         
         // Restore previous function name

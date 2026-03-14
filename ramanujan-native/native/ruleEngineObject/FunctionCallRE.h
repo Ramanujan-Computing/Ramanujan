@@ -19,6 +19,34 @@ public:
     RuleEngineInputUnits* commmandRe = nullptr;
     std::string firstCommandId;
 
+    // ---- GPU dispatch fields ----
+
+    /**
+     * True when this function should be dispatched as an OpenCL GPU kernel.
+     * Mirrors FunctionCall::isGpu after setFields() is called.
+     */
+    bool isGpu = false;
+
+    /**
+     * OpenCL C kernel source code.  Non-empty only when isGpu == true.
+     * Mirrors FunctionCall::openClCode.
+     */
+    std::string openClCode;
+
+    /**
+     * Zero-based indices into the arguments array of the range-kernel-dimension parameters,
+     * one per NDRange dimension.  At call time these values are global_work_size[] for
+     * clEnqueueNDRangeKernel.  Only meaningful when isGpu == true.
+     */
+    std::vector<int> gpuParallelismArgIndices;
+
+    /**
+     * Zero-based index of the M parameter (work_dim count) in the argument list.
+     * Its value at call time equals work_dim == gpuParallelismArgIndices.size().
+     * Only meaningful when isGpu == true.
+     */
+    int gpuWorkDimArgIndex = -1;
+
     bool setFieldDone = false;
 
     FunctionCallRE(FunctionCall * functionCall1) {
@@ -54,6 +82,13 @@ public:
         for (int i=0; i< functionCall->allVariablesInMethodSize; i++) {
             allVariablesInMethod[i] = map->at(functionCall->allVariablesInMethod[i]);
         }
+
+        // Populate GPU dispatch fields
+        isGpu                    = functionCall->isGpu;
+        openClCode               = functionCall->openClCode;
+        gpuParallelismArgIndices = functionCall->gpuParallelismArgIndices;
+        gpuWorkDimArgIndex       = functionCall->gpuWorkDimArgIndex;
+
         setFieldDone = true;
     }
 
