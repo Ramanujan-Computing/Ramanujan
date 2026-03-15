@@ -732,6 +732,84 @@ while j < 1000:
 ```
 
 
+# GPU Acceleration Support (OpenCL):
+
+Ramanujan supports offloading compute-intensive work to the GPU via OpenCL. Any Python function
+whose name ends with `_GPU` is automatically compiled to an OpenCL C kernel during translation
+and dispatched to the GPU at runtime—no changes to the rest of the code are required.
+
+## Writing a GPU function
+
+The function must follow this exact signature convention:
+
+```python
+def funcName_GPU(arg1, arg2, ..., argN, rangeKernelDim1, ..., rangeKernelDimM, M):
+    # body – use rangeKernelDimK as work-item index variables
+```
+
+| Parameter group | Role | What the translator does |
+|---|---|---|
+| `arg1 … argN` | Data arrays | Emitted as `__global float*` kernel parameters |
+| `rangeKernelDim1 … rangeKernelDimM` | Work-item index variables (used as subscript indices in the body) | Emitted as `int dim = get_global_id(N);` declarations; their **call-site values** become `global_work_size[]` for `clEnqueueNDRangeKernel` |
+| `M` *(last parameter)* | Number of NDRange dimensions | Becomes `work_dim` for `clEnqueueNDRangeKernel`; **not** passed as a kernel argument |
+
+> **Requirement:** `arg1 … argN` must be arrays. The translator maps them to OpenCL buffers.
+
+## Examples
+
+### 1-D vector addition
+```python
+def vector_add_GPU(a, b, c, gid, n):
+    c[gid] = a[gid] + b[gid]
+
+# 1024-element arrays, 1 NDRange dimension
+vector_add_GPU(a, b, c, 1024, 1)
+```
+Generated OpenCL kernel:
+```c
+__kernel void vector_add(__global float* a, __global float* b, __global float* c) {
+    int gid = get_global_id(0);
+    c[gid] = (a[gid] + b[gid]);
+}
+```
+
+### 2-D matrix kernel
+```python
+def matrix_add_GPU(a, b, c, row, col, m):
+    c[row] = a[row] + b[col]
+
+# 64 × 64 grid
+matrix_add_GPU(a, b, c, 64, 64, 2)
+```
+
+### Control flow inside a GPU function
+`if/else` and `while` inside the function body are translated to their C equivalents:
+```python
+def relu_GPU(a, out, gid, n):
+    if a[gid] > 0:
+        out[gid] = a[gid]
+    else:
+        out[gid] = 0
+
+relu_GPU(a, out, 512, 1)
+```
+
+## Build prerequisites
+
+| Platform | Requirement |
+|---|---|
+| macOS | OpenCL is part of the system framework – no extra install needed |
+| Linux | `sudo apt install ocl-icd-opencl-dev opencl-headers` |
+| Windows | Install GPU vendor drivers: NVIDIA CUDA Toolkit, AMD ROCm, or Intel OpenCL SDK |
+
+## Runtime behaviour
+- The OpenCL platform and device are initialised **once** on the first GPU call and reused for all subsequent calls.
+- A GPU device is preferred; if none is available the runtime falls back to any OpenCL device (e.g., a CPU implementation).
+- Each unique kernel source is **compiled and cached** on first invocation; repeated calls to the same GPU function reuse the cached `cl_kernel`.
+- Data is staged `double → float` before upload and `float → double` after read-back (OpenCL kernels operate on `float`).
+- If OpenCL initialisation fails at runtime a warning is printed to `stderr` and execution returns immediately.
+- The `GPU_ENABLED` macro must be set at compile time (via `-DENABLE_GPU=ON`). Builds without it contain **no OpenCL code** and have no OpenCL runtime dependency.
+
 # Future of the language and platform:
 Ramanujan now supports a subset of Python syntax through AST-based conversion (see Python Support section above). The platform is actively evolving to support more Python features progressively.
 
@@ -812,7 +890,17 @@ cmake ..
 cmake --build .
 ```
 
-## Usage:
+#### Ramanujan-native with GPU support (OpenCL):
+```
+cd ramanujan-native/native
+mkdir build-gpu
+cd build-gpu
+cmake -DENABLE_GPU=ON ..
+cmake --build .
+```
+Passing `-DENABLE_GPU=ON` sets the `GPU_ENABLED` preprocessor macro, links OpenCL, and activates
+OpenCL kernel dispatch for `_GPU`-suffixed functions. Standard builds (`-DENABLE_GPU=OFF`, the
+default) compile no OpenCL code and have no dependency on any OpenCL runtime.
 ### Docker build:
 Dockerfile is provided to containerize all the necessary services.
 

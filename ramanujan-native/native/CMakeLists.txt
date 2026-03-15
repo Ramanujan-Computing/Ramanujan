@@ -17,7 +17,39 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-# JNI include paths - use Android NDK for Android builds, otherwise use JDK_HOME
+# ---------------------------------------------------------------------------
+# GPU support  (disabled by default – no OpenCL dependency for standard builds)
+# Enable with:  cmake -DENABLE_GPU=ON ..
+# macOS:  OpenCL ships with the system framework, no extra install needed.
+# Linux:  sudo apt install ocl-icd-opencl-dev opencl-headers
+# Windows: install GPU vendor drivers (NVIDIA CUDA Toolkit / AMD ROCm / Intel OpenCL SDK)
+# ---------------------------------------------------------------------------
+option(ENABLE_GPU "Build with OpenCL GPU kernel execution support" OFF)
+if(ENABLE_GPU)
+    # Fetch the official Khronos OpenCL C headers
+    FetchContent_Declare(
+        OpenCLHeaders
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+        GIT_TAG        v2023.04.17
+    )
+    FetchContent_MakeAvailable(OpenCLHeaders)
+
+    # The ICD loader needs to know where the headers live before it is configured
+    set(OPENCL_ICD_LOADER_HEADERS_DIR ${openclheaders_SOURCE_DIR} CACHE PATH "" FORCE)
+
+    # Fetch the Khronos OpenCL ICD Loader (provides OpenCL::OpenCL link target)
+    FetchContent_Declare(
+        OpenCLICDLoader
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-ICD-Loader.git
+        GIT_TAG        v2023.04.17
+    )
+    FetchContent_MakeAvailable(OpenCLICDLoader)
+
+    message(STATUS "[Ramanujan] OpenCL GPU support ENABLED")
+    add_compile_definitions(GPU_ENABLED)
+else()
+    message(STATUS "[Ramanujan] OpenCL GPU support DISABLED  (pass -DENABLE_GPU=ON to enable)")
+endif() - use Android NDK for Android builds, otherwise use JDK_HOME
 IF(ANDROID)
     # For Android builds, use NDK's JNI headers
     include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
@@ -146,6 +178,12 @@ add_library(native_debug SHARED ${SOURCE_FILES})
 target_link_libraries(native_debug PRIVATE jsoncpp_static)
 set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
 set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
+
+# Link OpenCL into both targets when GPU support is enabled
+if(ENABLE_GPU)
+    target_link_libraries(native       PRIVATE OpenCL::OpenCL)
+    target_link_libraries(native_debug PRIVATE OpenCL::OpenCL)
+endif()
 
 #find_package(Boost REQUIRED)
 #if(Boost_FOUND)

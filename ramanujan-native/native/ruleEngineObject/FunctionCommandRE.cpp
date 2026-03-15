@@ -14,6 +14,82 @@
 #include <limits>
 #include <random>
 
+#ifdef GPU_ENABLED
+#include <set>
+
+// ==================== OpenCL ====================
+#ifdef __APPLE__
+#  include <OpenCL/cl.h>
+#else
+#  include <CL/cl.h>
+#endif
+
+// ---------------------------------------------------------------------------
+// Singleton OpenCL context  (created once, reused for all GPU dispatches)
+// ---------------------------------------------------------------------------
+namespace {
+
+struct GpuContext {
+    cl_platform_id    platform = nullptr;
+    cl_device_id      device   = nullptr;
+    cl_context        context  = nullptr;
+    cl_command_queue  queue    = nullptr;
+    bool initialized = false;
+    bool available   = false;
+
+    void init() {
+        if (initialized) return;
+        initialized = true;
+
+        cl_int err;
+        cl_uint numPlatforms = 0;
+        if (clGetPlatformIDs(1, &platform, &numPlatforms) != CL_SUCCESS || numPlatforms == 0)
+            return;
+
+        // Prefer GPU, fall back to any available device
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
+        if (err != CL_SUCCESS)
+            err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 1, &device, nullptr);
+        if (err != CL_SUCCESS) return;
+
+        context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
+        if (err != CL_SUCCESS) return;
+
+        queue = clCreateCommandQueue(context, device, 0, &err);
+        if (err != CL_SUCCESS) { clReleaseContext(context); context = nullptr; return; }
+
+        available = true;
+    }
+
+    ~GpuContext() {
+        if (queue)   clReleaseCommandQueue(queue);
+        if (context) clReleaseContext(context);
+    }
+};
+
+static GpuContext s_clCtx;
+
+// Cache compiled kernels by source string to avoid recompiling on every call
+static std::unordered_map<std::string, cl_kernel> s_kernelCache;
+
+// Extract "kernelName" from "__kernel void kernelName("
+static std::string gpuExtractKernelName(const std::string& src) {
+    const std::string marker = "__kernel void ";
+    auto pos = src.find(marker);
+    if (pos == std::string::npos) return "kernel";
+    pos += marker.size();
+    auto end = src.find('(', pos);
+    if (end == std::string::npos) return "kernel";
+    std::string name = src.substr(pos, end - pos);
+    // trim trailing whitespace
+    while (!name.empty() && (name.back() == ' ' || name.back() == '\t')) name.pop_back();
+    return name;
+}
+
+} // anonymous namespace
+
+#endif // GPU_ENABLED
+
 thread_local bool FunctionCommandRE::hasEncounteredReturn = false;
 
 /**
@@ -169,6 +245,138 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
  * Returns: nextUnit after function completes (return statements are handled internally)
  */
 RuleEngineInputUnits* FunctionCommandRE::process() {
+
+#ifdef GPU_ENABLED
+    // ==================== GPU FAST PATH ====================
+    // If this function is flagged as a GPU kernel, skip the normal unit-chain
+    // execution entirely and dispatch through OpenCL instead.
+    if (functionInfoRE->isGpu) {
+        s_clCtx.init();
+        if (!s_clCtx.available) {
+            fprintf(stderr, "[GPU] OpenCL unavailable – cannot execute GPU function\n");
+            return nextUnit;
+        }
+
+        const std::string&      kernelSrc        = functionInfoRE->openClCode;
+        const std::vector<int>& parallelismIdxs  = functionInfoRE->gpuParallelismArgIndices;
+        int                     workDimArgIdx     = functionInfoRE->gpuWorkDimArgIndex;
+
+        // -- Compile/cache kernel --
+        cl_kernel kernel = nullptr;
+        auto cacheIt = s_kernelCache.find(kernelSrc);
+        if (cacheIt != s_kernelCache.end()) {
+            kernel = cacheIt->second;
+        } else {
+            cl_int err;
+            const char* csrc = kernelSrc.c_str();
+            size_t srcLen    = kernelSrc.size();
+            cl_program prog  = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
+            err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
+            if (err != CL_SUCCESS) {
+                size_t logLen = 0;
+                clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
+                std::string log(logLen, '\0');
+                clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
+                fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
+                clReleaseProgram(prog);
+                return nextUnit;
+            }
+            std::string kname = gpuExtractKernelName(kernelSrc);
+            kernel = clCreateKernel(prog, kname.c_str(), &err);
+            clReleaseProgram(prog);  // kernel holds an internal reference
+            if (err != CL_SUCCESS) {
+                fprintf(stderr, "[GPU] clCreateKernel('%s') failed: %d\n", kname.c_str(), err);
+                return nextUnit;
+            }
+            s_kernelCache[kernelSrc] = kernel;
+        }
+
+        // -- Identify data arg indices (everything except parallelism and work_dim args) --
+        std::set<int> parallelismSet(parallelismIdxs.begin(), parallelismIdxs.end());
+        std::vector<int> dataArgIndices;
+        for (int i = 0; i < argSize; i++) {
+            if (i != workDimArgIdx && parallelismSet.count(i) == 0)
+                dataArgIndices.push_back(i);
+        }
+
+        // -- work_dim and global_work_size from calling-context scalar values --
+        cl_uint workDim = (cl_uint)(static_cast<DoublePtr*>(
+            methodCallingOriginalPlaceHolderAddrs[workDimArgIdx])->value);
+
+        std::vector<size_t> globalWorkSize(parallelismIdxs.size());
+        for (int pi = 0; pi < (int)parallelismIdxs.size(); pi++) {
+            globalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
+                methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
+        }
+
+        // -- Allocate OpenCL buffers for data args (convert double→float staging) --
+        std::vector<cl_mem>              buffers(dataArgIndices.size(), nullptr);
+        std::vector<std::vector<float>>  staging(dataArgIndices.size());
+        cl_int err = CL_SUCCESS;
+        bool   bufferError = false;
+
+        for (int di = 0; di < (int)dataArgIndices.size(); di++) {
+            int argIdx = dataArgIndices[di];
+            ArrayDataContainerValue* arrVal =
+                static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
+            ArrayValue* av = arrVal->arrayValue;
+
+            staging[di].resize(av->totalSize);
+            for (int j = 0; j < av->totalSize; j++)
+                staging[di][j] = (float)av->val[j];
+
+            buffers[di] = clCreateBuffer(
+                s_clCtx.context,
+                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                av->totalSize * sizeof(float),
+                staging[di].data(), &err);
+
+            if (err != CL_SUCCESS) {
+                fprintf(stderr, "[GPU] clCreateBuffer failed (arg %d): %d\n", di, err);
+                bufferError = true;
+                break;
+            }
+            clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &buffers[di]);
+        }
+
+        if (!bufferError) {
+            // -- Enqueue kernel --
+            err = clEnqueueNDRangeKernel(
+                s_clCtx.queue, kernel, workDim,
+                nullptr, globalWorkSize.data(), nullptr,
+                0, nullptr, nullptr);
+
+            if (err == CL_SUCCESS) {
+                clFinish(s_clCtx.queue);
+
+                // -- Read back results: float→double --
+                for (int di = 0; di < (int)dataArgIndices.size(); di++) {
+                    int argIdx = dataArgIndices[di];
+                    ArrayDataContainerValue* arrVal =
+                        static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
+                    ArrayValue* av = arrVal->arrayValue;
+
+                    clEnqueueReadBuffer(
+                        s_clCtx.queue, buffers[di], CL_TRUE, 0,
+                        av->totalSize * sizeof(float), staging[di].data(),
+                        0, nullptr, nullptr);
+
+                    for (int j = 0; j < av->totalSize; j++)
+                        av->val[j] = (double)staging[di][j];
+                }
+            } else {
+                fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
+            }
+        }
+
+        // -- Release per-call buffers (kernel and context are cached/long-lived) --
+        for (cl_mem buf : buffers)
+            if (buf) clReleaseMemObject(buf);
+
+        return nextUnit;
+    }
+    // ==================== END GPU FAST PATH ====================
+#endif // GPU_ENABLED
 
     // ==================== DEBUG SETUP ====================
 #ifdef DEBUG_BUILD
