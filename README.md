@@ -735,35 +735,35 @@ while j < 1000:
 # GPU Acceleration Support (OpenCL):
 
 Ramanujan supports offloading compute-intensive work to the GPU via OpenCL. Any Python function
-whose name ends with `_GPU` is automatically compiled to an OpenCL C kernel during translation
-and dispatched to the GPU at runtime—no changes to the rest of the code are required.
+whose name matches the pattern `funcName_GPU_N` (where `N` is a positive integer) is automatically
+compiled to an OpenCL C kernel during translation and dispatched to the GPU at runtime.
 
 ## Writing a GPU function
 
-The function must follow this exact signature convention:
+The function name encodes the number of NDRange dimensions:
 
 ```python
-def funcName_GPU(arg1, arg2, ..., argN, rangeKernelDim1, ..., rangeKernelDimM, M):
-    # body – use rangeKernelDimK as work-item index variables
+def funcName_GPU_N(dataArg1, dataArg2, ..., dataArgK, rangeDim1, ..., rangeDimN):
+    # body – use rangeDimK as the per-work-item index
 ```
 
-| Parameter group | Role | What the translator does |
+| Part | Role | What the translator does |
 |---|---|---|
-| `arg1 … argN` | Data arrays | Emitted as `__global float*` kernel parameters |
-| `rangeKernelDim1 … rangeKernelDimM` | Work-item index variables (used as subscript indices in the body) | Emitted as `int dim = get_global_id(N);` declarations; their **call-site values** become `global_work_size[]` for `clEnqueueNDRangeKernel` |
-| `M` *(last parameter)* | Number of NDRange dimensions | Becomes `work_dim` for `clEnqueueNDRangeKernel`; **not** passed as a kernel argument |
+| `N` in `_GPU_N` | Number of NDRange dimensions (`work_dim`) | Read from the function name; no extra argument needed |
+| `dataArg1 … dataArgK` | Data arrays (first `total_params − N` parameters) | Emitted as `__global float*` kernel parameters |
+| `rangeDim1 … rangeDimN` | Work-item index variables (last `N` parameters) | Emitted as `int dim = get_global_id(K);` declarations; their **call-site values** become `global_work_size[]` for `clEnqueueNDRangeKernel` |
 
-> **Requirement:** `arg1 … argN` must be arrays. The translator maps them to OpenCL buffers.
+> **Requirement:** Data args must be arrays. The translator maps them to OpenCL buffers.
 
 ## Examples
 
 ### 1-D vector addition
 ```python
-def vector_add_GPU(a, b, c, gid, n):
+def vector_add_GPU_1(a, b, c, gid):
     c[gid] = a[gid] + b[gid]
 
 # 1024-element arrays, 1 NDRange dimension
-vector_add_GPU(a, b, c, 1024, 1)
+vector_add_GPU_1(a, b, c, 1024)
 ```
 Generated OpenCL kernel:
 ```c
@@ -775,23 +775,23 @@ __kernel void vector_add(__global float* a, __global float* b, __global float* c
 
 ### 2-D matrix kernel
 ```python
-def matrix_add_GPU(a, b, c, row, col, m):
+def matrix_add_GPU_2(a, b, c, row, col):
     c[row] = a[row] + b[col]
 
-# 64 × 64 grid
-matrix_add_GPU(a, b, c, 64, 64, 2)
+# 64 × 64 grid (2 NDRange dimensions)
+matrix_add_GPU_2(a, b, c, 64, 64)
 ```
 
 ### Control flow inside a GPU function
 `if/else` and `while` inside the function body are translated to their C equivalents:
 ```python
-def relu_GPU(a, out, gid, n):
+def relu_GPU_1(a, out, gid):
     if a[gid] > 0:
         out[gid] = a[gid]
     else:
         out[gid] = 0
 
-relu_GPU(a, out, 512, 1)
+relu_GPU_1(a, out, 512)
 ```
 
 ## Build prerequisites
@@ -807,7 +807,7 @@ relu_GPU(a, out, 512, 1)
 - A GPU device is preferred; if none is available the runtime falls back to any OpenCL device (e.g., a CPU implementation).
 - Each unique kernel source is **compiled and cached** on first invocation; repeated calls to the same GPU function reuse the cached `cl_kernel`.
 - Data is staged `double → float` before upload and `float → double` after read-back (OpenCL kernels operate on `float`).
-- If OpenCL initialisation fails at runtime a warning is printed to `stderr` and execution returns immediately.
+- If OpenCL initialisation fails at runtime a diagnostic is printed to `stderr` and execution returns immediately.
 - The `GPU_ENABLED` macro must be set at compile time (via `-DENABLE_GPU=ON`). Builds without it contain **no OpenCL code** and have no OpenCL runtime dependency.
 
 # Future of the language and platform:

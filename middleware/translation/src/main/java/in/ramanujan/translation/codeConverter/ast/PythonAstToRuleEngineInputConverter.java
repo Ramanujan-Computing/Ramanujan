@@ -1354,23 +1354,21 @@ public class PythonAstToRuleEngineInputConverter {
         functionCall.setAllVariablesInMethod(variablesInFunction);
 
         // ---- GPU function handling ----
-        // Functions ending with "_GPU" are executed as OpenCL kernels.
-        // Convention: def func_GPU(arg1..N, rangeKernelDim1..M, M)
-        //   - Last param (M) carries work_dim at call time.
-        //   - Params used as subscript indices → range dims → get_global_id(n) declarations.
-        //   - Remaining params (except M) → __global float* data args.
-        if (funcDef.getName().endsWith("_GPU")) {
+        // Functions named with the "_GPU_N" suffix are executed as OpenCL kernels.
+        // Convention: def funcName_GPU_N(dataArg1, ..., dataArgK, rangeDim1, ..., rangeDimN)
+        //   - N (in the function name) = work_dim passed to clEnqueueNDRangeKernel.
+        //   - Last N params  → range dim args → get_global_id(0..N-1) declarations in kernel.
+        //   - First K params → __global float* data args in the kernel signature.
+        if (funcDef.getName().matches(".*_GPU_\\d+$")) {
             try {
                 GpuFunctionBodyConverter gpuConverter = new GpuFunctionBodyConverter();
                 GpuFunctionBodyConverter.GpuConversionResult gpuResult = gpuConverter.convert(funcDef);
                 functionCall.setIsGpu(true);
                 functionCall.setOpenClCode(gpuResult.kernelCode);
                 functionCall.setGpuParallelismArgIndices(gpuResult.parallelismArgIndices);
-                functionCall.setGpuWorkDimArgIndex(gpuResult.gpuWorkDimArgIndex);
                 System.out.println("========== GPU FUNCTION DETECTED: " + funcDef.getName() + " ==========");
                 System.out.println("OpenCL kernel code:\n" + gpuResult.kernelCode);
                 System.out.println("GPU parallelism arg indices (work_dim=" + gpuResult.parallelismArgIndices.size() + "): " + gpuResult.parallelismArgIndices);
-                System.out.println("GPU work_dim arg index: " + gpuResult.gpuWorkDimArgIndex);
                 System.out.println("=======================================================");
             } catch (Exception e) {
                 throw new CompilationException(null, null,

@@ -42,23 +42,70 @@ struct GpuContext {
         initialized = true;
 
         cl_int err;
-        cl_uint numPlatforms = 0;
-        if (clGetPlatformIDs(1, &platform, &numPlatforms) != CL_SUCCESS || numPlatforms == 0)
-            return;
 
-        // Prefer GPU, fall back to any available device
+        // Step 1: count available platforms before fetching them (safer two-step query)
+        cl_uint numPlatforms = 0;
+        err = clGetPlatformIDs(0, nullptr, &numPlatforms);
+        if (err != CL_SUCCESS || numPlatforms == 0) {
+            fprintf(stderr, "[GPU] clGetPlatformIDs count query failed "
+                            "(err=%d, numPlatforms=%u).\n"
+                            "  macOS: ensure the binary links -framework OpenCL, not the Khronos ICD loader.\n"
+                            "  Linux: sudo apt install ocl-icd-opencl-dev && install GPU vendor drivers.\n",
+                            err, numPlatforms);
+            return;
+        }
+
+        // Step 2: retrieve the first platform
+        err = clGetPlatformIDs(1, &platform, nullptr);
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clGetPlatformIDs retrieve failed: err=%d\n", err);
+            return;
+        }
+
+        // Prefer a GPU device; fall back to any device (e.g. CPU OpenCL on Linux)
         err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, nullptr);
-        if (err != CL_SUCCESS)
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] No GPU device found (err=%d), falling back to CL_DEVICE_TYPE_ALL\n", err);
             err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 1, &device, nullptr);
-        if (err != CL_SUCCESS) return;
+        }
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clGetDeviceIDs failed: err=%d\n", err);
+            return;
+        }
 
         context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
-        if (err != CL_SUCCESS) return;
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clCreateContext failed: err=%d\n", err);
+            return;
+        }
 
+        // clCreateCommandQueue is deprecated in OpenCL 2.0+.
+        // Use clCreateCommandQueueWithProperties on hosts that advertise CL 2.0+
+        // (Linux/Windows with modern drivers) and suppress the deprecation warning
+        // on macOS where OpenCL 1.2 is the maximum supported version.
+#if defined(CL_VERSION_2_0)
+        const cl_queue_properties qprops[] = {0};
+        queue = clCreateCommandQueueWithProperties(context, device, qprops, &err);
+#else
+#   ifdef __APPLE__
+#       pragma clang diagnostic push
+#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#   endif
         queue = clCreateCommandQueue(context, device, 0, &err);
-        if (err != CL_SUCCESS) { clReleaseContext(context); context = nullptr; return; }
+#   ifdef __APPLE__
+#       pragma clang diagnostic pop
+#   endif
+#endif
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clCreateCommandQueue failed: err=%d\n", err);
+            clReleaseContext(context);
+            context = nullptr;
+            return;
+        }
 
         available = true;
+        fprintf(stderr, "[GPU] OpenCL context initialised successfully "
+                        "(platforms found: %u)\n", numPlatforms);
     }
 
     ~GpuContext() {
@@ -259,7 +306,9 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
 
         const std::string&      kernelSrc        = functionInfoRE->openClCode;
         const std::vector<int>& parallelismIdxs  = functionInfoRE->gpuParallelismArgIndices;
-        int                     workDimArgIdx     = functionInfoRE->gpuWorkDimArgIndex;
+        // work_dim is encoded in the function name (_GPU_N) and equals the number of
+        // range-dim args – no dedicated M parameter exists any more.
+        cl_uint workDim = (cl_uint)parallelismIdxs.size();
 
         // -- Compile/cache kernel --
         cl_kernel kernel = nullptr;
@@ -291,18 +340,15 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             s_kernelCache[kernelSrc] = kernel;
         }
 
-        // -- Identify data arg indices (everything except parallelism and work_dim args) --
+        // -- Identify data arg indices (all args that are NOT range-dim/parallelism args) --
         std::set<int> parallelismSet(parallelismIdxs.begin(), parallelismIdxs.end());
         std::vector<int> dataArgIndices;
         for (int i = 0; i < argSize; i++) {
-            if (i != workDimArgIdx && parallelismSet.count(i) == 0)
+            if (parallelismSet.count(i) == 0)
                 dataArgIndices.push_back(i);
         }
 
-        // -- work_dim and global_work_size from calling-context scalar values --
-        cl_uint workDim = (cl_uint)(static_cast<DoublePtr*>(
-            methodCallingOriginalPlaceHolderAddrs[workDimArgIdx])->value);
-
+        // -- global_work_size from calling-context scalar values at parallelism arg positions --
         std::vector<size_t> globalWorkSize(parallelismIdxs.size());
         for (int pi = 0; pi < (int)parallelismIdxs.size(); pi++) {
             globalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(

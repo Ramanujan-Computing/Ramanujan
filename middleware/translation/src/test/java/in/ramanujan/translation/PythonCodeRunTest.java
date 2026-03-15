@@ -1574,15 +1574,15 @@ public class PythonCodeRunTest {
     @Test
     public void testGpuFunctionTranslation_1D() throws Exception {
         String pythonCode =
-            "def vector_add_GPU(a, b, c, gid, n):\n" +
+            "def vector_add_GPU_1(a, b, c, gid):\n" +
             "    c[gid] = a[gid] + b[gid]\n" +
             "\n" +
-            "vector_add_GPU(0, 0, 0, 1024, 1)\n";
+            "vector_add_GPU_1(0, 0, 0, 1024)\n";
 
         RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
-        FunctionCall fc = findGpuFunctionCall(rei, "vector_add_GPU");
+        FunctionCall fc = findGpuFunctionCall(rei, "vector_add_GPU_1");
 
-        assertNotNull("vector_add_GPU FunctionCall not found", fc);
+        assertNotNull("vector_add_GPU_1 FunctionCall not found", fc);
         assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
 
         String kernel = fc.getOpenClCode();
@@ -1596,15 +1596,44 @@ public class PythonCodeRunTest {
         assertFalse("kernel must NOT contain hardcoded 'int i ='",
                     kernel.contains("int i = get_global_id"));
 
-        // gid is param index 3, n (M) is param index 4
+        // gid is param index 3 (a=0, b=1, c=2, gid=3)
         assertNotNull("gpuParallelismArgIndices must not be null", fc.getGpuParallelismArgIndices());
         assertEquals("1-D kernel: one parallelism arg", 1, fc.getGpuParallelismArgIndices().size());
         assertEquals("parallelismArgIndices[0] should be 3 (index of 'gid')",
                      Integer.valueOf(3), fc.getGpuParallelismArgIndices().get(0));
-        assertEquals("gpuWorkDimArgIndex should be 4 (index of 'n')",
-                     Integer.valueOf(4), fc.getGpuWorkDimArgIndex());
 
         System.out.println("[GPU 1-D] kernel:\n" + kernel);
+
+        // ---- EXECUTION: run with real data through the native interpreter and assert results ----
+        // Requires the native binary compiled with -DENABLE_GPU=ON
+        String execCode1D =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 1\n" +
+            "a[1] = 2\n" +
+            "a[2] = 3\n" +
+            "a[3] = 4\n" +
+            "b = [0 for _ in range(4)]\n" +
+            "b[0] = 10\n" +
+            "b[1] = 20\n" +
+            "b[2] = 30\n" +
+            "b[3] = 40\n" +
+            "c = [0 for _ in range(4)]\n" +
+            "def vector_add_GPU_1(a, b, c, gid):\n" +
+            "    c[gid] = a[gid] + b[gid]\n" +
+            "\n" +
+            "vector_add_GPU_1(a, b, c, 4)\n";
+
+        Map<String, Variable> execVarMap1D = new HashMap<>();
+        Map<String, Array>    execArrMap1D = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCode1D, execVarMap1D, execArrMap1D);
+
+        assertNotNull("[1D exec] c[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMap1D, "c", "0"));
+        assertEquals("[1D exec] c[0] = a[0]+b[0] = 11", 11.0, getArrayValue(execArrMap1D, "c", "0"), 1e-2);
+        assertEquals("[1D exec] c[1] = a[1]+b[1] = 22", 22.0, getArrayValue(execArrMap1D, "c", "1"), 1e-2);
+        assertEquals("[1D exec] c[2] = a[2]+b[2] = 33", 33.0, getArrayValue(execArrMap1D, "c", "2"), 1e-2);
+        assertEquals("[1D exec] c[3] = a[3]+b[3] = 44", 44.0, getArrayValue(execArrMap1D, "c", "3"), 1e-2);
+        System.out.println("[GPU 1-D exec] PASSED – c = [11, 22, 33, 44]");
     }
 
     /**
@@ -1615,15 +1644,15 @@ public class PythonCodeRunTest {
     public void testGpuFunctionTranslation_2D() throws Exception {
         String pythonCode =
             "N = 4\n" +
-            "def matrix_add_GPU(a, b, c, row, col, m):\n" +
+            "def matrix_add_GPU_2(a, b, c, row, col):\n" +
             "    c[row] = a[row] + b[col]\n" +
             "\n" +
-            "matrix_add_GPU(0, 0, 0, 4, 4, 2)\n";
+            "matrix_add_GPU_2(0, 0, 0, 4, 4)\n";
 
         RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
-        FunctionCall fc = findGpuFunctionCall(rei, "matrix_add_GPU");
+        FunctionCall fc = findGpuFunctionCall(rei, "matrix_add_GPU_2");
 
-        assertNotNull("matrix_add_GPU FunctionCall not found", fc);
+        assertNotNull("matrix_add_GPU_2 FunctionCall not found", fc);
         assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
 
         String kernel = fc.getOpenClCode();
@@ -1634,17 +1663,43 @@ public class PythonCodeRunTest {
         assertTrue("kernel should contain 'int col = get_global_id(1)'",
                    kernel.contains("int col = get_global_id(1);"));
 
-        // row=index 3, col=index 4, m=index 5
+        // row=index 3, col=index 4  (a=0, b=1, c=2, row=3, col=4)
         assertNotNull("gpuParallelismArgIndices must not be null", fc.getGpuParallelismArgIndices());
         assertEquals("2-D kernel: two parallelism args", 2, fc.getGpuParallelismArgIndices().size());
         assertEquals("parallelismArgIndices[0] should be 3 (row)",
                      Integer.valueOf(3), fc.getGpuParallelismArgIndices().get(0));
         assertEquals("parallelismArgIndices[1] should be 4 (col)",
                      Integer.valueOf(4), fc.getGpuParallelismArgIndices().get(1));
-        assertEquals("gpuWorkDimArgIndex should be 5 (m)",
-                     Integer.valueOf(5), fc.getGpuWorkDimArgIndex());
 
         System.out.println("[GPU 2-D] kernel:\n" + kernel);
+
+        // ---- EXECUTION: 2-D dispatch with a deterministically-valued kernel ----
+        // Uses out[row] = a[row] * 2; 'col' is declared via get_global_id(1) but unused in body.
+        // All 4 work items sharing the same row write the same value (a[row]*2), so the
+        // final result is deterministic despite there being 16 total work items.
+        String execCode2D =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 1\n" +
+            "a[1] = 2\n" +
+            "a[2] = 3\n" +
+            "a[3] = 4\n" +
+            "out = [0 for _ in range(4)]\n" +
+            "def scale_2d_GPU_2(a, out, row, col):\n" +
+            "    out[row] = a[row] * 2\n" +
+            "\n" +
+            "scale_2d_GPU_2(a, out, 4, 4)\n";
+
+        Map<String, Variable> execVarMap2D = new HashMap<>();
+        Map<String, Array>    execArrMap2D = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCode2D, execVarMap2D, execArrMap2D);
+
+        assertNotNull("[2D exec] out[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMap2D, "out", "0"));
+        assertEquals("[2D exec] out[0] = a[0]*2 = 2",  2.0, getArrayValue(execArrMap2D, "out", "0"), 1e-2);
+        assertEquals("[2D exec] out[1] = a[1]*2 = 4",  4.0, getArrayValue(execArrMap2D, "out", "1"), 1e-2);
+        assertEquals("[2D exec] out[2] = a[2]*2 = 6",  6.0, getArrayValue(execArrMap2D, "out", "2"), 1e-2);
+        assertEquals("[2D exec] out[3] = a[3]*2 = 8",  8.0, getArrayValue(execArrMap2D, "out", "3"), 1e-2);
+        System.out.println("[GPU 2-D exec] PASSED – out = [2, 4, 6, 8]");
     }
 
     /**
@@ -1654,18 +1709,18 @@ public class PythonCodeRunTest {
     @Test
     public void testGpuFunctionTranslation_withIfElse() throws Exception {
         String pythonCode =
-            "def relu_GPU(a, out, gid, n):\n" +
+            "def relu_GPU_1(a, out, gid):\n" +
             "    if a[gid] > 0:\n" +
             "        out[gid] = a[gid]\n" +
             "    else:\n" +
             "        out[gid] = 0\n" +
             "\n" +
-            "relu_GPU(0, 0, 512, 1)\n";
+            "relu_GPU_1(0, 0, 512)\n";
 
         RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
-        FunctionCall fc = findGpuFunctionCall(rei, "relu_GPU");
+        FunctionCall fc = findGpuFunctionCall(rei, "relu_GPU_1");
 
-        assertNotNull("relu_GPU FunctionCall not found", fc);
+        assertNotNull("relu_GPU_1 FunctionCall not found", fc);
         assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
 
         String kernel = fc.getOpenClCode();
@@ -1677,11 +1732,46 @@ public class PythonCodeRunTest {
         assertTrue("kernel should contain C else block", kernel.contains("} else {"));
         assertTrue("kernel should contain comparison operator", kernel.contains(">"));
 
+        // gid is param index 2  (a=0, out=1, gid=2)
         assertEquals("1 parallelism arg (gid at index 2)", 1, fc.getGpuParallelismArgIndices().size());
         assertEquals("parallelismArgIndices[0] = 2", Integer.valueOf(2), fc.getGpuParallelismArgIndices().get(0));
-        assertEquals("gpuWorkDimArgIndex = 3 (n)", Integer.valueOf(3), fc.getGpuWorkDimArgIndex());
 
         System.out.println("[GPU if/else] kernel:\n" + kernel);
+
+        // ---- EXECUTION with real data ----
+        // out is pre-filled with 99 so that the else-branch explicitly writing 0 is detectable.
+        String execCodeRelu =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 2\n" +
+            "a[1] = 0\n" +
+            "a[2] = 4\n" +
+            "a[3] = 0\n" +
+            "out = [0 for _ in range(4)]\n" +
+            "out[0] = 99\n" +
+            "out[1] = 99\n" +
+            "out[2] = 99\n" +
+            "out[3] = 99\n" +
+            "def relu_GPU_1(a, out, gid):\n" +
+            "    if a[gid] > 0:\n" +
+            "        out[gid] = a[gid]\n" +
+            "    else:\n" +
+            "        out[gid] = 0\n" +
+            "\n" +
+            "relu_GPU_1(a, out, 4)\n";
+
+        Map<String, Variable> execVarMapRelu = new HashMap<>();
+        Map<String, Array>    execArrMapRelu = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCodeRelu, execVarMapRelu, execArrMapRelu);
+
+        assertNotNull("[relu exec] out[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMapRelu, "out", "0"));
+        // if-branch: a[0]=2>0, out[0] = a[0] = 2
+        assertEquals("[relu exec] out[0] = a[0]=2 (if branch)",   2.0, getArrayValue(execArrMapRelu, "out", "0"), 1e-2);
+        // else-branch: a[1]=0, not >0, out[1] = 0 (overwrites the 99 sentinel)
+        assertEquals("[relu exec] out[1] = 0 (else branch, was 99)", 0.0, getArrayValue(execArrMapRelu, "out", "1"), 1e-2);
+        assertEquals("[relu exec] out[2] = a[2]=4 (if branch)",   4.0, getArrayValue(execArrMapRelu, "out", "2"), 1e-2);
+        assertEquals("[relu exec] out[3] = 0 (else branch, was 99)", 0.0, getArrayValue(execArrMapRelu, "out", "3"), 1e-2);
+        System.out.println("[GPU if/else exec] PASSED – out = [2, 0, 4, 0]");
     }
 
     /**
@@ -1691,7 +1781,7 @@ public class PythonCodeRunTest {
     @Test
     public void testGpuFunctionTranslation_withWhile() throws Exception {
         String pythonCode =
-            "def prefix_sum_GPU(a, out, gid, n):\n" +
+            "def prefix_sum_GPU_1(a, out, gid):\n" +
             "    s = 0\n" +
             "    k = 0\n" +
             "    while k < 4:\n" +
@@ -1699,12 +1789,12 @@ public class PythonCodeRunTest {
             "        k = k + 1\n" +
             "    out[gid] = s\n" +
             "\n" +
-            "prefix_sum_GPU(0, 0, 256, 1)\n";
+            "prefix_sum_GPU_1(0, 0, 256)\n";
 
         RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
-        FunctionCall fc = findGpuFunctionCall(rei, "prefix_sum_GPU");
+        FunctionCall fc = findGpuFunctionCall(rei, "prefix_sum_GPU_1");
 
-        assertNotNull("prefix_sum_GPU FunctionCall not found", fc);
+        assertNotNull("prefix_sum_GPU_1 FunctionCall not found", fc);
         assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
 
         String kernel = fc.getOpenClCode();
@@ -1714,11 +1804,43 @@ public class PythonCodeRunTest {
                    kernel.contains("int gid = get_global_id(0);"));
         assertTrue("kernel should contain C while loop", kernel.contains("while ("));
 
+        // gid is param index 2  (a=0, out=1, gid=2)
         assertEquals("1 parallelism arg (gid at index 2)", 1, fc.getGpuParallelismArgIndices().size());
         assertEquals("parallelismArgIndices[0] = 2", Integer.valueOf(2), fc.getGpuParallelismArgIndices().get(0));
-        assertEquals("gpuWorkDimArgIndex = 3 (n)", Integer.valueOf(3), fc.getGpuWorkDimArgIndex());
 
         System.out.println("[GPU while] kernel:\n" + kernel);
+
+        // ---- EXECUTION with real data ----
+        // Each work item (gid) accumulates a[gid] four times via the while loop.
+        // Expected: out[gid] = 4 * a[gid]
+        String execCodeWhile =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 1\n" +
+            "a[1] = 2\n" +
+            "a[2] = 3\n" +
+            "a[3] = 4\n" +
+            "out = [0 for _ in range(4)]\n" +
+            "def prefix_sum_GPU_1(a, out, gid):\n" +
+            "    s = 0\n" +
+            "    k = 0\n" +
+            "    while k < 4:\n" +
+            "        s = s + a[gid]\n" +
+            "        k = k + 1\n" +
+            "    out[gid] = s\n" +
+            "\n" +
+            "prefix_sum_GPU_1(a, out, 4)\n";
+
+        Map<String, Variable> execVarMapWhile = new HashMap<>();
+        Map<String, Array>    execArrMapWhile = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCodeWhile, execVarMapWhile, execArrMapWhile);
+
+        assertNotNull("[while exec] out[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMapWhile, "out", "0"));
+        assertEquals("[while exec] out[0] = 4*a[0] = 4",   4.0, getArrayValue(execArrMapWhile, "out", "0"), 1e-2);
+        assertEquals("[while exec] out[1] = 4*a[1] = 8",   8.0, getArrayValue(execArrMapWhile, "out", "1"), 1e-2);
+        assertEquals("[while exec] out[2] = 4*a[2] = 12", 12.0, getArrayValue(execArrMapWhile, "out", "2"), 1e-2);
+        assertEquals("[while exec] out[3] = 4*a[3] = 16", 16.0, getArrayValue(execArrMapWhile, "out", "3"), 1e-2);
+        System.out.println("[GPU while exec] PASSED – out = [4, 8, 12, 16]");
     }
 
     /**
@@ -1750,6 +1872,20 @@ public class PythonCodeRunTest {
         // If function call list is empty that's also fine (function may be inlined)
         System.out.println("[GPU flag check] isGpu = " +
                            (fc != null ? fc.getIsGpu() : "(function call not in list)"));
+
+        // ---- EXECUTION: verify the normal CPU interpreter path still works correctly ----
+        String execCodeNonGpu =
+            "x = 3\n" +
+            "y = 7\n" +
+            "result = x + y\n";
+
+        Map<String, Variable> execVarMapNonGpu = new HashMap<>();
+        Map<String, Array>    execArrMapNonGpu = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCodeNonGpu, execVarMapNonGpu, execArrMapNonGpu);
+
+        assertNotNull("[non-GPU exec] 'result' variable missing", getVariableValue(execVarMapNonGpu, "result"));
+        assertEquals("[non-GPU exec] result = x+y = 10", 10.0, getVariableValue(execVarMapNonGpu, "result"), 1e-9);
+        System.out.println("[non-GPU exec] PASSED – result = " + getVariableValue(execVarMapNonGpu, "result"));
     }
 
     // ========== HELPER METHODS ==========
@@ -2276,10 +2412,8 @@ public class PythonCodeRunTest {
         if (rei.getFunctionCalls() == null) return null;
         for (FunctionCall fc : rei.getFunctionCalls()) {
             if (Boolean.TRUE.equals(fc.getIsGpu())) {
-                // Match by function name embedded in the ID or by checking openClCode kernel name
-                String kernelName = functionName.endsWith("_GPU")
-                    ? functionName.substring(0, functionName.length() - 4)
-                    : functionName.substring(0, functionName.length() - 4);
+                // Kernel name = Python function name with the _GPU_N suffix stripped
+                String kernelName = functionName.replaceAll("_GPU_\\d+$", "");
                 String openCl = fc.getOpenClCode();
                 if (openCl != null && openCl.contains("__kernel void " + kernelName + "(")) {
                     return fc;

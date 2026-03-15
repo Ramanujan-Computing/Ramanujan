@@ -26,30 +26,37 @@ FetchContent_MakeAvailable(jsoncpp)
 # ---------------------------------------------------------------------------
 option(ENABLE_GPU "Build with OpenCL GPU kernel execution support" OFF)
 if(ENABLE_GPU)
-    # Fetch the official Khronos OpenCL C headers
-    FetchContent_Declare(
-        OpenCLHeaders
-        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
-        GIT_TAG        v2023.04.17
-    )
-    FetchContent_MakeAvailable(OpenCLHeaders)
+    if(APPLE)
+        # macOS ships OpenCL as a system framework (-framework OpenCL).
+        # The Khronos ICD loader is for Linux/Windows; it does NOT discover
+        # Apple's platform and returns 0 platforms on macOS (including Apple Silicon).
+        find_package(OpenCL REQUIRED)
+        message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via system framework  (macOS, version ${OpenCL_VERSION_STRING})")
+    else()
+        # Linux / Windows: fetch Khronos headers and ICD loader from source,
+        # the same way jsoncpp is fetched above.
+        FetchContent_Declare(
+            OpenCLHeaders
+            GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+            GIT_TAG        v2023.04.17
+        )
+        FetchContent_MakeAvailable(OpenCLHeaders)
 
-    # The ICD loader needs to know where the headers live before it is configured
-    set(OPENCL_ICD_LOADER_HEADERS_DIR ${openclheaders_SOURCE_DIR} CACHE PATH "" FORCE)
+        # ICD loader must know where the headers live before it is configured
+        set(OPENCL_ICD_LOADER_HEADERS_DIR ${openclheaders_SOURCE_DIR} CACHE PATH "" FORCE)
 
-    # Fetch the Khronos OpenCL ICD Loader (provides OpenCL::OpenCL link target)
-    FetchContent_Declare(
-        OpenCLICDLoader
-        GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-ICD-Loader.git
-        GIT_TAG        v2023.04.17
-    )
-    FetchContent_MakeAvailable(OpenCLICDLoader)
-
-    message(STATUS "[Ramanujan] OpenCL GPU support ENABLED")
+        FetchContent_Declare(
+            OpenCLICDLoader
+            GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-ICD-Loader.git
+            GIT_TAG        v2023.04.17
+        )
+        FetchContent_MakeAvailable(OpenCLICDLoader)
+        message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via Khronos ICD loader  (Linux/Windows)")
+    endif()
     add_compile_definitions(GPU_ENABLED)
 else()
     message(STATUS "[Ramanujan] OpenCL GPU support DISABLED  (pass -DENABLE_GPU=ON to enable)")
-endif() - use Android NDK for Android builds, otherwise use JDK_HOME
+endif()
 IF(ANDROID)
     # For Android builds, use NDK's JNI headers
     include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
@@ -169,8 +176,8 @@ set(SOURCE_FILES
 )
 
 # Normal build target
-add_executable(native ${SOURCE_FILES})
-#add_library(native SHARED ${SOURCE_FILES})
+#add_executable(native ${SOURCE_FILES})
+add_library(native SHARED ${SOURCE_FILES})
 target_link_libraries(native PRIVATE jsoncpp_static)
 
 # Debug build target

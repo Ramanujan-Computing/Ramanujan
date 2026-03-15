@@ -60,7 +60,7 @@ import java.util.*;
  */
 public class GpuFunctionBodyConverter {
 
-    private static final String GPU_SUFFIX = "_GPU";
+    private static final String GPU_SUFFIX_PREFIX = "_GPU_";
 
     // =========================================================================
     //  Result type
@@ -82,9 +82,9 @@ public class GpuFunctionBodyConverter {
         public final List<Integer> parallelismArgIndices;
 
         /**
-         * Zero-based index of the {@code M} parameter in the original parameter list.
-         * {@code M} is always the last parameter and its value at call time equals
-         * {@code work_dim} (i.e., {@code parallelismArgIndices.size()}).
+         * Always {@code -1}: the work_dim count is now encoded in the function name suffix
+         * ({@code _GPU_N}) and equals {@code parallelismArgIndices.size()}.  Kept for
+         * API compatibility only.
          */
         public final int gpuWorkDimArgIndex;
 
@@ -113,33 +113,39 @@ public class GpuFunctionBodyConverter {
 
         if (allArgs.isEmpty()) {
             throw new IllegalArgumentException(
-                    "GPU function '" + funcDef.getName() + "' must have at least one parameter (M).");
+                    "GPU function '" + funcDef.getName() + "' must have at least one parameter.");
         }
 
-        // Last param is M – the work_dim count.  Excluded from kernel signature.
-        int gpuWorkDimArgIndex = allArgs.size() - 1;
+        // Parallelism count (= work_dim) is encoded in the function name suffix.
+        // E.g. "vector_add_GPU_1" → 1 dimension, "matrix_mul_GPU_2" → 2 dimensions.
+        // There is NO dedicated M parameter in the argument list any more.
+        int parallelismArgSize = extractParallelismSize(funcDef.getName());
+        int gpuWorkDimArgIndex = -1;  // no longer a parameter; kept for API compatibility
 
-        // Scan body to find names used as subscript indices (→ range dim args).
-        Set<String> sliceNames = collectSliceNames(funcDef.getBody());
-
-        // Classify params (all except M).
-        List<ArgNode> dataArgs             = new ArrayList<>();
-        List<ArgNode> rangeDimArgs         = new ArrayList<>();
+        // Classify params:
+        //   first (allArgs.size() - parallelismArgSize) params → data args  → __global float*
+        //   last  parallelismArgSize params                    → range dims → get_global_id(k)
+        List<ArgNode> dataArgs              = new ArrayList<>();
+        List<ArgNode> rangeDimArgs          = new ArrayList<>();
         List<Integer> parallelismArgIndices = new ArrayList<>();
 
-        for (int i = 0; i < allArgs.size() - 1; i++) {   // exclude M (last)
-            ArgNode arg = allArgs.get(i);
-            if (sliceNames.contains(arg.getArg())) {
-                rangeDimArgs.add(arg);
-                parallelismArgIndices.add(i);
-            } else {
-                dataArgs.add(arg);
-            }
+        int rangeStart = allArgs.size() - parallelismArgSize;
+        if (rangeStart < 0) {
+            throw new IllegalArgumentException(
+                    "GPU function '" + funcDef.getName() + "' declares " + parallelismArgSize
+                    + " range dimensions but only has " + allArgs.size() + " parameters.");
+        }
+        for (int i = 0; i < rangeStart; i++) {
+            dataArgs.add(allArgs.get(i));
+        }
+        for (int i = rangeStart; i < allArgs.size(); i++) {
+            rangeDimArgs.add(allArgs.get(i));
+            parallelismArgIndices.add(i);
         }
 
         // Build kernel source.
         String rawName    = funcDef.getName();
-        String kernelName = rawName.substring(0, rawName.length() - GPU_SUFFIX.length());
+        String kernelName = extractKernelName(rawName);
 
         StringBuilder sb = new StringBuilder();
 
@@ -390,6 +396,37 @@ public class GpuFunctionBodyConverter {
     // =========================================================================
     //  Helpers
     // =========================================================================
+
+    /**
+     * Parses the trailing integer from a {@code _GPU_N}-suffixed function name.
+     * Examples: {@code "vector_add_GPU_1"} → {@code 1}, {@code "matrix_mul_GPU_2"} → {@code 2}.
+     */
+    private int extractParallelismSize(String name) {
+        int idx = name.lastIndexOf(GPU_SUFFIX_PREFIX);
+        if (idx < 0) {
+            throw new IllegalArgumentException(
+                    "GPU function name '" + name + "' does not follow the '_GPU_N' convention "
+                    + "(e.g. 'vector_add_GPU_1').");
+        }
+        String numStr = name.substring(idx + GPU_SUFFIX_PREFIX.length());
+        try {
+            return Integer.parseInt(numStr);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "GPU function name '" + name + "': trailing value '" + numStr
+                    + "' is not a valid integer.");
+        }
+    }
+
+    /**
+     * Strips the {@code _GPU_N} suffix to obtain the OpenCL kernel name.
+     * Example: {@code "vector_add_GPU_1"} → {@code "vector_add"}.
+     */
+    private String extractKernelName(String funcName) {
+        int idx = funcName.lastIndexOf(GPU_SUFFIX_PREFIX);
+        if (idx < 0) return funcName;
+        return funcName.substring(0, idx);
+    }
 
     private String convertConstant(ConstantNode node) {
         Object val = node.getValue();
