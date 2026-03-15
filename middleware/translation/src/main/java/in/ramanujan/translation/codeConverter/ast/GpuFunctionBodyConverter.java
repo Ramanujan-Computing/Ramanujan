@@ -62,6 +62,10 @@ public class GpuFunctionBodyConverter {
 
     private static final String GPU_SUFFIX_PREFIX = "_GPU_";
 
+    // Per-conversion state – reset at the start of each convert() call.
+    private Set<String> paramNames     = new HashSet<>();
+    private Set<String> declaredLocals = new HashSet<>();
+
     // =========================================================================
     //  Result type
     // =========================================================================
@@ -143,6 +147,11 @@ public class GpuFunctionBodyConverter {
             parallelismArgIndices.add(i);
         }
 
+        // All parameter names (data args + range dims) – used to distinguish locals.
+        paramNames = new HashSet<>();
+        for (ArgNode arg : allArgs) paramNames.add(arg.getArg());
+        declaredLocals = new HashSet<>();
+
         // Build kernel source.
         String rawName    = funcDef.getName();
         String kernelName = extractKernelName(rawName);
@@ -165,10 +174,8 @@ public class GpuFunctionBodyConverter {
 
         // Body statements.
         for (AstNode stmt : funcDef.getBody()) {
-            String line = convertStatement(stmt);
-            if (line != null && !line.isEmpty()) {
-                sb.append("    ").append(line).append("\n");
-            }
+            String code = convertStatement(stmt, "    ");
+            if (code != null && !code.isEmpty()) sb.append(code);
         }
 
         sb.append("}");
@@ -179,122 +186,42 @@ public class GpuFunctionBodyConverter {
     // =========================================================================
     //  Body analysis – find names used as subscript SLICE (index) positions
     // =========================================================================
-
-    /**
-     * Returns the set of all identifier names that appear anywhere inside a subscript's
-     * slice expression in the function body (e.g., {@code a[x]} → "x" is a slice name).
-     */
-    private Set<String> collectSliceNames(List<AstNode> body) {
-        Set<String> names = new HashSet<>();
-        for (AstNode stmt : body) {
-            collectSliceNamesFromNode(stmt, names);
-        }
-        return names;
-    }
-
-    /** Walk the AST; when a SubscriptNode is found, collect all name IDs from its slice. */
-    private void collectSliceNamesFromNode(AstNode node, Set<String> names) {
-        if (node == null) return;
-
-        if (node instanceof SubscriptNode) {
-            SubscriptNode sub = (SubscriptNode) node;
-            // All names in the slice expression are candidate range dims.
-            collectAllNamesInExpr(sub.getSlice(), names);
-            // Recurse into the base (handles nested subscripts like a[b[i]]).
-            collectSliceNamesFromNode(sub.getValue(), names);
-
-        } else if (node instanceof AssignNode) {
-            AssignNode a = (AssignNode) node;
-            for (AstNode t : a.getTargets()) collectSliceNamesFromNode(t, names);
-            collectSliceNamesFromNode(a.getValue(), names);
-
-        } else if (node instanceof AugAssignNode) {
-            AugAssignNode a = (AugAssignNode) node;
-            collectSliceNamesFromNode(a.getTarget(), names);
-            collectSliceNamesFromNode(a.getValue(), names);
-
-        } else if (node instanceof BinOpNode) {
-            BinOpNode b = (BinOpNode) node;
-            collectSliceNamesFromNode(b.getLeft(), names);
-            collectSliceNamesFromNode(b.getRight(), names);
-
-        } else if (node instanceof UnaryOpNode) {
-            collectSliceNamesFromNode(((UnaryOpNode) node).getOperand(), names);
-
-        } else if (node instanceof ExprNode) {
-            collectSliceNamesFromNode(((ExprNode) node).getValue(), names);
-
-        } else if (node instanceof IfNode) {
-            IfNode ifNode = (IfNode) node;
-            collectSliceNamesFromNode(ifNode.getTest(), names);
-            if (ifNode.getBody() != null)
-                for (AstNode s : ifNode.getBody())   collectSliceNamesFromNode(s, names);
-            if (ifNode.getOrelse() != null)
-                for (AstNode s : ifNode.getOrelse()) collectSliceNamesFromNode(s, names);
-
-        } else if (node instanceof WhileNode) {
-            WhileNode whileNode = (WhileNode) node;
-            collectSliceNamesFromNode(whileNode.getTest(), names);
-            if (whileNode.getBody() != null)
-                for (AstNode s : whileNode.getBody())   collectSliceNamesFromNode(s, names);
-            if (whileNode.getOrelse() != null)
-                for (AstNode s : whileNode.getOrelse()) collectSliceNamesFromNode(s, names);
-
-        } else if (node instanceof CompareNode) {
-            CompareNode cmp = (CompareNode) node;
-            collectSliceNamesFromNode(cmp.getLeft(), names);
-            if (cmp.getComparators() != null)
-                for (AstNode c : cmp.getComparators()) collectSliceNamesFromNode(c, names);
-        }
-    }
-
-    /** Recursively collect every NameNode ID that appears in {@code node} (for slice analysis). */
-    private void collectAllNamesInExpr(AstNode node, Set<String> names) {
-        if (node == null) return;
-
-        if (node instanceof NameNode) {
-            names.add(((NameNode) node).getId());
-        } else if (node instanceof BinOpNode) {
-            BinOpNode b = (BinOpNode) node;
-            collectAllNamesInExpr(b.getLeft(), names);
-            collectAllNamesInExpr(b.getRight(), names);
-        } else if (node instanceof UnaryOpNode) {
-            collectAllNamesInExpr(((UnaryOpNode) node).getOperand(), names);
-        } else if (node instanceof SubscriptNode) {
-            collectAllNamesInExpr(((SubscriptNode) node).getSlice(), names);
-        } else if (node instanceof CompareNode) {
-            CompareNode cmp = (CompareNode) node;
-            collectAllNamesInExpr(cmp.getLeft(), names);
-            if (cmp.getComparators() != null)
-                for (AstNode c : cmp.getComparators()) collectAllNamesInExpr(c, names);
-        }
-    }
-
-    // =========================================================================
     //  Statement conversion
     // =========================================================================
 
-    private String convertStatement(AstNode stmt) {
+    private String convertStatement(AstNode stmt, String indent) {
         if (stmt instanceof AssignNode) {
             AssignNode assign = (AssignNode) stmt;
-            if (assign.getTargets() == null || assign.getTargets().isEmpty()) return null;
-            return convertExpr(assign.getTargets().get(0)) + " = " + convertExpr(assign.getValue()) + ";";
+            if (assign.getTargets() == null || assign.getTargets().isEmpty()) return "";
+            AstNode target = assign.getTargets().get(0);
+            // Declare scalar locals with 'float' on their first assignment.
+            // Parameters (data args + range dims) are already declared in the kernel
+            // signature / via get_global_id() and must not be re-declared.
+            String typePrefix = "";
+            if (target instanceof NameNode) {
+                String varName = ((NameNode) target).getId();
+                if (!paramNames.contains(varName) && !declaredLocals.contains(varName)) {
+                    typePrefix = "float ";
+                    declaredLocals.add(varName);
+                }
+            }
+            return indent + typePrefix + convertExpr(target) + " = " + convertExpr(assign.getValue()) + ";\n";
 
         } else if (stmt instanceof AugAssignNode) {
             AugAssignNode aug = (AugAssignNode) stmt;
-            return convertExpr(aug.getTarget()) + " " + binOpToC(aug.getOp()) + "= " + convertExpr(aug.getValue()) + ";";
+            return indent + convertExpr(aug.getTarget()) + " " + binOpToC(aug.getOp()) + "= " + convertExpr(aug.getValue()) + ";\n";
 
         } else if (stmt instanceof ExprNode) {
-            return convertExpr(((ExprNode) stmt).getValue()) + ";";
+            return indent + convertExpr(((ExprNode) stmt).getValue()) + ";\n";
 
         } else if (stmt instanceof IfNode) {
-            return convertIf((IfNode) stmt, "");
+            return convertIf((IfNode) stmt, indent);
 
         } else if (stmt instanceof WhileNode) {
-            return convertWhile((WhileNode) stmt);
+            return convertWhile((WhileNode) stmt, indent);
         }
 
-        return "/* unsupported statement: " + stmt.getClass().getSimpleName() + " */";
+        return indent + "/* unsupported statement: " + stmt.getClass().getSimpleName() + " */\n";
     }
 
     /**
@@ -304,12 +231,11 @@ public class GpuFunctionBodyConverter {
      */
     private String convertIf(IfNode ifNode, String indent) {
         StringBuilder sb = new StringBuilder();
-        sb.append("if (").append(convertExpr(ifNode.getTest())).append(") {\n");
+        sb.append(indent).append("if (").append(convertExpr(ifNode.getTest())).append(") {\n");
         if (ifNode.getBody() != null) {
             for (AstNode s : ifNode.getBody()) {
-                String line = convertStatement(s);
-                if (line != null && !line.isEmpty())
-                    sb.append(indent).append("    ").append(line).append("\n");
+                String code = convertStatement(s, indent + "    ");
+                if (code != null && !code.isEmpty()) sb.append(code);
             }
         }
         sb.append(indent).append("}");
@@ -317,33 +243,34 @@ public class GpuFunctionBodyConverter {
         List<AstNode> orelse = ifNode.getOrelse();
         if (orelse != null && !orelse.isEmpty()) {
             if (orelse.size() == 1 && orelse.get(0) instanceof IfNode) {
-                // elif chain
-                sb.append(" else ").append(convertIf((IfNode) orelse.get(0), indent));
+                // elif chain: the recursive call prepends `indent`; strip it so the
+                // continuation appears on the same line as the closing brace.
+                String elseIfBlock = convertIf((IfNode) orelse.get(0), indent);
+                sb.append(" else ").append(elseIfBlock.substring(indent.length()));
             } else {
                 sb.append(" else {\n");
                 for (AstNode s : orelse) {
-                    String line = convertStatement(s);
-                    if (line != null && !line.isEmpty())
-                        sb.append(indent).append("    ").append(line).append("\n");
+                    String code = convertStatement(s, indent + "    ");
+                    if (code != null && !code.isEmpty()) sb.append(code);
                 }
                 sb.append(indent).append("}");
             }
         }
+        sb.append("\n");
         return sb.toString();
     }
 
     /** Converts a {@link WhileNode} to a C {@code while} loop. */
-    private String convertWhile(WhileNode whileNode) {
+    private String convertWhile(WhileNode whileNode, String indent) {
         StringBuilder sb = new StringBuilder();
-        sb.append("while (").append(convertExpr(whileNode.getTest())).append(") {\n");
+        sb.append(indent).append("while (").append(convertExpr(whileNode.getTest())).append(") {\n");
         if (whileNode.getBody() != null) {
             for (AstNode s : whileNode.getBody()) {
-                String line = convertStatement(s);
-                if (line != null && !line.isEmpty())
-                    sb.append("    ").append(line).append("\n");
+                String code = convertStatement(s, indent + "    ");
+                if (code != null && !code.isEmpty()) sb.append(code);
             }
         }
-        sb.append("}");
+        sb.append(indent).append("}\n");
         return sb.toString();
     }
 

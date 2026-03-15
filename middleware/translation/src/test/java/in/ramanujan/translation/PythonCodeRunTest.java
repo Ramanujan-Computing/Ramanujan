@@ -2358,13 +2358,16 @@ public class PythonCodeRunTest {
     private Double getArrayValue(Map<String, Array> arrayMap, String arrayName, String indexKey) {
         for (Array a : arrayMap.values()) {
             if (arrayName.equals(a.getName())) {
+                if (a.getValues() == null || !a.getValues().containsKey(indexKey)) {
+                    continue;
+                }
                 Object val = a.getValues().get(indexKey);
                 if (val instanceof Number) {
                     return ((Number) val).doubleValue();
                 }
             }
         }
-        return null;
+        return 0d;
     }
 
     /**
