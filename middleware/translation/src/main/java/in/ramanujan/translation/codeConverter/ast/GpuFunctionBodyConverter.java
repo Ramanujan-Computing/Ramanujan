@@ -63,8 +63,14 @@ public class GpuFunctionBodyConverter {
     private static final String GPU_SUFFIX_PREFIX = "_GPU_";
 
     // Per-conversion state – reset at the start of each convert() call.
-    private Set<String> paramNames     = new HashSet<>();
-    private Set<String> declaredLocals = new HashSet<>();
+    private Set<String> paramNames            = new HashSet<>();
+    private Set<String> declaredLocals        = new HashSet<>();
+    /**
+     * Name of the function currently being translated to OpenCL C.
+     * Set during {@link #convert} and {@link #convertHelperFunction} to enable
+     * self-recursion detection in {@link #convertExpr}.
+     */
+    private String currentGeneratingFuncName  = null;
 
     // =========================================================================
     //  Result type
@@ -104,21 +110,49 @@ public class GpuFunctionBodyConverter {
     // =========================================================================
 
     /**
-     * Converts a {@code _GPU} {@link FunctionDefNode} to a {@link GpuConversionResult}.
-     *
-     * <p>The <strong>last parameter</strong> is always treated as {@code M} (the work_dim count
-     * passed to {@code clEnqueueNDRangeKernel}).  Parameters that appear as subscript indices
-     * in the body (e.g., {@code a[gid]}) are treated as range-kernel-dimension arguments and
-     * receive a {@code int dim = get_global_id(n);} declaration in the kernel.  All remaining
-     * parameters (excluding M) become {@code __global float*} data arguments.</p>
+     * Converts a {@code _GPU_N} {@link FunctionDefNode} to a {@link GpuConversionResult}.
+     * Equivalent to {@code convert(funcDef, Collections.emptyMap())}.
      */
     public GpuConversionResult convert(FunctionDefNode funcDef) {
+        return convert(funcDef, Collections.emptyMap());
+    }
+
+    /**
+     * Converts a {@code _GPU_N} {@link FunctionDefNode} to a {@link GpuConversionResult},
+     * optionally prepending OpenCL C device functions for each entry in
+     * {@code helperFunctions}.
+     *
+     * <h3>Helper (device) functions</h3>
+     * <p>Any non-GPU Python function in {@code helperFunctions} is emitted as a regular
+     * OpenCL C function ({@code float name(float p1, float p2, ...)}) placed before the
+     * {@code __kernel} declaration so that it is visible to the kernel body.</p>
+     *
+     * <h3>Restrictions</h3>
+     * <ul>
+     *   <li>A function may <strong>not</strong> call itself (direct recursion).  An
+     *       {@link IllegalArgumentException} is thrown during translation if a recursive
+     *       call is detected.</li>
+     *   <li>GPU kernel functions (those matching {@code .*_GPU_\d+$}) may not be called
+     *       from within kernel or device-function code.</li>
+     *   <li>All helper-function parameters are treated as {@code float} scalars.
+     *       Array pointers are not supported in helper functions.</li>
+     * </ul>
+     *
+     * @param funcDef         the {@code _GPU_N} function definition to convert
+     * @param helperFunctions map of name → {@link FunctionDefNode} for every non-GPU
+     *                        helper function that the kernel may call; may be empty
+     */
+    public GpuConversionResult convert(FunctionDefNode funcDef,
+                                        Map<String, FunctionDefNode> helperFunctions) {
         List<ArgNode> allArgs = funcDef.getArgs().getArgs();
 
         if (allArgs.isEmpty()) {
             throw new IllegalArgumentException(
                     "GPU function '" + funcDef.getName() + "' must have at least one parameter.");
         }
+
+        // Track the kernel name so convertExpr can detect self-recursion.
+        currentGeneratingFuncName = funcDef.getName();
 
         // Parallelism count (= work_dim) is encoded in the function name suffix.
         // E.g. "vector_add_GPU_1" → 1 dimension, "matrix_mul_GPU_2" → 2 dimensions.
@@ -157,6 +191,13 @@ public class GpuFunctionBodyConverter {
         String kernelName = extractKernelName(rawName);
 
         StringBuilder sb = new StringBuilder();
+
+        // --- Emit helper device functions first (must precede the __kernel declaration) ---
+        for (FunctionDefNode helper : helperFunctions.values()) {
+            // Skip GPU kernel functions – they cannot be used as device functions.
+            if (helper.getName().matches(".*_GPU_\\d+$")) continue;
+            sb.append(convertHelperFunction(helper));
+        }
 
         // Kernel signature: data args only, each as __global float*.
         sb.append("__kernel void ").append(kernelName).append("(");
@@ -219,6 +260,14 @@ public class GpuFunctionBodyConverter {
 
         } else if (stmt instanceof WhileNode) {
             return convertWhile((WhileNode) stmt, indent);
+
+        } else if (stmt instanceof ReturnNode) {
+            ReturnNode ret = (ReturnNode) stmt;
+            if (ret.getValue() != null) {
+                return indent + "return " + convertExpr(ret.getValue()) + ";\n";
+            } else {
+                return indent + "return 0;\n";
+            }
         }
 
         return indent + "/* unsupported statement: " + stmt.getClass().getSimpleName() + " */\n";
@@ -315,9 +364,105 @@ public class GpuFunctionBodyConverter {
                 prev = cmps.get(ci);
             }
             return sb.toString();
+
+        } else if (expr instanceof CallNode) {
+            CallNode call = (CallNode) expr;
+            // Resolve the function name (only simple NameNode callees are supported).
+            String calledName = null;
+            if (call.getFunc() instanceof NameNode) {
+                calledName = ((NameNode) call.getFunc()).getId();
+            }
+            // Guard: self-recursion is not permitted in GPU kernel or device-function code.
+            if (calledName != null && calledName.equals(currentGeneratingFuncName)) {
+                throw new IllegalArgumentException(
+                        "Recursive call to '" + calledName + "' is not allowed in GPU kernel/"
+                        + "device-function code.  Recursive GPU functions cannot be compiled.");
+            }
+            // Guard: calling another GPU kernel from inside kernel/device code is not supported.
+            if (calledName != null && calledName.matches(".*_GPU_\\d+$")) {
+                throw new IllegalArgumentException(
+                        "Cannot call GPU kernel function '" + calledName
+                        + "' from within GPU kernel/device-function code.");
+            }
+            // Emit a C function call expression.
+            StringBuilder callSb = new StringBuilder();
+            callSb.append(calledName != null ? calledName : "/*unknown_callee*/").append("(");
+            List<AstNode> callArgs = call.getArgs();
+            for (int i = 0; i < callArgs.size(); i++) {
+                if (i > 0) callSb.append(", ");
+                callSb.append(convertExpr(callArgs.get(i)));
+            }
+            callSb.append(")");
+            return callSb.toString();
         }
 
         return "/* unknown: " + expr.getClass().getSimpleName() + " */";
+    }
+
+    // =========================================================================
+    //  Helper device-function conversion
+    // =========================================================================
+
+    /**
+     * Converts a non-GPU Python function into an OpenCL C device function string.
+     *
+     * <p>The generated function has the form:</p>
+     * <pre>{@code
+     * float funcName(float param1, float param2, ...) {
+     *     // body
+     * }
+     * }</pre>
+     *
+     * <p>All parameters are treated as {@code float} scalars.  Local variables are
+     * declared {@code float} on their first assignment.  {@code return} statements are
+     * emitted verbatim.  The function may call other device helper functions but may
+     * <strong>not</strong> call itself (self-recursion is detected and rejected).</p>
+     *
+     * @param helper the function definition to convert
+     * @return the complete OpenCL C device function source, followed by two newlines
+     * @throws IllegalArgumentException if a recursive self-call is found in the body
+     */
+    private String convertHelperFunction(FunctionDefNode helper) {
+        // Save per-conversion state so helper conversion does not corrupt kernel conversion.
+        Set<String> savedParamNames            = this.paramNames;
+        Set<String> savedDeclaredLocals        = this.declaredLocals;
+        String      savedGeneratingFuncName    = this.currentGeneratingFuncName;
+
+        this.paramNames             = new HashSet<>();
+        this.declaredLocals         = new HashSet<>();
+        // Temporarily set the current function name to the helper's name so that
+        // convertExpr can detect self-recursion within the helper body.
+        this.currentGeneratingFuncName = helper.getName();
+
+        List<ArgNode> args = helper.getArgs() != null ? helper.getArgs().getArgs()
+                                                      : Collections.emptyList();
+        for (ArgNode arg : args) {
+            this.paramNames.add(arg.getArg());
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("float ").append(helper.getName()).append("(");
+        for (int i = 0; i < args.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("float ").append(args.get(i).getArg());
+        }
+        sb.append(") {\n");
+
+        if (helper.getBody() != null) {
+            for (AstNode stmt : helper.getBody()) {
+                String code = convertStatement(stmt, "    ");
+                if (code != null && !code.isEmpty()) sb.append(code);
+            }
+        }
+
+        sb.append("}\n\n");
+
+        // Restore state.
+        this.paramNames             = savedParamNames;
+        this.declaredLocals         = savedDeclaredLocals;
+        this.currentGeneratingFuncName = savedGeneratingFuncName;
+
+        return sb.toString();
     }
 
     // =========================================================================

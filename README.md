@@ -794,6 +794,68 @@ def relu_GPU_1(a, out, gid):
 relu_GPU_1(a, out, 512)
 ```
 
+### Calling helper (device) functions from a GPU kernel
+
+A GPU kernel can call ordinary (non-`_GPU_N`) Python functions that are defined in the same file.
+The translator converts those helpers to OpenCL C **device functions** and prepends them before the
+`__kernel` declaration so they are visible to the kernel body.
+
+```python
+# Plain Python helper – becomes a float device function in the generated OpenCL C
+def scale2(x):
+    r = x * 2
+    return r
+
+# GPU kernel – calls the helper for every work-item
+def apply_scale_GPU_1(a, out, gid):
+    v = a[gid]          # load array element into a local variable first
+    out[gid] = scale2(v)
+
+apply_scale_GPU_1(a, out, 1024)
+```
+
+Generated OpenCL C:
+```c
+float scale2(float x) {
+    float r = (x * 2);
+    return r;
+}
+
+__kernel void apply_scale(__global float* a, __global float* out) {
+    int gid = get_global_id(0);
+    float v = a[gid];
+    out[gid] = scale2(v);
+}
+```
+
+#### Helper function constraints
+
+| Constraint | Detail |
+|---|---|
+| **Parameter types** | All helper parameters are treated as `float` scalars. Array pointers (`__global float*`) are **not** supported in helper functions. |
+| **Return type** | Always `float`. |
+| **No subscript as argument** | Array element expressions (`a[i]`) cannot be passed directly as arguments to a helper call. Assign the element to a local variable first: `v = a[gid]; out[gid] = scale2(v)`. |
+| **No recursion** | A function may not call itself. The translator throws a `CompilationException` if a recursive call is detected at translation time. |
+| **No GPU–kernel calls** | A helper (or the kernel) may not call another `_GPU_N` function. GPU kernels are dispatched via `clEnqueueNDRangeKernel` and cannot be invoked as device functions. |
+| **Scope** | Only top-level module functions are eligible as helpers. Nested function definitions are not supported. |
+
+#### Recursion guard
+
+The translator enforces the no-recursion rule at **translation time**, not at runtime:
+
+```python
+# INVALID – will raise CompilationException during translation
+def bad_GPU_1(a, gid):
+    a[gid] = bad_GPU_1(a, gid)   # ❌ recursive GPU call
+
+# INVALID – helper self-recursion is also rejected
+def factorial(n):
+    return n * factorial(n - 1)  # ❌ recursive helper
+
+def kernel_GPU_1(a, gid):
+    a[gid] = factorial(a[gid])
+```
+
 ## Build prerequisites
 
 | Platform | Requirement |

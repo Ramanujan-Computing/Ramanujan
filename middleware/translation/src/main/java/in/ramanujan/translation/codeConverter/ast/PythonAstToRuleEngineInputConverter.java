@@ -276,6 +276,13 @@ public class PythonAstToRuleEngineInputConverter {
      * Used to associate return statements with their function.
      */
     private String currentFunctionName;
+
+    /**
+     * All top-level {@link FunctionDefNode}s in the module, keyed by function name.
+     * Populated by a pre-scan at the start of {@link #convert(ModuleNode, List)} so that
+     * GPU functions can look up helper functions regardless of definition order.
+     */
+    private Map<String, FunctionDefNode> allModuleFunctions = new HashMap<>();
     
     /**
      * Constructs a new converter for transforming Python AST to RuleEngineInput.
@@ -337,6 +344,15 @@ public class PythonAstToRuleEngineInputConverter {
         Command previousCommand = null;
         List<AstNode> nonFunctionDefNodes = new ArrayList<>();
         List<AstNode> functionDefNodes = new ArrayList<>();
+
+        // Pre-scan: collect every function definition so GPU converters can look up helpers.
+        for (AstNode node : module.getBody()) {
+            if (node instanceof FunctionDefNode) {
+                FunctionDefNode fdn = (FunctionDefNode) node;
+                allModuleFunctions.put(fdn.getName(), fdn);
+            }
+        }
+
         for (AstNode node : module.getBody()) {
             if (node instanceof FunctionDefNode) {
                 functionDefNodes.add(node);
@@ -1361,8 +1377,17 @@ public class PythonAstToRuleEngineInputConverter {
         //   - First K params → __global float* data args in the kernel signature.
         if (funcDef.getName().matches(".*_GPU_\\d+$")) {
             try {
+                // Build a map of all non-GPU helper functions visible to this GPU kernel.
+                // GPU-suffixed functions are excluded because they cannot be called as device functions.
+                Map<String, FunctionDefNode> helpers = new HashMap<>();
+                for (Map.Entry<String, FunctionDefNode> entry : allModuleFunctions.entrySet()) {
+                    String fname = entry.getKey();
+                    if (!fname.equals(funcDef.getName()) && !fname.matches(".*_GPU_\\d+$")) {
+                        helpers.put(fname, entry.getValue());
+                    }
+                }
                 GpuFunctionBodyConverter gpuConverter = new GpuFunctionBodyConverter();
-                GpuFunctionBodyConverter.GpuConversionResult gpuResult = gpuConverter.convert(funcDef);
+                GpuFunctionBodyConverter.GpuConversionResult gpuResult = gpuConverter.convert(funcDef, helpers);
                 functionCall.setIsGpu(true);
                 functionCall.setOpenClCode(gpuResult.kernelCode);
                 functionCall.setGpuParallelismArgIndices(gpuResult.parallelismArgIndices);

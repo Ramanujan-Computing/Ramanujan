@@ -15,4 +15,8 @@ public class CompilationException extends Exception {
         this.character = character;
         this.messageString = new ArrayList<String>() {{add(message);}};
     }
+    @Override
+    public String getMessage() {
+        return "Compilation error at line " + line + " character " + character + ": " + String.join(", ", messageString);
+    }
 }

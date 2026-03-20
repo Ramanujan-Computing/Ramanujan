@@ -1843,6 +1843,153 @@ public class PythonCodeRunTest {
         System.out.println("[GPU while exec] PASSED – out = [4, 8, 12, 16]");
     }
 
+    // ========== GPU FUNCTION CALL TESTS ==========
+
+    /**
+     * Verifies that a regular (non-GPU) helper function defined alongside a GPU kernel is:
+     * <ol>
+     *   <li>Emitted as a {@code float} OpenCL C device function <em>before</em> the kernel.</li>
+     *   <li>Callable from the kernel body – the call is preserved verbatim in the kernel source.</li>
+     * </ol>
+     *
+     * <p>Python:</p>
+     * <pre>{@code
+     * def scale2(x):
+     *     r = x * 2
+     *     return r
+     *
+     * def kernel_with_helper_GPU_1(a, out, gid):
+     *     v = a[gid]          # array element loaded into local var first
+     *     out[gid] = scale2(v)
+     * }</pre>
+     *
+     * <p><b>Note:</b> Subscript expressions ({@code a[gid]}) cannot be passed directly as
+     * function arguments in Ramanujan's intermediate representation.  Load the element into
+     * a local variable first, then pass that variable to the helper.</p>
+     *
+     * Expected OpenCL kernel (simplified):
+     * <pre>{@code
+     * float scale2(float x) {
+     *     float r = (x * 2);
+     *     return r;
+     * }
+     * __kernel void kernel_with_helper(__global float* a, __global float* out) {
+     *     int gid = get_global_id(0);
+     *     float v = a[gid];
+     *     out[gid] = scale2(v);
+     * }
+     * }</pre>
+     */
+    @Test(timeout = 5000)
+    public void testGpuFunctionTranslation_withHelperCall() throws Exception {
+        String pythonCode =
+            "def scale2(x):\n" +
+            "    r = x * 2\n" +
+            "    return r\n" +
+            "\n" +
+            "def kernel_with_helper_GPU_1(a, out, gid):\n" +
+            "    v = a[gid]\n" +               // load into local – subscript not valid as direct arg
+            "    out[gid] = scale2(v)\n" +
+            "\n" +
+            "kernel_with_helper_GPU_1(0, 0, 256)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "kernel_with_helper_GPU_1");
+
+        assertNotNull("kernel_with_helper_GPU_1 FunctionCall not found", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("openClCode must not be null", kernel);
+
+        // Helper device function must appear BEFORE the __kernel
+        int helperPos = kernel.indexOf("float scale2(float x)");
+        int kernelPos = kernel.indexOf("__kernel void kernel_with_helper(");
+        assertTrue("Helper device function 'float scale2(float x)' must be present", helperPos >= 0);
+        assertTrue("__kernel void kernel_with_helper must be present", kernelPos >= 0);
+        assertTrue("Helper function must be declared before the __kernel", helperPos < kernelPos);
+
+        // The helper body must include the return statement
+        assertTrue("Helper body must contain 'return r'", kernel.contains("return r;"));
+
+        // The kernel body must load a[gid] into a local variable then pass it to scale2
+        assertTrue("Kernel body must load a[gid] into a local var", kernel.contains("a[gid]"));
+        assertTrue("Kernel body must call scale2()", kernel.contains("scale2("));
+        assertTrue("Kernel body must call scale2 with local var v", kernel.contains("scale2(v)"));
+
+        // gid is param index 2  (a=0, out=1, gid=2)
+        assertNotNull("gpuParallelismArgIndices must not be null", fc.getGpuParallelismArgIndices());
+        assertEquals("1 parallelism arg (gid at index 2)", 1, fc.getGpuParallelismArgIndices().size());
+        assertEquals("parallelismArgIndices[0] = 2", Integer.valueOf(2), fc.getGpuParallelismArgIndices().get(0));
+
+        System.out.println("[GPU helper call] kernel:\n" + kernel);
+        System.out.println("[GPU helper call] PASSED – helper device function present and called from kernel");
+    }
+
+    /**
+     * Verifies that a GPU kernel that tries to call itself (direct recursion) causes a
+     * {@link in.ramanujan.translation.codeConverter.exception.CompilationException}
+     * during translation.
+     *
+     * <p>OpenCL C kernels run on massively parallel hardware where unbounded recursion is
+     * undefined behaviour; the translator therefore rejects recursive GPU calls at compile time.</p>
+     *
+     * <p>Python (invalid):</p>
+     * <pre>{@code
+     * def self_recursive_GPU_1(a, gid):
+     *     a[gid] = self_recursive_GPU_1(a, gid)  # recursive – must be rejected
+     * }</pre>
+     */
+    @Test(timeout = 5000)
+    public void testGpuFunctionTranslation_recursiveCallThrows() throws Exception {
+        String pythonCode =
+            "def self_recursive_GPU_1(a, gid):\n" +
+            "    a[gid] = self_recursive_GPU_1(a, gid)\n" +
+            "\n" +
+            "self_recursive_GPU_1(0, 256)\n";
+
+        try {
+            translatePythonToRuleEngineInput(pythonCode);
+            fail("Expected a CompilationException for a recursive GPU kernel call, but none was thrown");
+        } catch (CompilationException e) {
+            // CompilationException stores messages in getMessageString(), not getMessage().
+            String msg = e.getMessageString() != null ? e.getMessageString().toString() : "";
+            assertTrue("CompilationException message should mention 'recursive' or 'Recursive'",
+                       msg.contains("ecursive") || msg.contains("self_recursive_GPU_1"));
+            System.out.println("[GPU recursion guard] PASSED – CompilationException thrown: " + msg);
+        }
+    }
+
+    /**
+     * Verifies that a GPU kernel that tries to call another GPU kernel function is also
+     * rejected with a {@link in.ramanujan.translation.codeConverter.exception.CompilationException}.
+     *
+     * <p>GPU kernels are dispatched via {@code clEnqueueNDRangeKernel} and cannot be invoked
+     * as device functions from within other kernels.</p>
+     */
+    @Test(timeout = 5000)
+    public void testGpuFunctionTranslation_callingAnotherGpuKernelThrows() throws Exception {
+        String pythonCode =
+            "def inner_GPU_1(a, gid):\n" +
+            "    a[gid] = a[gid] * 2\n" +
+            "\n" +
+            "def outer_GPU_1(a, gid):\n" +
+            "    inner_GPU_1(a, gid)\n" +   // calling another GPU kernel – must be rejected
+            "\n" +
+            "outer_GPU_1(0, 256)\n";
+
+        try {
+            translatePythonToRuleEngineInput(pythonCode);
+            fail("Expected a CompilationException when a GPU kernel calls another GPU kernel");
+        } catch (CompilationException e) {
+            // CompilationException stores messages in getMessageString(), not getMessage().
+            String msg = e.getMessageString() != null ? e.getMessageString().toString() : "";
+            assertTrue("CompilationException message should mention the forbidden call",
+                       msg.contains("GPU") || msg.contains("inner_GPU_1"));
+            System.out.println("[GPU cross-kernel guard] PASSED – CompilationException thrown: " + msg);
+        }
+    }
+
     /**
      * Non-GPU function must NOT have isGpu set: ensures the _GPU suffix detection is exact.
      */
