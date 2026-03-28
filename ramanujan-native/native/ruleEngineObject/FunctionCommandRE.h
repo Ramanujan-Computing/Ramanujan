@@ -683,6 +683,29 @@ public:
 };
 
 /**
+ * Natural Logarithm Function.
+ * Computes the natural logarithm (base e) of the input value.
+ *
+ * Usage:
+ * - LOG(variable) - sets variable to ln(variable)
+ * Input domain: (0, ∞), undefined (NaN) for non-positive values
+ */
+class LOG : public BuiltInFunctionsImpl {
+public:
+    /**
+     * Constructor for natural logarithm function.
+     * @param pCall1 Function call information with input variable
+     */
+    LOG(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+    /**
+     * Executes natural logarithm computation.
+     * Modifies the input variable to contain ln(variable).
+     */
+    RuleEngineInputUnits* process() override;
+};
+
+/**
  * Square Root Function.
  * Computes the positive square root of the input value.
  * 
@@ -798,6 +821,8 @@ static FunctionCommandRE* GetFunctionCommandRE(FunctionCall* functionCommand, st
         return new class CEIL(functionCommand);
     } else if(id == "EXP") {
         return new class EXP(functionCommand);
+    } else if(id == "LOG") {
+        return new class LOG(functionCommand);
     } else if(id == "SQRT") {
         return new class SQRT(functionCommand);
     } else if(id == "POW") {

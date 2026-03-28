@@ -109,6 +109,7 @@ There are two methods in Ramanujan which need to be used to distribute the compu
 
 2. `threadOnEnd`:
    The `threadOnEnd` keyword is used to define actions that should be taken when one or more threads complete.
+   The body code executes **only on the last iteration**.
    Syntax:
     ```
     threadOnEnd(thread_seperated_thread_names, number_of_iterations) {
@@ -132,6 +133,45 @@ There are two methods in Ramanujan which need to be used to distribute the compu
             T0     T0   T0     T0     T0
    Here, In `Y` nodes, its just joining the thread and would do nothing, but on the last iteration, it would execute the code
     defined in `threadOnEnd` as node `Z`.
+
+3. `threadParallelismCycle`:
+   The `threadParallelismCycle` keyword is used to define actions that should be taken **after every cycle** of parallelism.
+   Unlike `threadOnEnd`, which only executes its body on the final iteration, `threadParallelismCycle` executes its body
+   after **each and every** completed cycle (including the last one).
+   Syntax:
+    ```
+    threadParallelismCycle(thread_names, number_of_iterations) {
+        // code – runs after every cycle
+    }
+    ```
+   Example:
+    ```
+    threadParallelismCycle(t0, t1, 5) {
+        // this block runs after each of the 5 cycles
+    }
+    ```
+
+   The DAG structure for `threadParallelismCycle(t0, t1, 3) { body }`:
+   ```
+       T0      T0      T0
+     /    \  /    \  /    \
+   X    body   body   body   (final)
+     \    /  \    /  \    /
+       T1      T1      T1
+   ```
+   Each `body` node runs after every pair of T0+T1 threads completes. After each body (except the last), the threads
+   are re-spawned for the next cycle.
+
+   > **Important**: Do **not** combine `threadParallelismCycle` and `threadOnEnd` on the **same** thread set.
+   > `threadParallelismCycle` already runs its body after the final cycle too, so `threadOnEnd` is
+   > redundant. When added on the same threads, `threadOnEnd` injects an extra empty join node as a
+   > second successor of every first-cycle thread (instead of the expected single cycle-body successor),
+   > and overwrites the internal re-spawn map entries that `threadParallelismCycle` set up. This breaks
+   > the cycle chain and creates an unintended parallel execution path.
+   >
+   > If you want a dedicated block that only runs after the **last** cycle, use `threadOnEnd` alone
+   > (without `threadParallelismCycle`). If you want code that runs after **every** cycle (including the
+   > last), use `threadParallelismCycle` alone.
 
 Example of complex threading:
 ```

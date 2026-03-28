@@ -959,6 +959,31 @@ RuleEngineInputUnits* EXP::process() {
 }
 
 /**
+ * LOG (Natural Logarithm) Built-in Function Implementation.
+ *
+ * Computes the natural logarithm (base e) of the input value using the
+ * C standard library std::log().
+ *
+ * Mathematical Properties:
+ * - Domain: (0, ∞)  (strictly positive real numbers)
+ * - Range: (-∞, ∞)
+ * - log(1) = 0
+ * - log(e) = 1
+ * - Inverse function of exponential (EXP)
+ * - Non-positive inputs return NaN (IEEE 754 behaviour)
+ *
+ * Usage: LOG(variable) → variable = ln(variable)
+ * Example: LOG(2.71828) → variable becomes ≈ 1.0
+ */
+RuleEngineInputUnits* LOG::process() {
+    if(functionCommandInfo->argumentsSize >= 1) {
+        DoublePtr* doublePtr = static_cast<DoublePtr*>(methodArgDataContainerAddr[0]);
+        doublePtr->value = std::log(doublePtr->value);
+    }
+    return nextUnit;
+}
+
+/**
  * SQRT (Square Root) Built-in Function Implementation.
  * 
  * Computes the positive square root of the input value.

@@ -117,6 +117,7 @@ public class CompileErrorChecker {
         add("EXP");
         add("SQRT");
         add("POW");
+        add("LOG");
     }};
 
     private void checkFunctionCalls(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException {

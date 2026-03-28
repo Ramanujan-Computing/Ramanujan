@@ -241,22 +241,32 @@ public class TranslateUtil {
         return (!Character.isAlphabetic(c) && !Character.isDigit(c));
     }
 
-    private String getToBeConsideredToken(String code, IndexWrapper threadStartCodeIndex, IndexWrapper threadEndCodeIndex) {
+    private String getToBeConsideredToken(String code, IndexWrapper threadStartCodeIndex, IndexWrapper threadEndCodeIndex,
+                                          IndexWrapper threadParallelismCycleCodeIndex) {
         String toBeConsidered = "";
-        if(threadEndCodeIndex.getIndex() == -1) {
-            toBeConsidered = CodeToken.threadStart;
-        } else {
-            if(threadStartCodeIndex.getIndex() == -1) {
-                toBeConsidered = CodeToken.threadTriggerOnSomeThreadCompleteion;
-            } else {
-                if(threadStartCodeIndex.getIndex() < threadEndCodeIndex.getIndex()) {
-                    toBeConsidered = CodeToken.threadStart;
-                } else {
-                    toBeConsidered = CodeToken.threadTriggerOnSomeThreadCompleteion;
-                }
-            }
+
+        // Find the earliest valid token among threadStart, threadOnEnd, threadParallelismCycle
+        int startIdx = threadStartCodeIndex.getIndex();
+        int endIdx   = threadEndCodeIndex.getIndex();
+        int cycleIdx = threadParallelismCycleCodeIndex.getIndex();
+
+        if(startIdx == -1 && endIdx == -1 && cycleIdx == -1) {
+            return "";
         }
 
+        // Pick the token with the smallest non-(-1) index
+        int minIdx = Integer.MAX_VALUE;
+        if(startIdx != -1) minIdx = Math.min(minIdx, startIdx);
+        if(endIdx   != -1) minIdx = Math.min(minIdx, endIdx);
+        if(cycleIdx != -1) minIdx = Math.min(minIdx, cycleIdx);
+
+        if(minIdx == startIdx) {
+            toBeConsidered = CodeToken.threadStart;
+        } else if(minIdx == cycleIdx) {
+            toBeConsidered = CodeToken.threadParallelismCycle;
+        } else {
+            toBeConsidered = CodeToken.threadTriggerOnSomeThreadCompleteion;
+        }
 
         if(CodeToken.threadStart.equals(toBeConsidered)) {
             Boolean flag = true;
@@ -270,6 +280,22 @@ public class TranslateUtil {
                 if(code.charAt(tmpIndex) != ' ') {
                     toBeConsidered ="";
                     threadStartCodeIndex.setIndex(code.indexOf(CodeToken.threadStart, threadStartCodeIndex.getIndex() + 1));
+                    break;
+                }
+                tmpIndex++;
+            }
+        } else if(CodeToken.threadParallelismCycle.equals(toBeConsidered)) {
+            Boolean flag = true;
+            int tmpIndex = threadParallelismCycleCodeIndex.getIndex() + CodeToken.threadParallelismCycle.length();
+            if(threadParallelismCycleCodeIndex.getIndex() > 0 && !validateIfSuffixOfMethod(code.charAt(threadParallelismCycleCodeIndex.getIndex() - 1))) {
+                toBeConsidered ="";
+                threadParallelismCycleCodeIndex.setIndex(code.indexOf(CodeToken.threadParallelismCycle, threadParallelismCycleCodeIndex.getIndex() + 1));
+                flag = false;
+            }
+            while(flag && code.charAt(tmpIndex) != '(') {
+                if(code.charAt(tmpIndex) != ' ') {
+                    toBeConsidered ="";
+                    threadParallelismCycleCodeIndex.setIndex(code.indexOf(CodeToken.threadParallelismCycle, threadParallelismCycleCodeIndex.getIndex() + 1));
                     break;
                 }
                 tmpIndex++;
@@ -372,6 +398,48 @@ public class TranslateUtil {
         }
     }
 
+    private void parseThreadParallelismCycleCode(String code, StringWrapper extractedCode, IndexWrapper indexWrapper,
+                                                  int threadParallelismCycleCodeIndex,
+                                                  Map<String, CodeSnippetElement> threadCodeSnippetMap,
+                                                  Map<String, List<CodeSnippetElement>> mappingToBeResolved,
+                                                  Map<String, List<CodeSnippetElement>> cloningToBeResolved,
+                                                  boolean isPython) {
+        // threadParallelismCycle block: body runs after EVERY cycle (not just the last one)
+        if(indexWrapper.getIndex() != threadParallelismCycleCodeIndex) {
+            String chunk = code.substring(indexWrapper.getIndex(), threadParallelismCycleCodeIndex);
+            extractedCode.concat(isPython ? chunk : chunk.trim());
+        }
+        indexWrapper.setIndex(threadParallelismCycleCodeIndex);
+
+        CodeContainer codeContainer = StringUtils.parseForCodeContainer(CodeToken.threadParallelismCycle,
+                code.substring(indexWrapper.getIndex()), indexWrapper);
+        indexWrapper.setIndex(indexWrapper.getIndex() + threadParallelismCycleCodeIndex);
+        List<String> arguments = codeContainer.getArguments().subList(0, codeContainer.getArguments().size() - 1);
+        int iterations = Integer.parseInt(codeContainer.getArguments().get(codeContainer.getArguments().size() - 1));
+
+        for(int iteration = 1; iteration <= iterations; iteration++) {
+            // Each cycle's body gets its own CodeSnippetElement with the SAME code
+            CodeSnippetElement cycleBodySnippet = getCodeSnippets(codeContainer.getCode(), threadCodeSnippetMap, mappingToBeResolved, cloningToBeResolved);
+
+            // Connect all dependent threads for this iteration to the cycle body
+            for(String argument : arguments) {
+                connectDependentThread(threadCodeSnippetMap, mappingToBeResolved,
+                        cycleBodySnippet, argument, iteration - 1);
+            }
+
+            // After the cycle body, spawn the next iteration's threads (except after the last cycle)
+            if(iteration != iterations) {
+                for(String argument : arguments) {
+                    CodeSnippetElement nextIterThreadSnippet = new CodeSnippetElement();
+                    cloneNewCodeSnippetWithOriginalCodeSnippetThatWillBeCreatedLater(
+                            threadCodeSnippetMap, cloningToBeResolved, iteration, argument,
+                            nextIterThreadSnippet);
+                    cycleBodySnippet.getNext().add(nextIterThreadSnippet);
+                }
+            }
+        }
+    }
+
     /*
     * threadCodeSnippetMap is the map of threadId and the codeSnippet corresponding to it
     * mappingToBeResolved is the map between the thread and the list of CodeSnippet successor to the given thread.
@@ -392,12 +460,15 @@ public class TranslateUtil {
         boolean isPython = isPythonCode(code);
         int threadStartCodeIndex = code.indexOf(CodeToken.threadStart);
         int threadEndCodeIndex = code.indexOf(CodeToken.threadTriggerOnSomeThreadCompleteion);
-        while(threadEndCodeIndex !=-1 || threadStartCodeIndex != -1) {
+        int threadParallelismCycleIndex = code.indexOf(CodeToken.threadParallelismCycle);
+        while(threadEndCodeIndex != -1 || threadStartCodeIndex != -1 || threadParallelismCycleIndex != -1) {
             IndexWrapper threadEndCodeIndexWrapper = new IndexWrapper(threadEndCodeIndex);
             IndexWrapper threadStartCodeIndexWrapper = new IndexWrapper(threadStartCodeIndex);
-            String toBeConsidered = getToBeConsideredToken(code, threadStartCodeIndexWrapper, threadEndCodeIndexWrapper);
+            IndexWrapper threadParallelismCycleIndexWrapper = new IndexWrapper(threadParallelismCycleIndex);
+            String toBeConsidered = getToBeConsideredToken(code, threadStartCodeIndexWrapper, threadEndCodeIndexWrapper, threadParallelismCycleIndexWrapper);
             threadEndCodeIndex = threadEndCodeIndexWrapper.getIndex();
             threadStartCodeIndex = threadStartCodeIndexWrapper.getIndex();
+            threadParallelismCycleIndex = threadParallelismCycleIndexWrapper.getIndex();
             if("".equals(toBeConsidered)) {
                 continue;
             }
@@ -407,6 +478,13 @@ public class TranslateUtil {
                 IndexWrapper indexWrapper = new IndexWrapper(index);
                 parseThreadStartCode(code, extractedCodeWrapper, indexWrapper, threadStartCodeIndex, threadCodeSnippetMap,
                     mappingToBeResolved, cloningToBeResolved, codeSnippetElement, isPython);
+                extractedCode = extractedCodeWrapper.getStr();
+                index = indexWrapper.getIndex();
+            } else if(CodeToken.threadParallelismCycle.equalsIgnoreCase(toBeConsidered)) {
+                StringWrapper extractedCodeWrapper = new StringWrapper(extractedCode);
+                IndexWrapper indexWrapper = new IndexWrapper(index);
+                parseThreadParallelismCycleCode(code, extractedCodeWrapper, indexWrapper, threadParallelismCycleIndex,
+                        threadCodeSnippetMap, mappingToBeResolved, cloningToBeResolved, isPython);
                 extractedCode = extractedCodeWrapper.getStr();
                 index = indexWrapper.getIndex();
             } else {
@@ -426,6 +504,11 @@ public class TranslateUtil {
                 threadEndCodeIndex = -1;
             } else {
                 threadEndCodeIndex = code.substring(index).indexOf(CodeToken.threadTriggerOnSomeThreadCompleteion) + index;
+            }
+            if(index >= code.length() || code.substring(index).indexOf(CodeToken.threadParallelismCycle) == -1) {
+                threadParallelismCycleIndex = -1;
+            } else {
+                threadParallelismCycleIndex = code.substring(index).indexOf(CodeToken.threadParallelismCycle) + index;
             }
         }
         if(index < code.length()) {
