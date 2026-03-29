@@ -16,7 +16,14 @@ public class Console {
             OperationType.execute_inline.getImplementation().execute(Arrays.asList(args));
             return;
         }
-        // If more than one argument, use the first as operation type
+        // If the first argument looks like a file path (e.g. ends with .py or contains
+        // a path separator), treat ALL arguments as execute_inline args:
+        //   args[0] = script file, args[1..N] = CSV data files
+        if(args[0].contains(".") || args[0].contains("/") || args[0].contains("\\")) {
+            OperationType.execute_inline.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
+        // Otherwise, use the first as operation type
         OperationType operationType = OperationType.getOperation(args[0]);
         if(operationType == null) {
             List<String> possibleOperators = new ArrayList<>();

@@ -59,6 +59,37 @@ ARCH_META = {
 
 
 # ── rj command builder ────────────────────────────────────────────────────────
+def _find_java() -> str:
+    """
+    Locate the correct Java binary.  On Apple Silicon Macs the default
+    /usr/bin/java may run under Rosetta (x86_64), which cannot load an
+    arm64 native library.  Prefer JAVA_HOME, then the macOS java_home
+    helper (requesting arm64), then fall back to PATH lookup.
+    """
+    # 1. Honour JAVA_HOME if the user set it
+    jh = os.environ.get("JAVA_HOME", "")
+    if jh:
+        candidate = os.path.join(jh, "bin", "java")
+        if os.path.isfile(candidate):
+            return candidate
+
+    # 2. macOS: ask java_home for an arm64 JDK
+    if sys.platform == "darwin":
+        try:
+            jh = subprocess.check_output(
+                ["/usr/libexec/java_home", "-a", "arm64"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            candidate = os.path.join(jh, "bin", "java")
+            if os.path.isfile(candidate):
+                return candidate
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+    # 3. Plain PATH lookup
+    return "java"
+
+
 def _rj_cmd() -> list:
     """
     'rj' is installed as a shell alias by install_ramanujan.sh, which means
@@ -71,7 +102,7 @@ def _rj_cmd() -> list:
     if ws:
         jar = os.path.join(ws, "developer-console-1.0-SNAPSHOT-fat.jar")
         if os.path.exists(jar):
-            return ["java", "-jar", jar]
+            return [_find_java(), "-jar", jar]
     return ["rj"]   # will raise FileNotFoundError with a clear message
 
 RJ_CMD = _rj_cmd()

@@ -214,7 +214,8 @@ public class ExecuteInline implements Operation {
             Map<String, Array> arrayMap = new HashMap<>();
             CodeRunRequest codeRunRequest = createJson(args);
             String code = codeRunRequest.getCode();
-            List<CsvInformation> csvInformationList = new ArrayList<>();
+            List<CsvInformation> csvInformationList = codeRunRequest.getCsvInformationList() != null
+                    ? codeRunRequest.getCsvInformationList() : new ArrayList<>();
             TranslateResponse translateResponse = new TranslateResponse();
             Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
             ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", 0);

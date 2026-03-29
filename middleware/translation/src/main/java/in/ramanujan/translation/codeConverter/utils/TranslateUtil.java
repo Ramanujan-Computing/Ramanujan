@@ -194,9 +194,16 @@ public class TranslateUtil {
         
         String trimmedCode = code.trim();
         
-        // Primary check: Ramanujan uses curly braces, Python doesn't
-        // If code contains curly braces, it's Ramanujan
-        if (trimmedCode.contains("{") || trimmedCode.contains("}")) {
+        // Primary check: Ramanujan uses curly braces, Python doesn't.
+        // However, threadStart(t) { ... } and threadParallelismCycle(t, n) { ... }
+        // are Ramanujan threading constructs that CAN appear in Python scripts.
+        // Strip those blocks before checking for stray braces.
+        String codeWithoutThreadBlocks = trimmedCode;
+        // Remove threadStart(...) { ... } and threadParallelismCycle(...) { ... } blocks
+        // Also remove threadTriggerOnSomeThreadCompletion(...) { ... } blocks
+        codeWithoutThreadBlocks = codeWithoutThreadBlocks.replaceAll(
+                "(?s)(threadStart|threadParallelismCycle|threadTriggerOnSomeThreadCompletion)\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", "");
+        if (codeWithoutThreadBlocks.contains("{") || codeWithoutThreadBlocks.contains("}")) {
             return false;
         }
         
@@ -230,6 +237,12 @@ public class TranslateUtil {
         // 6. If code has simple assignments without any language-specific syntax,
         // and no curly braces were found above, it's likely Python
         if (trimmedCode.matches("(?s).*(^|\\n)\\s*[a-zA-Z_]\\w*\\s*=\\s*.*")) {
+            return true;
+        }
+
+        // 7. Python-style function calls: func_name() or func_name(args)
+        // This covers code blocks inside threadStart that contain only function calls
+        if (trimmedCode.matches("(?s).*(^|\\n)\\s*[a-zA-Z_]\\w*\\s*\\(.*\\).*")) {
             return true;
         }
         

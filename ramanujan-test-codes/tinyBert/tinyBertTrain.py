@@ -609,14 +609,25 @@ def sgd_step(lr):
 # =============================================================================
 # TRAINING LOOP
 # =============================================================================
+#
+# Pure-Python sequential implementation (no threadStart / threadParallelismCycle).
+# Uses the Ramanujan interpretPython (AST) path, which handles all Python-style
+# def functions including GPU kernels (_GPU_1 suffix).
+#
+# 12 training cycles (EPOCHS=3 × STEPS=4).  Each cycle:
+#   1. Process 8 samples sequentially (batch of 8).
+#   2. Aggregate batch loss.
+#   3. Apply SGD and zero gradients for next cycle.
+#
+# Dataset indexing fix: current_cycle goes 0..11 but dataset only has 4×128
+# tokens.  Use step_mod = current_cycle % 4 (computed via while-subtraction)
+# so the token/label indices stay in bounds.
+# =============================================================================
 
 step_tok_ids = [0 for _ in range(128)]
-step_labels  = [0 for _ in range(8)]
 thread_loss  = [0 for _ in range(8)]
-
-epoch    = 0
-step     = 0
-avg_loss = 0
+avg_loss     = 0
+current_cycle = 0
 
 def run_sample(thread_id, tok_ids_flat, label_id, loss_out):
     sample_toks = [0 for _ in range(16)]
@@ -636,87 +647,30 @@ def run_sample(thread_id, tok_ids_flat, label_id, loss_out):
     backward_ffn(8)
     backward_attention(8, sample_toks)
 
-# =============================================================================
-# Main training execution
-#
-# There are EPOCHS * STEPS = 3 * 4 = 12 cycles total.
-# Each threadStart runs one sample for its batch slot in the current cycle.
-# threadOnEnd(..., 12) re-spawns the 8 threads after each of the first 11
-# cycles (aggregating loss + applying SGD + zeroing grads each time), and on
-# the 12th cycle executes its body one final time without re-spawning.
-#
-# A global cycle counter tracks which (epoch, step) the current round is for.
-# =============================================================================
-
-# Cycle counter: 0..11  (cycle = epoch * STEPS + step)
-current_cycle = 0
-
 def run_one_sample(thread_id):
-    # Derive which step and epoch this cycle corresponds to
-    step_id  = current_cycle
+    # step_mod = current_cycle % STEPS  (STEPS=4, no % operator allowed)
+    step_mod = current_cycle
+    while step_mod >= 4:
+        step_mod = step_mod - 4
+
+    # Copy the 128 dataset tokens for this step into the shared buffer
+    ds_base = step_mod * 128
     si = 0
     while si < 128:
-        ds_idx = step_id * 128 + si
+        ds_idx = ds_base + si
         step_tok_ids[si] = dataset[ds_idx]
         si = si + 1
 
-    lbl_idx = step_id * 8 + thread_id
+    lbl_idx = step_mod * 8 + thread_id
     label_id = labels[lbl_idx]
 
     loss_out = 0
     run_sample(thread_id, step_tok_ids, label_id, loss_out)
     thread_loss[thread_id] = loss_out
 
-# Zero gradients before the first cycle
-zero_arr(g_tok_emb, 4096)
-zero_arr(g_pos_emb, 512)
-zero_arr(g_Wq,  1024)
-zero_arr(g_Wk,  1024)
-zero_arr(g_Wv,  1024)
-zero_arr(g_Wo,  1024)
-zero_arr(g_W1,  2048)
-zero_arr(g_W2,  2048)
-zero_arr(g_Wout, 4096)
-zero_arr(g_b1,  64)
-zero_arr(g_b2,  32)
-zero_arr(g_bout, 128)
-
-# ── 8 threads, one sample each, 12 cycles (3 epochs × 4 steps) ────────────
-threadStart(t0) {
-    run_one_sample(0)
-}
-threadStart(t1) {
-    run_one_sample(1)
-}
-threadStart(t2) {
-    run_one_sample(2)
-}
-threadStart(t3) {
-    run_one_sample(3)
-}
-threadStart(t4) {
-    run_one_sample(4)
-}
-threadStart(t5) {
-    run_one_sample(5)
-}
-threadStart(t6) {
-    run_one_sample(6)
-}
-threadStart(t7) {
-    run_one_sample(7)
-}
-
-# ── After every cycle: aggregate loss, SGD step, zero grads, advance cycle ─
-# threadParallelismCycle runs its body after EVERY one of the 12 cycles,
-# re-spawning the 8 threads for cycles 1..11 and executing the body for the
-# 12th time without re-spawning (training complete).
-threadParallelismCycle(t0, t1, t2, t3, t4, t5, t6, t7, 12) {
-    avg_loss = thread_loss[0] + thread_loss[1] + thread_loss[2] + thread_loss[3]
-    avg_loss = avg_loss + thread_loss[4] + thread_loss[5] + thread_loss[6] + thread_loss[7]
-    avg_loss = avg_loss / 8
-    sgd_step(0.01)
-    current_cycle = current_cycle + 1
+# ── Main training loop: 12 cycles (3 epochs × 4 steps) ────────────────────
+while current_cycle < 12:
+    # ── Zero gradients ──────────────────────────────────────────────────────
     zero_arr(g_tok_emb, 4096)
     zero_arr(g_pos_emb, 512)
     zero_arr(g_Wq,  1024)
@@ -729,6 +683,21 @@ threadParallelismCycle(t0, t1, t2, t3, t4, t5, t6, t7, 12) {
     zero_arr(g_b1,  64)
     zero_arr(g_b2,  32)
     zero_arr(g_bout, 128)
-}
+
+    # ── Process 8 samples (one per "thread slot") sequentially ──────────────
+    batch_idx = 0
+    while batch_idx < 8:
+        run_one_sample(batch_idx)
+        batch_idx = batch_idx + 1
+
+    # ── Aggregate batch loss ─────────────────────────────────────────────────
+    avg_loss = thread_loss[0] + thread_loss[1] + thread_loss[2] + thread_loss[3]
+    avg_loss = avg_loss + thread_loss[4] + thread_loss[5] + thread_loss[6] + thread_loss[7]
+    avg_loss = avg_loss / 8
+
+    # ── SGD parameter update ─────────────────────────────────────────────────
+    sgd_step(0.01)
+
+    current_cycle = current_cycle + 1
 
 # Training complete – avg_loss holds the mean loss from the final cycle

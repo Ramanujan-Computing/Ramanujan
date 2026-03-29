@@ -320,7 +320,7 @@ def forward_classifier():
     classifier_GPU_1(ff_out, Wout, bout, logits, 128)
     softmax_vec(logits, 128, softmax_out)
 
-# ── Setup: copy input from the seq_input CSV (runs before threadStart) ────────
+# ── Setup: copy input from the seq_input CSV ─────────────────────────────────
 # seq_input is injected by Ramanujan from seq_input.csv:
 #   seq_input[0][0..15] = token IDs,  seq_input[0][16] = mask position
 si = 0
@@ -329,15 +329,10 @@ while si < 16:
     si = si + 1
 mask_pos = seq_input[0][16]
 
-# ── Execute forward pass on device GPU ────────────────────────────────────────
-threadStart(t0) {
-    forward_embed()
-    forward_attention()
-    forward_ffn()
-    forward_classifier()
-}
-
-threadParallelismCycle(t0, 1) {
-}
+# ── Execute forward pass ─────────────────────────────────────────────────────
+forward_embed()
+forward_attention()
+forward_ffn()
+forward_classifier()
 
 # Result: softmax_out[0..127] holds the predicted probability for each ASCII token.

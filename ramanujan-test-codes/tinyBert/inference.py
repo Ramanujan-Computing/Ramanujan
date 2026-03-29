@@ -55,6 +55,32 @@ WEIGHTS_FILE = os.path.join(SCRIPT_DIR, "weights.json")
 KERNEL_FILE  = "inference_kernel.py"      # relative; rj is run from SCRIPT_DIR
 
 # ── rj command builder ────────────────────────────────────────────────────────
+def _find_java() -> str:
+    """
+    Locate the correct Java binary.  On Apple Silicon Macs the default
+    /usr/bin/java may run under Rosetta (x86_64), which cannot load an
+    arm64 native library.  Prefer JAVA_HOME, then the macOS java_home
+    helper (requesting arm64), then fall back to PATH lookup.
+    """
+    jh = os.environ.get("JAVA_HOME", "")
+    if jh:
+        candidate = os.path.join(jh, "bin", "java")
+        if os.path.isfile(candidate):
+            return candidate
+    if sys.platform == "darwin":
+        try:
+            jh = subprocess.check_output(
+                ["/usr/libexec/java_home", "-a", "arm64"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            candidate = os.path.join(jh, "bin", "java")
+            if os.path.isfile(candidate):
+                return candidate
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+    return "java"
+
+
 def _rj_cmd() -> list:
     """
     Return the command list that invokes the Ramanujan developer-console JAR.
@@ -71,7 +97,7 @@ def _rj_cmd() -> list:
     if ws:
         jar = os.path.join(ws, "developer-console-1.0-SNAPSHOT-fat.jar")
         if os.path.exists(jar):
-            return ["java", "-jar", jar]
+            return [_find_java(), "-jar", jar]
     return ["rj"]   # will raise FileNotFoundError at runtime with a clear message
 
 RJ_CMD = _rj_cmd()

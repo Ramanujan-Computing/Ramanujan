@@ -767,8 +767,19 @@ public class PythonAstToRuleEngineInputConverter {
             } else if (array != null) {
                 targetId = array.getId();
             } else {
-                throw new CompilationException(null, null, 
-                    "Variable " + varName + " not found for augmented assignment");
+                // Global fallback: try global scope when inside a function
+                Variable globalVar = codeConverter.getVariableMap().get(varName);
+                if (globalVar != null) {
+                    targetId = globalVar.getId();
+                } else {
+                    Array globalArr = codeConverter.getArrayMap().get(varName);
+                    if (globalArr != null) {
+                        targetId = globalArr.getId();
+                    } else {
+                        throw new CompilationException(null, null, 
+                            "Variable " + varName + " not found for augmented assignment");
+                    }
+                }
             }
             
             BinOpNode binOp = new BinOpNode();
@@ -846,6 +857,10 @@ public class PythonAstToRuleEngineInputConverter {
 
         } else {
             array = getExistingArray(arrayVarName, variableScope);
+            // Global fallback: try global scope when inside a function
+            if (array == null) {
+                array = codeConverter.getArrayMap().get(arrayVarName);
+            }
         }
         if (array == null) {
             throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
@@ -2447,6 +2462,25 @@ public class PythonAstToRuleEngineInputConverter {
             return command.getId();
         }
         
+        // Global fallback: try global scope when inside a function
+        if (isInsideFunction(variableScope)) {
+            Variable globalVar = codeConverter.getVariableMap().get(varName);
+            if (globalVar != null) {
+                Command command = new Command();
+                command.setId("command_" + UUID.randomUUID().toString());
+                command.setVariableId(globalVar.getId());
+                ruleEngineInput.getCommands().add(command);
+                return command.getId();
+            }
+            Array globalArr = codeConverter.getArrayMap().get(varName);
+            if (globalArr != null) {
+                throw new CompilationException(null, null, 
+                    "Bare array reference '" + varName + "' without subscripting is not supported. " +
+                    "Array indices must be explicitly specified (e.g., arr[0], arr[i][j]). " +
+                    "If you need to pass the entire array, use array subscript notation.");
+            }
+        }
+        
         throw new CompilationException(null, null, "Variable " + varName + " not found");
     }
     
@@ -2598,6 +2632,23 @@ public class PythonAstToRuleEngineInputConverter {
             return command.getId();
         }
         
+        // Global fallback: try global scope when inside a function
+        if (isInsideFunction(variableScope)) {
+            Array globalArr = codeConverter.getArrayMap().get(arrayVarName);
+            if (globalArr != null) {
+                Command command = new Command();
+                command.setId("command_" + UUID.randomUUID().toString());
+                ArrayCommand arrayCommand = new ArrayCommand();
+                arrayCommand.setArrayId(globalArr.getId());
+                if (indices != null && !indices.isEmpty()) {
+                    arrayCommand.setIndex(indices);
+                }
+                command.setArrayCommand(arrayCommand);
+                ruleEngineInput.getCommands().add(command);
+                return command.getId();
+            }
+        }
+        
         throw new CompilationException(null, null, "Array or array parameter " + arrayVarName + " not found");
     }
     
@@ -2740,6 +2791,20 @@ public class PythonAstToRuleEngineInputConverter {
         MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(varName, variableScope);
         if (methodArg != null) {
             return methodArg.getId();
+        }
+        
+        // Global fallback: if we're inside a function and all scoped lookups failed,
+        // try the global scope as a last resort. This allows functions to read global
+        // variables/arrays that are NOT shadowed by a local or parameter of the same name.
+        if (isInsideFunction(variableScope)) {
+            Variable globalVar = codeConverter.getVariableMap().get(varName);
+            if (globalVar != null) {
+                return globalVar.getId();
+            }
+            Array globalArr = codeConverter.getArrayMap().get(varName);
+            if (globalArr != null) {
+                return globalArr.getId();
+            }
         }
         
         throw new CompilationException(null, null, "Argument " + varName + " not found");
@@ -3264,6 +3329,12 @@ public class PythonAstToRuleEngineInputConverter {
             codeConverter.setVariable(newVar, scope);
             
             return newVar.getId();
+        }
+        
+        // Global fallback: try global scope when inside a function
+        Variable globalVar = codeConverter.getVariableMap().get(dimVarName);
+        if (globalVar != null) {
+            return globalVar.getId();
         }
         
         return null;

@@ -193,9 +193,13 @@ public class GpuFunctionBodyConverter {
         StringBuilder sb = new StringBuilder();
 
         // --- Emit helper device functions first (must precede the __kernel declaration) ---
+        // Only emit helpers that are actually called from the kernel body.
+        Set<String> calledNames = collectCalledFunctionNames(funcDef.getBody());
         for (FunctionDefNode helper : helperFunctions.values()) {
             // Skip GPU kernel functions – they cannot be used as device functions.
             if (helper.getName().matches(".*_GPU_\\d+$")) continue;
+            // Only emit if the kernel body actually calls this helper.
+            if (!calledNames.contains(helper.getName())) continue;
             sb.append(convertHelperFunction(helper));
         }
 
@@ -552,5 +556,95 @@ public class GpuFunctionBodyConverter {
             case "Not":    return "!";
             default:       return "-";
         }
+    }
+
+    // =========================================================================
+    //  Helper-function reference analysis
+    // =========================================================================
+
+    /**
+     * Recursively walks a list of AST statements and collects the names of all
+     * functions that are directly called (via {@link CallNode} with a
+     * {@link NameNode} callee).  Used to filter the helper-function set so that
+     * only actually-referenced helpers are emitted as device functions.
+     */
+    private Set<String> collectCalledFunctionNames(List<AstNode> stmts) {
+        Set<String> names = new HashSet<>();
+        if (stmts == null) return names;
+        for (AstNode node : stmts) {
+            collectCalledNamesFromNode(node, names);
+        }
+        return names;
+    }
+
+    private void collectCalledNamesFromNode(AstNode node, Set<String> names) {
+        if (node == null) return;
+
+        if (node instanceof CallNode) {
+            CallNode call = (CallNode) node;
+            if (call.getFunc() instanceof NameNode) {
+                names.add(((NameNode) call.getFunc()).getId());
+            }
+            // Also recurse into the call's arguments (they may contain nested calls).
+            for (AstNode arg : call.getArgs()) {
+                collectCalledNamesFromNode(arg, names);
+            }
+
+        } else if (node instanceof IfNode) {
+            IfNode ifNode = (IfNode) node;
+            collectCalledNamesFromNode(ifNode.getTest(), names);
+            if (ifNode.getBody() != null) {
+                for (AstNode s : ifNode.getBody()) collectCalledNamesFromNode(s, names);
+            }
+            if (ifNode.getOrelse() != null) {
+                for (AstNode s : ifNode.getOrelse()) collectCalledNamesFromNode(s, names);
+            }
+
+        } else if (node instanceof WhileNode) {
+            WhileNode w = (WhileNode) node;
+            collectCalledNamesFromNode(w.getTest(), names);
+            if (w.getBody() != null) {
+                for (AstNode s : w.getBody()) collectCalledNamesFromNode(s, names);
+            }
+
+        } else if (node instanceof AssignNode) {
+            AssignNode assign = (AssignNode) node;
+            if (assign.getTargets() != null) {
+                for (AstNode t : assign.getTargets()) collectCalledNamesFromNode(t, names);
+            }
+            collectCalledNamesFromNode(assign.getValue(), names);
+
+        } else if (node instanceof AugAssignNode) {
+            AugAssignNode aug = (AugAssignNode) node;
+            collectCalledNamesFromNode(aug.getTarget(), names);
+            collectCalledNamesFromNode(aug.getValue(), names);
+
+        } else if (node instanceof BinOpNode) {
+            BinOpNode bin = (BinOpNode) node;
+            collectCalledNamesFromNode(bin.getLeft(), names);
+            collectCalledNamesFromNode(bin.getRight(), names);
+
+        } else if (node instanceof UnaryOpNode) {
+            collectCalledNamesFromNode(((UnaryOpNode) node).getOperand(), names);
+
+        } else if (node instanceof CompareNode) {
+            CompareNode cmp = (CompareNode) node;
+            collectCalledNamesFromNode(cmp.getLeft(), names);
+            if (cmp.getComparators() != null) {
+                for (AstNode c : cmp.getComparators()) collectCalledNamesFromNode(c, names);
+            }
+
+        } else if (node instanceof SubscriptNode) {
+            SubscriptNode sub = (SubscriptNode) node;
+            collectCalledNamesFromNode(sub.getValue(), names);
+            collectCalledNamesFromNode(sub.getSlice(), names);
+
+        } else if (node instanceof ExprNode) {
+            collectCalledNamesFromNode(((ExprNode) node).getValue(), names);
+
+        } else if (node instanceof ReturnNode) {
+            collectCalledNamesFromNode(((ReturnNode) node).getValue(), names);
+        }
+        // NameNode, ConstantNode, etc. – leaf nodes, nothing to recurse into.
     }
 }
