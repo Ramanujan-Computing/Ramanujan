@@ -43,6 +43,7 @@ public class TranslateUtil {
         DagElement lastElement = null;
         Map<String, DagElement> codeSnippetElementDagElementMap = new HashMap<>();
         boolean isFirstDagElementBeingCreated = true;
+        RuleEngineInput pythonMainRuleEngineInput = null;
         while(populationQueue.size() > 0) {
             PairCodeSnippetElementWithParent pairCodeSnippetElementWithParent = populationQueue.poll();
             DagElement dagElement = codeSnippetElementDagElementMap.get(pairCodeSnippetElementWithParent
@@ -92,6 +93,20 @@ public class TranslateUtil {
 
                 for(RuleEngineInput ruleEngineInputFunction : functionCallsRuleEngineInput.values()) {
                     ruleEngineInput.addAllPartsOfGivenRuleEngineInput(ruleEngineInputFunction);
+                }
+
+                // For Python code: propagate function definitions and global state (variables,
+                // arrays, function bodies) from the first DAG element into every child DAG element
+                // (threadStart / threadParallelismCycle bodies). This is needed because Python
+                // function defs are added to the first element's RuleEngineInput by
+                // PythonAstToRuleEngineInputConverter, but child elements get fresh, empty
+                // RuleEngineInputs and would otherwise be unable to resolve any function calls.
+                if (isPythonCode(code)) {
+                    if (isFirstDagElementBeingCreated) {
+                        pythonMainRuleEngineInput = ruleEngineInput;
+                    } else if (pythonMainRuleEngineInput != null) {
+                        ruleEngineInput.addAllPartsOfGivenRuleEngineInput(pythonMainRuleEngineInput);
+                    }
                 }
 
             }

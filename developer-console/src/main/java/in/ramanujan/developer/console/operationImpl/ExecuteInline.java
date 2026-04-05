@@ -15,6 +15,7 @@ import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
@@ -23,7 +24,9 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
 
 /**
  * This class contains the core logic from DebugFetcher, excluding debug file and server creation.
- * It executes DAG elements in parallel where possible, respecting dependencies for optimal performance.
+ * Execution mode is controlled by the environment variable RAMANUJAN_SEQUENTIAL:
+ *   - unset / "false"  →  parallel execution (default, best throughput)
+ *   - "true"           →  sequential execution (deterministic, easier to debug)
  */
 public class ExecuteInline implements Operation {
     protected final TranslateUtil translateUtil = new TranslateUtil();
@@ -43,9 +46,16 @@ public class ExecuteInline implements Operation {
     protected void executeDagElement(DagElement dagElement, Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws IOException {
         preProcess(dagElement);
         if(dagElement.getFirstCommandId().isEmpty()) {
+            System.out.println("[DAG] element " + dagElement.getId() + " completed (empty — no commands)");
             postProcess(dagElement, null);
             return;
         }
+        // Write debug payload so the native Test binary can reproduce this exact call
+        Map<String, Object> debugPayload = new LinkedHashMap<>();
+        debugPayload.put("firstCommandId", dagElement.getFirstCommandId());
+        debugPayload.put("ruleEngineInput", dagElement.getRuleEngineInput());
+        objectMapper.writeValue(new File("/tmp/rule_engine_debug.json"), debugPayload);
+
         in.ramanujan.rule.engine.NativeProcessor nativeProcessor = new in.ramanujan.rule.engine.NativeProcessor();
         nativeProcessor.process(objectMapper.writeValueAsString(dagElement.getRuleEngineInput()), dagElement.getFirstCommandId());
         for(Object en : nativeProcessor.jniObject.entrySet()) {
@@ -71,7 +81,51 @@ public class ExecuteInline implements Operation {
                 variable.setValue(value);
             }
         }
+        System.out.println("[DAG] element " + dagElement.getId() + " completed (firstCmd=" + dagElement.getFirstCommandId() + ")");
         postProcess(dagElement, nativeProcessor);
+    }
+
+    /**
+     * Execute DAG elements sequentially in topological order (debug mode).
+     * Before each native call, the element's RuleEngineInput is written to
+     * /tmp/rule_engine_debug.json so the standalone native Test binary can
+     * reproduce the exact crashing input.
+     */
+    protected void executeSequentially(DagElement firstDagElement, List<DagElement> dagElementList,
+                                       Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws IOException {
+        Set<DagElement> allElements = new LinkedHashSet<>(dagElementList);
+        allElements.add(firstDagElement);
+        Set<DagElement> completed = new HashSet<>();
+        Deque<DagElement> readyQueue = new ArrayDeque<>();
+        readyQueue.add(firstDagElement);
+
+        while (completed.size() < allElements.size()) {
+            if (readyQueue.isEmpty()) {
+                // Find any element whose predecessors are all done
+                for (DagElement el : allElements) {
+                    if (!completed.contains(el) && completed.containsAll(el.getPreviousElements())) {
+                        readyQueue.add(el);
+                    }
+                }
+            }
+            if (readyQueue.isEmpty()) {
+                break; // no progress possible (cycle or done)
+            }
+
+            DagElement element = readyQueue.poll();
+            if (completed.contains(element)) {
+                continue;
+            }
+
+            executeDagElement(element, variableMap, arrayMap);
+            completed.add(element);
+
+            for (DagElement next : element.getNextElements()) {
+                if (!completed.contains(next) && completed.containsAll(next.getPreviousElements())) {
+                    readyQueue.add(next);
+                }
+            }
+        }
     }
 
     /**
@@ -261,9 +315,15 @@ public class ExecuteInline implements Operation {
 
             startTime = System.currentTimeMillis();
             
-            // Execute DAG in parallel mode
-            System.out.println("Executing DAG in parallel mode");
-            executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
+            // Execution mode: parallel (default) or sequential (set RAMANUJAN_SEQUENTIAL=true)
+            boolean runSequentially = "true".equalsIgnoreCase(System.getenv("RAMANUJAN_SEQUENTIAL"));
+            if (runSequentially) {
+                System.out.println("Executing DAG sequentially (RAMANUJAN_SEQUENTIAL=true)");
+                executeSequentially(firstDagElement, dagElementList, variableMap, arrayMap);
+            } else {
+                System.out.println("Executing DAG in parallel");
+                executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
+            }
 
             System.out.println("execution time: " + (System.currentTimeMillis() - startTime) + "ms");
 
