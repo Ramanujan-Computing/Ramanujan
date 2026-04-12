@@ -1913,7 +1913,7 @@ public class PythonCodeRunTest {
         assertTrue("Helper body must contain 'return r'", kernel.contains("return r;"));
 
         // The kernel body must load a[gid] into a local variable then pass it to scale2
-        assertTrue("Kernel body must load a[gid] into a local var", kernel.contains("a[gid]"));
+        assertTrue("Kernel body must load a[gid] into a local var", kernel.contains("a[(int)(gid)]"));
         assertTrue("Kernel body must call scale2()", kernel.contains("scale2("));
         assertTrue("Kernel body must call scale2 with local var v", kernel.contains("scale2(v)"));
 

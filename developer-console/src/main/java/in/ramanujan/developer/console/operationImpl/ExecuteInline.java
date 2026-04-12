@@ -17,6 +17,8 @@ import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -31,6 +33,30 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
 public class ExecuteInline implements Operation {
     protected final TranslateUtil translateUtil = new TranslateUtil();
     protected final ObjectMapper objectMapper = new ObjectMapper();
+
+    private boolean shouldWriteRuleEngineDebug() {
+        return "true".equalsIgnoreCase(System.getenv("RAMANUJAN_WRITE_RULE_ENGINE_DEBUG"));
+    }
+
+    private int resolveThreadPoolSize() {
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        String configuredParallelism = System.getenv("RAMANUJAN_MAX_PARALLELISM");
+        if (configuredParallelism == null || configuredParallelism.trim().isEmpty()) {
+            return availableProcessors;
+        }
+        try {
+            int parsedParallelism = Integer.parseInt(configuredParallelism.trim());
+            if (parsedParallelism < 1) {
+                return 1;
+            }
+            if (parsedParallelism > availableProcessors) {
+                return availableProcessors;
+            }
+            return parsedParallelism;
+        } catch (NumberFormatException ignored) {
+            return availableProcessors;
+        }
+    }
 
 
     // Hook for subclasses: called before processing a DAG element
@@ -50,14 +76,15 @@ public class ExecuteInline implements Operation {
             postProcess(dagElement, null);
             return;
         }
-        // Write debug payload so the native Test binary can reproduce this exact call
-        Map<String, Object> debugPayload = new LinkedHashMap<>();
-        debugPayload.put("firstCommandId", dagElement.getFirstCommandId());
-        debugPayload.put("ruleEngineInput", dagElement.getRuleEngineInput());
-        objectMapper.writeValue(new File("/tmp/rule_engine_debug.json"), debugPayload);
+        String ruleEngineInputJson = objectMapper.writeValueAsString(dagElement.getRuleEngineInput());
+        if (shouldWriteRuleEngineDebug()) {
+            Files.write(new File("/tmp/rule_engine_debug.json").toPath(), ruleEngineInputJson.getBytes(StandardCharsets.UTF_8));
+            objectMapper.writeValue(new File("/tmp/rule_engine_debug_meta.json"),
+                    Collections.singletonMap("firstCommandId", dagElement.getFirstCommandId()));
+        }
 
         in.ramanujan.rule.engine.NativeProcessor nativeProcessor = new in.ramanujan.rule.engine.NativeProcessor();
-        nativeProcessor.process(objectMapper.writeValueAsString(dagElement.getRuleEngineInput()), dagElement.getFirstCommandId());
+        nativeProcessor.process(ruleEngineInputJson, dagElement.getFirstCommandId());
         for(Object en : nativeProcessor.jniObject.entrySet()) {
             Map.Entry<String, Object> entry = (Map.Entry<String, Object>) en;
             String key = entry.getKey();
@@ -138,8 +165,8 @@ public class ExecuteInline implements Operation {
         Set<DagElement> allElements = new HashSet<>(dagElementList);
         allElements.add(firstDagElement);
         
-        // Create thread pool - using number of available processors
-        int threadPoolSize = Runtime.getRuntime().availableProcessors();
+        // Create thread pool - configurable for large DAGs that would otherwise exhaust heap
+        int threadPoolSize = resolveThreadPoolSize();
         ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
         
         try {

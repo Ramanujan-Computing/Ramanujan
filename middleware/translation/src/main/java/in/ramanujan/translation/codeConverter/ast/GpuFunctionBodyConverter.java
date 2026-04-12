@@ -350,7 +350,11 @@ public class GpuFunctionBodyConverter {
 
         } else if (expr instanceof SubscriptNode) {
             SubscriptNode sub = (SubscriptNode) expr;
-            return convertExpr(sub.getValue()) + "[" + convertExpr(sub.getSlice()) + "]";
+            // Cast the index to int: all locals are declared float, but OpenCL C
+            // requires integer array subscripts.  (int)(...) is safe for any
+            // index whose value fits in a 32-bit integer, which is always true
+            // for the array sizes used in Ramanujan programs.
+            return convertExpr(sub.getValue()) + "[(int)(" + convertExpr(sub.getSlice()) + ")]";
 
         } else if (expr instanceof CompareNode) {
             CompareNode cmp = (CompareNode) expr;

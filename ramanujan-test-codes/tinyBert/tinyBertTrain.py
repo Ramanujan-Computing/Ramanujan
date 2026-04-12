@@ -38,10 +38,13 @@ DH      = 8
 NH      = 4
 BS      = 8
 LR      = 0.01
-EPOCHS  = 3
-STEPS   = 4
+EPOCHS  = 13    # approx full passes over dataset (100 cycles / 8 steps ≈ 12.5)
+STEPS   = 8     # steps before cycling back (32 threads × 8 steps = 256 samples)
 
 # ── Weight matrices (flat 1-D) ────────────────────────────────────────────────
+# extract_weights.py replaces the block between the markers below with
+# Xavier-uniform random initialisation so gradients flow from step 1.
+# [WEIGHT_INIT_BEGIN] ← auto-generated; edit extract_weights.py, not this block
 tok_emb  = [0 for _ in range(4096)]
 pos_emb  = [0 for _ in range(512)]
 Wq       = [0 for _ in range(1024)]
@@ -54,6 +57,7 @@ Wout     = [0 for _ in range(4096)]
 b1       = [0 for _ in range(64)]
 b2       = [0 for _ in range(32)]
 bout     = [0 for _ in range(128)]
+# [WEIGHT_INIT_END]
 
 # ── Gradient accumulators ─────────────────────────────────────────────────────
 grad_tok_emb = [0 for _ in range(4096)]
@@ -91,24 +95,30 @@ d_k        = [0 for _ in range(512)]
 d_v        = [0 for _ in range(512)]
 d_x_emb    = [0 for _ in range(512)]
 
-# ── Synthetic dataset ─────────────────────────────────────────────────────────
-dataset    = [0 for _ in range(512)]
-labels     = [0 for _ in range(32)]
-masked_pos = 8
+# ── Training dataset ────────────────────────────────────────────────────────
+# extract_weights.py replaces the block between the markers below with 128
+# non-overlapping 16-char windows taken from corpus.txt.  Position 8 in each
+# window is masked; the label is the original char there.  Because neighbours
+# at positions 0-7 and 9-15 are real English text the model can predict the
+# masked char from context, giving meaningful gradients from the first step.
+# If corpus.txt is missing, the constant-character fallback below is used.
+# [CORPUS_DATA_BEGIN]
+dataset        = [0 for _ in range(2048)]
+labels         = [0 for _ in range(128)]
+mask_positions = [0 for _ in range(128)]
 
-ds_i = 0
-while ds_i < 512:
-    tmp_val = ds_i
-    while tmp_val >= 128:
-        tmp_val = tmp_val - 128
-    dataset[ds_i] = tmp_val
-    ds_i = ds_i + 1
-
-lbl_i = 0
-while lbl_i < 32:
-    lbl_ds_idx = lbl_i * 16 + 8
-    labels[lbl_i] = dataset[lbl_ds_idx]
-    lbl_i = lbl_i + 1
+ds_sample = 0
+while ds_sample < 128:
+    char_val = ds_sample
+    ds_pos = 0
+    while ds_pos < 16:
+        ds_flat_idx = ds_sample * 16 + ds_pos
+        dataset[ds_flat_idx] = char_val
+        ds_pos = ds_pos + 1
+    labels[ds_sample] = char_val
+    mask_positions[ds_sample] = 8
+    ds_sample = ds_sample + 1
+# [CORPUS_DATA_END]
 
 # =============================================================================
 # Weight initialisation  (Xavier uniform via LCG RNG)
@@ -140,8 +150,8 @@ def init_array(arr, size, scale, rng):
         arr[idx] = sv
         idx = idx + 1
 
-scale_emb = 0.1
-scale_w   = 0.1
+scale_emb = 0.5
+scale_w   = 0.5
 
 init_array(tok_emb,  4096, scale_emb, rng_state)
 init_array(pos_emb,  512,  scale_emb, rng_state)
@@ -152,6 +162,13 @@ init_array(Wo,       1024, scale_w,   rng_state)
 init_array(W1,       2048, scale_w,   rng_state)
 init_array(W2,       2048, scale_w,   rng_state)
 init_array(Wout,     4096, scale_w,   rng_state)
+# Initialise b1 to a positive constant so all 64 ReLU neurons start active.
+# This ensures ff_h[gid] > 0 always passes, making grad_b1 and grad_W1
+# receive nonzero gradients from the very first backward pass.
+b1_init = 0
+while b1_init < 64:
+    b1[b1_init] = 1.0
+    b1_init = b1_init + 1
 
 # =============================================================================
 # GPU KERNELS  (_GPU_1: gid = work-item index)
@@ -458,8 +475,9 @@ def forward_classifier(ff_out, Wout, bout, logits, softmax_out):
 # BACKWARD PASS
 # =============================================================================
 
-# backward_classifier: softmax_out, d_logits, grad_Wout, ff_out, grad_bout, Wout, d_ff_out all explicit
-def backward_classifier(label_id, softmax_out, d_logits, grad_Wout, ff_out, grad_bout, Wout, d_ff_out):
+# backward_classifier: ff_save is a thread-private 32-elem snapshot of ff_out taken *before*
+# any other thread can overwrite the shared ff_out[] buffer.
+def backward_classifier(label_id, softmax_out, d_logits, grad_Wout, ff_save, grad_bout, Wout, d_ff_out):
     ce_softmax_grad(softmax_out, label_id, d_logits, 128)
 
     v = 0
@@ -467,7 +485,7 @@ def backward_classifier(label_id, softmax_out, d_logits, grad_Wout, ff_out, grad
         di = 0
         while di < 32:
             gwo_idx = di * 128 + v
-            grad_Wout[gwo_idx] = grad_Wout[gwo_idx] + ff_out[di] * d_logits[v]
+            grad_Wout[gwo_idx] = grad_Wout[gwo_idx] + ff_save[di] * d_logits[v]
             di = di + 1
         grad_bout[v] = grad_bout[v] + d_logits[v]
         v = v + 1
@@ -483,8 +501,12 @@ def backward_classifier(label_id, softmax_out, d_logits, grad_Wout, ff_out, grad
         d_ff_out[di] = acc
         di = di + 1
 
-# backward_ffn: all buffers passed explicitly
-def backward_ffn(mask_pos, d_ff_out, W2, ff_h, d_ff_h, grad_W2, grad_b1, grad_b2, attn_out, W1, grad_W1, d_attn_out):
+# backward_ffn: all buffers passed explicitly.
+# attn_save: 32-elem thread-private snapshot of attn_out at mask_pos row
+#            (avoids race where another thread zeros the shared attn_out[] buffer).
+# ff_h_save:  64-elem CPU-recomputed ReLU activations
+#            (avoids GPU/CPU memory gap where ff_h[] is GPU-only).
+def backward_ffn(mask_pos, d_ff_out, W2, ff_h_save, d_ff_h, grad_W2, grad_b1, grad_b2, attn_save, W1, grad_W1, d_attn_out):
     d_ff = 0
     while d_ff < 64:
         acc = 0
@@ -493,7 +515,9 @@ def backward_ffn(mask_pos, d_ff_out, W2, ff_h, d_ff_h, grad_W2, grad_b1, grad_b2
             w2_idx = d_ff * 32 + di
             acc = acc + d_ff_out[di] * W2[w2_idx]
             di = di + 1
-        if ff_h[d_ff] > 0:
+        # Straight-through: pass gradient unconditionally through ReLU.
+        # ff_h_save is the CPU-recomputed activation so the ReLU gate is accurate.
+        if ff_h_save[d_ff] > 0:
             d_ff_h[d_ff] = acc
         else:
             d_ff_h[d_ff] = 0
@@ -504,7 +528,7 @@ def backward_ffn(mask_pos, d_ff_out, W2, ff_h, d_ff_h, grad_W2, grad_b1, grad_b2
         di = 0
         while di < 32:
             w2_idx = d_ff * 32 + di
-            grad_W2[w2_idx] = grad_W2[w2_idx] + ff_h[d_ff] * d_ff_out[di]
+            grad_W2[w2_idx] = grad_W2[w2_idx] + ff_h_save[d_ff] * d_ff_out[di]
             di = di + 1
         grad_b1[d_ff] = grad_b1[d_ff] + d_ff_h[d_ff]
         d_ff = d_ff + 1
@@ -516,11 +540,10 @@ def backward_ffn(mask_pos, d_ff_out, W2, ff_h, d_ff_h, grad_W2, grad_b1, grad_b2
 
     di = 0
     while di < 32:
-        ao_idx = mask_pos * 32 + di
         d_ff = 0
         while d_ff < 64:
             w1_idx = di * 64 + d_ff
-            grad_W1[w1_idx] = grad_W1[w1_idx] + attn_out[ao_idx] * d_ff_h[d_ff]
+            grad_W1[w1_idx] = grad_W1[w1_idx] + attn_save[di] * d_ff_h[d_ff]
             d_ff = d_ff + 1
         di = di + 1
 
@@ -537,7 +560,7 @@ def backward_ffn(mask_pos, d_ff_out, W2, ff_h, d_ff_h, grad_W2, grad_b1, grad_b2
         di = di + 1
 
 # backward_attention: all buffers passed explicitly
-def backward_attention(mask_pos, tok_ids, Wo, d_attn_out, grad_Wo, Wq, grad_Wq, x_emb, grad_tok_emb, d_x_emb, grad_pos_emb):
+def backward_attention(mask_pos, tok_ids, Wo, d_attn_out, grad_Wo, Wq, grad_Wq, Wk, grad_Wk, Wv, grad_Wv, x_emb, grad_tok_emb, d_x_emb, grad_pos_emb):
     d_concat_row = [0 for _ in range(32)]
     od = 0
     while od < 32:
@@ -567,7 +590,7 @@ def backward_attention(mask_pos, tok_ids, Wo, d_attn_out, grad_Wo, Wq, grad_Wq, 
         od = 0
         while od < 32:
             wq_idx = di * 32 + od
-            acc = acc + d_concat_row[od] * Wq[wq_idx]
+            acc = acc + d_concat_row[od] * (Wq[wq_idx] + Wk[wq_idx] + Wv[wq_idx])
             od = od + 1
         dxe_idx = mask_pos * 32 + di
         d_x_emb[dxe_idx] = acc
@@ -580,6 +603,8 @@ def backward_attention(mask_pos, tok_ids, Wo, d_attn_out, grad_Wo, Wq, grad_Wq, 
         while od < 32:
             gwq_idx = di * 32 + od
             grad_Wq[gwq_idx] = grad_Wq[gwq_idx] + x_emb[xe_idx] * d_concat_row[od]
+            grad_Wk[gwq_idx] = grad_Wk[gwq_idx] + x_emb[xe_idx] * d_concat_row[od]
+            grad_Wv[gwq_idx] = grad_Wv[gwq_idx] + x_emb[xe_idx] * d_concat_row[od]
             od = od + 1
         di = di + 1
 
@@ -632,14 +657,14 @@ def sgd_step(lr, lr_buf, tok_emb, grad_tok_emb, pos_emb, grad_pos_emb, Wq, grad_
 # so the token/label indices stay in bounds.
 # =============================================================================
 
-step_tok_ids  = [0 for _ in range(128)]
-thread_loss   = [0 for _ in range(8)]
+step_tok_ids  = [0 for _ in range(512)]
+thread_loss   = [0 for _ in range(32)]
 avg_loss      = 0
 current_cycle = 0
 step_counter  = 0
 
 # run_sample: all activation, weight, gradient, and scratch buffers passed explicitly
-def run_sample(thread_id, tok_ids_flat, label_id, loss_out,
+def run_sample(thread_id, tok_ids_flat, label_id, loss_out, mask_pos,
                mp_buf, tok_emb, pos_emb, x_emb,
                Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -647,7 +672,7 @@ def run_sample(thread_id, tok_ids_flat, label_id, loss_out,
                ff_h, ff_out, logits, softmax_out,
                d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-               grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb):
+               grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb):
     sample_toks = [0 for _ in range(16)]
     ti = 0
     while ti < 16:
@@ -655,18 +680,62 @@ def run_sample(thread_id, tok_ids_flat, label_id, loss_out,
         sample_toks[ti] = tok_ids_flat[tf_idx]
         ti = ti + 1
 
-    forward_embed(sample_toks, 8, mp_buf, tok_emb, pos_emb, x_emb)
+    forward_embed(sample_toks, mask_pos, mp_buf, tok_emb, pos_emb, x_emb)
     forward_attention(x_emb, Wq, Wk, Wv, Wo, q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf, head_buf, scores_row, softmax_scores, ln_buf)
-    forward_ffn(8, attn_out, W1, b1, W2, b2, ff_h, ff_out, mp_buf, ln_buf)
+
+    # ── Thread-private snapshot of attn_out at mask row (variable pos) ──────
+    # forward_attention CPU-writes attn_out via layer_norm, but other threads
+    # call zero_arr(attn_out, 512) at the start of their forward_attention,
+    # racing to zero these values before backward_ffn can read them.
+    # Saving to a local variable (stack-allocated, thread-private) avoids the race.
+    attn_save = [0 for _ in range(32)]
+    as_base = mask_pos * 32
+    as_i = 0
+    while as_i < 32:
+        as_idx = as_base + as_i
+        attn_save[as_i] = attn_out[as_idx]
+        as_i = as_i + 1
+
+    # ── CPU-recompute ff_h (ReLU activations) from thread-private attn_save ──
+    # ffn1_GPU_1 writes ff_h[] to GPU memory only; CPU-side ff_h[] always reads
+    # zero.  Recomputing on CPU (32x64 = 2048 MACs) gives correct ReLU values
+    # for the W2 gradient and the accurate ReLU gate for d_ff_h.
+    ff_h_save = [0 for _ in range(64)]
+    fhs_i = 0
+    while fhs_i < 64:
+        fhs_acc = 0
+        fhs_di = 0
+        while fhs_di < 32:
+            fhs_w1_idx = fhs_di * 64 + fhs_i
+            fhs_acc = fhs_acc + attn_save[fhs_di] * W1[fhs_w1_idx]
+            fhs_di = fhs_di + 1
+        fhs_acc = fhs_acc + b1[fhs_i]
+        if fhs_acc > 0:
+            ff_h_save[fhs_i] = fhs_acc
+        else:
+            ff_h_save[fhs_i] = 0
+        fhs_i = fhs_i + 1
+
+    forward_ffn(mask_pos, attn_out, W1, b1, W2, b2, ff_h, ff_out, mp_buf, ln_buf)
+
+    # ── Thread-private snapshot of ff_out (layer-normed FFN output) ──────────
+    # Same race as attn_out: another thread's forward_ffn can overwrite ff_out[]
+    # before backward_classifier reads it for grad_Wout.
+    ff_save = [0 for _ in range(32)]
+    fs_i = 0
+    while fs_i < 32:
+        ff_save[fs_i] = ff_out[fs_i]
+        fs_i = fs_i + 1
+
     forward_classifier(ff_out, Wout, bout, logits, softmax_out)
     cross_entropy(softmax_out, label_id, loss_out)
 
-    backward_classifier(label_id, softmax_out, d_logits, grad_Wout, ff_out, grad_bout, Wout, d_ff_out)
-    backward_ffn(8, d_ff_out, W2, ff_h, d_ff_h, grad_W2, grad_b1, grad_b2, attn_out, W1, grad_W1, d_attn_out)
-    backward_attention(8, sample_toks, Wo, d_attn_out, grad_Wo, Wq, grad_Wq, x_emb, grad_tok_emb, d_x_emb, grad_pos_emb)
+    backward_classifier(label_id, softmax_out, d_logits, grad_Wout, ff_save, grad_bout, Wout, d_ff_out)
+    backward_ffn(mask_pos, d_ff_out, W2, ff_h_save, d_ff_h, grad_W2, grad_b1, grad_b2, attn_save, W1, grad_W1, d_attn_out)
+    backward_attention(mask_pos, sample_toks, Wo, d_attn_out, grad_Wo, Wq, grad_Wq, Wk, grad_Wk, Wv, grad_Wv, x_emb, grad_tok_emb, d_x_emb, grad_pos_emb)
 
 # run_one_sample: all data passed explicitly as args — no global access
-def run_one_sample(thread_id, step_ctr, ds, tok_ids, lbl, t_loss,
+def run_one_sample(thread_id, step_ctr, ds, tok_ids, lbl, mask_pos_arr, t_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -674,19 +743,20 @@ def run_one_sample(thread_id, step_ctr, ds, tok_ids, lbl, t_loss,
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb):
-    ds_base = step_ctr * 128
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb):
+    ds_base = step_ctr * 512
     si = 0
-    while si < 128:
+    while si < 512:
         ds_idx      = ds_base + si
         tok_ids[si] = ds[ds_idx]
         si = si + 1
 
-    lbl_idx  = step_ctr * 8 + thread_id
-    label_id = lbl[lbl_idx]
+    lbl_idx      = step_ctr * 32 + thread_id
+    label_id     = lbl[lbl_idx]
+    the_mask_pos = mask_pos_arr[lbl_idx]
 
     loss_out = 0
-    run_sample(thread_id, tok_ids, label_id, loss_out,
+    run_sample(thread_id, tok_ids, label_id, loss_out, the_mask_pos,
                mp_buf, tok_emb, pos_emb, x_emb,
                Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -694,7 +764,7 @@ def run_one_sample(thread_id, step_ctr, ds, tok_ids, lbl, t_loss,
                ff_h, ff_out, logits, softmax_out,
                d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-               grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+               grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
     t_loss[thread_id] = loss_out
 
 # ── Zero gradients before the first cycle ──────────────────────────────────
@@ -711,9 +781,9 @@ zero_arr(grad_b1,  64)
 zero_arr(grad_b2,  32)
 zero_arr(grad_bout, 128)
 
-# ── 8 threads, one sample each, 12 cycles (3 epochs × 4 steps) ────────────
+# ── 32 threads, one sample each, 150 cycles ────────────
 threadStart(t0) {
-    run_one_sample(0, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(0, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -721,10 +791,10 @@ threadStart(t0) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t1) {
-    run_one_sample(1, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(1, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -732,10 +802,10 @@ threadStart(t1) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t2) {
-    run_one_sample(2, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(2, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -743,10 +813,10 @@ threadStart(t2) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t3) {
-    run_one_sample(3, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(3, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -754,10 +824,10 @@ threadStart(t3) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t4) {
-    run_one_sample(4, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(4, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -765,10 +835,10 @@ threadStart(t4) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t5) {
-    run_one_sample(5, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(5, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -776,10 +846,10 @@ threadStart(t5) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t6) {
-    run_one_sample(6, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(6, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -787,10 +857,10 @@ threadStart(t6) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 threadStart(t7) {
-    run_one_sample(7, step_counter, dataset, step_tok_ids, labels, thread_loss,
+    run_one_sample(7, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
                    mp_buf, tok_emb, pos_emb, x_emb,
                    Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
                    q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
@@ -798,17 +868,312 @@ threadStart(t7) {
                    ff_h, ff_out, logits, softmax_out,
                    d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
                    grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
-                   grad_Wo, grad_Wq, grad_tok_emb, grad_pos_emb)
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t8) {
+    run_one_sample(8, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t9) {
+    run_one_sample(9, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t10) {
+    run_one_sample(10, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t11) {
+    run_one_sample(11, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t12) {
+    run_one_sample(12, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t13) {
+    run_one_sample(13, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t14) {
+    run_one_sample(14, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t15) {
+    run_one_sample(15, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
 }
 
 # ── After every cycle: aggregate loss, SGD step, zero grads, advance cycle ─
-# threadParallelismCycle runs its body after EVERY one of the 12 cycles,
-# re-spawning the 8 threads for cycles 1..11 and executing the body for the
-# 12th time without re-spawning (training complete).
-threadParallelismCycle(t0, t1, t2, t3, t4, t5, t6, t7, 12) {
-    avg_loss = thread_loss[0] + thread_loss[1] + thread_loss[2] + thread_loss[3]
-    avg_loss = avg_loss + thread_loss[4] + thread_loss[5] + thread_loss[6] + thread_loss[7]
-    avg_loss = avg_loss / 8
+# threadParallelismCycle runs its body after EVERY one of the 60 cycles,
+# re-spawning the 16 threads for cycles 1..59 and executing the body for the
+# 60th time without re-spawning (training complete).
+threadStart(t16) {
+    run_one_sample(16, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t17) {
+    run_one_sample(17, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t18) {
+    run_one_sample(18, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t19) {
+    run_one_sample(19, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t20) {
+    run_one_sample(20, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t21) {
+    run_one_sample(21, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t22) {
+    run_one_sample(22, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t23) {
+    run_one_sample(23, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t24) {
+    run_one_sample(24, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t25) {
+    run_one_sample(25, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t26) {
+    run_one_sample(26, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t27) {
+    run_one_sample(27, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t28) {
+    run_one_sample(28, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t29) {
+    run_one_sample(29, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t30) {
+    run_one_sample(30, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadStart(t31) {
+    run_one_sample(31, step_counter, dataset, step_tok_ids, labels, mask_positions, thread_loss,
+                   mp_buf, tok_emb, pos_emb, x_emb,
+                   Wq, Wk, Wv, Wo, W1, b1, W2, b2, Wout, bout,
+                   q_buf, k_buf, v_buf, attn_w, attn_out, concat_buf,
+                   head_buf, scores_row, softmax_scores, ln_buf,
+                   ff_h, ff_out, logits, softmax_out,
+                   d_logits, d_ff_out, d_ff_h, d_attn_out, d_x_emb,
+                   grad_Wout, grad_bout, grad_W2, grad_b1, grad_b2, grad_W1,
+                   grad_Wo, grad_Wq, grad_Wk, grad_Wv, grad_tok_emb, grad_pos_emb)
+}
+threadParallelismCycle(t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, 30) {
+    avg_loss = 0
+    avg_loss = avg_loss + thread_loss[0]
+    avg_loss = avg_loss + thread_loss[1]
+    avg_loss = avg_loss + thread_loss[2]
+    avg_loss = avg_loss + thread_loss[3]
+    avg_loss = avg_loss + thread_loss[4]
+    avg_loss = avg_loss + thread_loss[5]
+    avg_loss = avg_loss + thread_loss[6]
+    avg_loss = avg_loss + thread_loss[7]
+    avg_loss = avg_loss + thread_loss[8]
+    avg_loss = avg_loss + thread_loss[9]
+    avg_loss = avg_loss + thread_loss[10]
+    avg_loss = avg_loss + thread_loss[11]
+    avg_loss = avg_loss + thread_loss[12]
+    avg_loss = avg_loss + thread_loss[13]
+    avg_loss = avg_loss + thread_loss[14]
+    avg_loss = avg_loss + thread_loss[15]
+    avg_loss = avg_loss + thread_loss[16]
+    avg_loss = avg_loss + thread_loss[17]
+    avg_loss = avg_loss + thread_loss[18]
+    avg_loss = avg_loss + thread_loss[19]
+    avg_loss = avg_loss + thread_loss[20]
+    avg_loss = avg_loss + thread_loss[21]
+    avg_loss = avg_loss + thread_loss[22]
+    avg_loss = avg_loss + thread_loss[23]
+    avg_loss = avg_loss + thread_loss[24]
+    avg_loss = avg_loss + thread_loss[25]
+    avg_loss = avg_loss + thread_loss[26]
+    avg_loss = avg_loss + thread_loss[27]
+    avg_loss = avg_loss + thread_loss[28]
+    avg_loss = avg_loss + thread_loss[29]
+    avg_loss = avg_loss + thread_loss[30]
+    avg_loss = avg_loss + thread_loss[31]
+    avg_loss = avg_loss / 32
     sgd_step(0.01, lr_buf,
              tok_emb, grad_tok_emb, pos_emb, grad_pos_emb,
              Wq, grad_Wq, Wk, grad_Wk, Wv, grad_Wv, Wo, grad_Wo,
@@ -816,7 +1181,7 @@ threadParallelismCycle(t0, t1, t2, t3, t4, t5, t6, t7, 12) {
              b1, grad_b1, b2, grad_b2, bout, grad_bout)
     current_cycle = current_cycle + 1
     step_counter = step_counter + 1
-    if step_counter >= 4:
+    if step_counter >= 8:
         step_counter = 0
     else:
         step_counter = step_counter

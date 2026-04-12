@@ -5,9 +5,9 @@ import in.ramanujan.pojo.RuleEngineInputUnits;
 import lombok.Data;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -25,7 +25,7 @@ public class Array extends RuleEngineInputUnits {
     private Integer frameCount;
 
     public Array() {
-        values = new HashMap<>();
+        values = new ConcurrentHashMap<>();
         setClazz(Array.class);
     }
 }

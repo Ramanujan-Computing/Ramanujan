@@ -24,7 +24,7 @@ FetchContent_MakeAvailable(jsoncpp)
 # Linux:  sudo apt install ocl-icd-opencl-dev opencl-headers
 # Windows: install GPU vendor drivers (NVIDIA CUDA Toolkit / AMD ROCm / Intel OpenCL SDK)
 # ---------------------------------------------------------------------------
-option(ENABLE_GPU "Build with OpenCL GPU kernel execution support" OFF)
+option(ENABLE_GPU "Build with OpenCL GPU kernel execution support" ON)
 if(ENABLE_GPU)
     if(APPLE)
         # macOS ships OpenCL as a system framework (-framework OpenCL).
@@ -180,15 +180,21 @@ add_executable(native ${SOURCE_FILES})
 #add_library(native SHARED ${SOURCE_FILES})
 target_link_libraries(native PRIVATE jsoncpp_static)
 
+# Production shared-library target (no DEBUG_BUILD – used by the JVM via JNI)
+add_library(native_lib SHARED ${SOURCE_FILES})
+target_link_libraries(native_lib PRIVATE jsoncpp_static)
+set_target_properties(native_lib PROPERTIES OUTPUT_NAME "native")
+
 # Debug build target
 add_library(native_debug SHARED ${SOURCE_FILES})
 target_link_libraries(native_debug PRIVATE jsoncpp_static)
 set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
 set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
 
-# Link OpenCL into both targets when GPU support is enabled
+# Link OpenCL into all three targets when GPU support is enabled
 if(ENABLE_GPU)
     target_link_libraries(native       PRIVATE OpenCL::OpenCL)
+    target_link_libraries(native_lib   PRIVATE OpenCL::OpenCL)
     target_link_libraries(native_debug PRIVATE OpenCL::OpenCL)
 endif()
 

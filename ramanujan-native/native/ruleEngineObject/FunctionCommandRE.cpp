@@ -16,6 +16,7 @@
 
 #ifdef GPU_ENABLED
 #include <set>
+#include <mutex>
 
 // ==================== OpenCL ====================
 #ifdef __APPLE__
@@ -26,18 +27,45 @@
 
 // ---------------------------------------------------------------------------
 // Singleton OpenCL context  (created once, reused for all GPU dispatches)
+// cl_context and cl_device_id are thread-safe to share across threads.
+// cl_command_queue is NOT thread-safe — each thread owns a private queue
+// (see ThreadQueue / t_threadQueue below).
+// The shared context is initialised once under GpuContext::initMutex.
 // ---------------------------------------------------------------------------
 namespace {
 
+static std::string gpuInfoString(cl_platform_id platformId, cl_platform_info infoKey) {
+    size_t valueSize = 0;
+    cl_int err = clGetPlatformInfo(platformId, infoKey, 0, nullptr, &valueSize);
+    if (err != CL_SUCCESS || valueSize == 0) return "unknown";
+    std::string value(valueSize, '\0');
+    err = clGetPlatformInfo(platformId, infoKey, valueSize, &value[0], nullptr);
+    if (err != CL_SUCCESS) return "unknown";
+    while (!value.empty() && (value.back() == '\0' || value.back() == '\n' || value.back() == '\r')) value.pop_back();
+    return value;
+}
+
+static std::string gpuInfoString(cl_device_id deviceId, cl_device_info infoKey) {
+    size_t valueSize = 0;
+    cl_int err = clGetDeviceInfo(deviceId, infoKey, 0, nullptr, &valueSize);
+    if (err != CL_SUCCESS || valueSize == 0) return "unknown";
+    std::string value(valueSize, '\0');
+    err = clGetDeviceInfo(deviceId, infoKey, valueSize, &value[0], nullptr);
+    if (err != CL_SUCCESS) return "unknown";
+    while (!value.empty() && (value.back() == '\0' || value.back() == '\n' || value.back() == '\r')) value.pop_back();
+    return value;
+}
+
 struct GpuContext {
-    cl_platform_id    platform = nullptr;
-    cl_device_id      device   = nullptr;
-    cl_context        context  = nullptr;
-    cl_command_queue  queue    = nullptr;
+    cl_platform_id    platform    = nullptr;
+    cl_device_id      device      = nullptr;
+    cl_context        context     = nullptr;
     bool initialized = false;
     bool available   = false;
+    std::mutex        initMutex;   // guards one-time initialisation only
 
     void init() {
+        std::lock_guard<std::mutex> lk(initMutex);
         if (initialized) return;
         initialized = true;
 
@@ -79,45 +107,74 @@ struct GpuContext {
             return;
         }
 
-        // clCreateCommandQueue is deprecated in OpenCL 2.0+.
-        // Use clCreateCommandQueueWithProperties on hosts that advertise CL 2.0+
-        // (Linux/Windows with modern drivers) and suppress the deprecation warning
-        // on macOS where OpenCL 1.2 is the maximum supported version.
-#if defined(CL_VERSION_2_0)
-        const cl_queue_properties qprops[] = {0};
-        queue = clCreateCommandQueueWithProperties(context, device, qprops, &err);
-#else
-#   ifdef __APPLE__
-#       pragma clang diagnostic push
-#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#   endif
-        queue = clCreateCommandQueue(context, device, 0, &err);
-#   ifdef __APPLE__
-#       pragma clang diagnostic pop
-#   endif
-#endif
-        if (err != CL_SUCCESS) {
-            fprintf(stderr, "[GPU] clCreateCommandQueue failed: err=%d\n", err);
-            clReleaseContext(context);
-            context = nullptr;
-            return;
-        }
-
         available = true;
+        std::string platformName = gpuInfoString(platform, CL_PLATFORM_NAME);
+        std::string deviceName = gpuInfoString(device, CL_DEVICE_NAME);
+        std::string deviceVendor = gpuInfoString(device, CL_DEVICE_VENDOR);
         fprintf(stderr, "[GPU] OpenCL context initialised successfully "
                         "(platforms found: %u)\n", numPlatforms);
+        fprintf(stderr, "[GPU] Selected platform: %s\n", platformName.c_str());
+        fprintf(stderr, "[GPU] Selected device: %s (%s)\n", deviceName.c_str(), deviceVendor.c_str());
     }
 
     ~GpuContext() {
-        if (queue)   clReleaseCommandQueue(queue);
         if (context) clReleaseContext(context);
     }
 };
 
 static GpuContext s_clCtx;
 
-// Cache compiled kernels by source string to avoid recompiling on every call
-static std::unordered_map<std::string, cl_kernel> s_kernelCache;
+// ── Per-thread command queue ─────────────────────────────────────────────
+// Each Java thread (spawned by executeInParallel) gets its own queue so
+// multiple threads can dispatch kernels to the GPU concurrently.
+// The queue is lazily created on first GPU call within that thread.
+struct ThreadQueue {
+    cl_command_queue queue = nullptr;
+
+    cl_command_queue get() {
+        if (queue) return queue;
+        if (!s_clCtx.available) return nullptr;
+        cl_int err;
+#if defined(CL_VERSION_2_0)
+        const cl_queue_properties qprops[] = {0};
+        queue = clCreateCommandQueueWithProperties(s_clCtx.context, s_clCtx.device, qprops, &err);
+#else
+#   ifdef __APPLE__
+#       pragma clang diagnostic push
+#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#   endif
+        queue = clCreateCommandQueue(s_clCtx.context, s_clCtx.device, 0, &err);
+#   ifdef __APPLE__
+#       pragma clang diagnostic pop
+#   endif
+#endif
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clCreateCommandQueue (per-thread) failed: %d\n", err);
+            queue = nullptr;
+        }
+        return queue;
+    }
+
+    ~ThreadQueue() {
+        if (queue) {
+            clFlush(queue);
+            clFinish(queue);
+            clReleaseCommandQueue(queue);
+        }
+    }
+};
+static thread_local ThreadQueue t_threadQueue;
+
+// ── Shared program cache (cl_program is thread-safe after clBuildProgram) ──
+// Compile each source string only once; threads then create their own kernels.
+static std::unordered_map<std::string, cl_program> s_programCache;
+static std::mutex                                   s_programCacheMutex;
+static std::once_flag                               s_gpuDispatchLogOnce;
+
+// ── Per-thread kernel cache ──────────────────────────────────────────────────
+// cl_kernel is NOT thread-safe for concurrent clSetKernelArg calls on the
+// same object.  Each thread therefore owns its own cl_kernel per source string.
+static thread_local std::unordered_map<std::string, cl_kernel> t_kernelCache;
 
 // Extract "kernelName" from "__kernel void kernelName("
 static std::string gpuExtractKernelName(const std::string& src) {
@@ -298,9 +355,18 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
     // If this function is flagged as a GPU kernel, skip the normal unit-chain
     // execution entirely and dispatch through OpenCL instead.
     if (functionInfoRE->isGpu) {
+        // Each thread uses its own cl_command_queue (t_threadQueue) so GPU
+        // dispatches from parallel Java threads can overlap freely.
+        // The shared cl_context + cl_device_id are thread-safe in OpenCL.
         s_clCtx.init();
         if (!s_clCtx.available) {
             fprintf(stderr, "[GPU] OpenCL unavailable – cannot execute GPU function\n");
+            return nextUnit;
+        }
+
+        cl_command_queue clQueue = t_threadQueue.get();
+        if (!clQueue) {
+            fprintf(stderr, "[GPU] Could not obtain per-thread command queue\n");
             return nextUnit;
         }
 
@@ -310,34 +376,49 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
         // range-dim args – no dedicated M parameter exists any more.
         cl_uint workDim = (cl_uint)parallelismIdxs.size();
 
-        // -- Compile/cache kernel --
+        // -- Step 1: ensure cl_program is compiled (shared, lock only on miss) --
+        // cl_program is thread-safe after clBuildProgram completes.
+        {
+            std::lock_guard<std::mutex> cacheLock(s_programCacheMutex);
+            if (s_programCache.find(kernelSrc) == s_programCache.end()) {
+                cl_int err;
+                const char* csrc = kernelSrc.c_str();
+                size_t srcLen    = kernelSrc.size();
+                cl_program prog  = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
+                err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
+                if (err != CL_SUCCESS) {
+                    size_t logLen = 0;
+                    clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
+                    std::string log(logLen, '\0');
+                    clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
+                    fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
+                    clReleaseProgram(prog);
+                    return nextUnit;
+                }
+                s_programCache[kernelSrc] = prog;
+                // Note: program is retained in cache; released at process exit.
+            }
+        }
+
+        // -- Step 2: get (or create) a per-thread cl_kernel from the compiled program --
+        // clSetKernelArg on the same cl_kernel object is NOT safe across threads.
+        // Each thread owns its own cl_kernel instance.
         cl_kernel kernel = nullptr;
-        auto cacheIt = s_kernelCache.find(kernelSrc);
-        if (cacheIt != s_kernelCache.end()) {
-            kernel = cacheIt->second;
-        } else {
-            cl_int err;
-            const char* csrc = kernelSrc.c_str();
-            size_t srcLen    = kernelSrc.size();
-            cl_program prog  = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
-            err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
-            if (err != CL_SUCCESS) {
-                size_t logLen = 0;
-                clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
-                std::string log(logLen, '\0');
-                clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
-                fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
-                clReleaseProgram(prog);
-                return nextUnit;
+        {
+            auto kIt = t_kernelCache.find(kernelSrc);
+            if (kIt != t_kernelCache.end()) {
+                kernel = kIt->second;
+            } else {
+                cl_program prog = s_programCache[kernelSrc];   // safe read after build
+                std::string kname = gpuExtractKernelName(kernelSrc);
+                cl_int err;
+                kernel = clCreateKernel(prog, kname.c_str(), &err);
+                if (err != CL_SUCCESS) {
+                    fprintf(stderr, "[GPU] clCreateKernel (per-thread) '%s' failed: %d\n", kname.c_str(), err);
+                    return nextUnit;
+                }
+                t_kernelCache[kernelSrc] = kernel;
             }
-            std::string kname = gpuExtractKernelName(kernelSrc);
-            kernel = clCreateKernel(prog, kname.c_str(), &err);
-            clReleaseProgram(prog);  // kernel holds an internal reference
-            if (err != CL_SUCCESS) {
-                fprintf(stderr, "[GPU] clCreateKernel('%s') failed: %d\n", kname.c_str(), err);
-                return nextUnit;
-            }
-            s_kernelCache[kernelSrc] = kernel;
         }
 
         // -- Identify data arg indices (all args that are NOT range-dim/parallelism args) --
@@ -388,12 +469,21 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
         if (!bufferError) {
             // -- Enqueue kernel --
             err = clEnqueueNDRangeKernel(
-                s_clCtx.queue, kernel, workDim,
+                clQueue, kernel, workDim,
                 nullptr, globalWorkSize.data(), nullptr,
                 0, nullptr, nullptr);
 
             if (err == CL_SUCCESS) {
-                clFinish(s_clCtx.queue);
+                std::call_once(s_gpuDispatchLogOnce, [&]() {
+                    std::string kernelName = gpuExtractKernelName(kernelSrc);
+                    fprintf(stderr, "[GPU] First kernel dispatch succeeded: %s (workDim=%u",
+                            kernelName.c_str(), workDim);
+                    for (size_t workSizeIndex = 0; workSizeIndex < globalWorkSize.size(); workSizeIndex++) {
+                        fprintf(stderr, "%s%zu", workSizeIndex == 0 ? ", global=" : "x", globalWorkSize[workSizeIndex]);
+                    }
+                    fprintf(stderr, ")\n");
+                });
+                clFinish(clQueue);
 
                 // -- Read back results: float→double --
                 for (int di = 0; di < (int)dataArgIndices.size(); di++) {
@@ -403,7 +493,7 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                     ArrayValue* av = arrVal->arrayValue;
 
                     clEnqueueReadBuffer(
-                        s_clCtx.queue, buffers[di], CL_TRUE, 0,
+                        clQueue, buffers[di], CL_TRUE, 0,
                         av->totalSize * sizeof(float), staging[di].data(),
                         0, nullptr, nullptr);
 

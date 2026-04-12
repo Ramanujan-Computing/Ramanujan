@@ -355,6 +355,11 @@ def main() -> None:
         except (ValueError, EOFError):
             mask_pos = 8
 
+        if mask_pos >= SEQ:
+            print(f"  [!] Mask position {mask_pos} is beyond the {SEQ}-char window.")
+            print(f"      The model only sees the first {SEQ} characters. Place '_' within that range.")
+            continue
+
         text    = raw.replace("_", " ")
         tok_ids = tokenize(text)
         print(f"  Running GPU forward pass (mask_pos={mask_pos}) …", flush=True)

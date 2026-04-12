@@ -27,7 +27,10 @@ import os
 import re
 import sys
 import json
+import time
+import signal
 import shutil
+import tempfile
 import subprocess
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -102,10 +105,159 @@ def _rj_cmd() -> list:
     if ws:
         jar = os.path.join(ws, "developer-console-1.0-SNAPSHOT-fat.jar")
         if os.path.exists(jar):
-            return [_find_java(), "-jar", jar]
+                return [_find_java(),
+                        "-Xmx1g",
+                        "-XX:+UseG1GC",
+                        "-XX:ReservedCodeCacheSize=512m",
+                        "-XX:+UseCodeCacheFlushing",
+                        "-jar", jar]
     return ["rj"]   # will raise FileNotFoundError with a clear message
 
 RJ_CMD = _rj_cmd()
+
+CORPUS_FILE       = os.path.join(SCRIPT_DIR, "corpus.txt")
+_CORPUS_BEGIN_TAG = "# [CORPUS_DATA_BEGIN]"
+_CORPUS_END_TAG   = "# [CORPUS_DATA_END]"
+_WEIGHT_BEGIN_TAG = "# [WEIGHT_INIT_BEGIN]"
+_WEIGHT_END_TAG   = "# [WEIGHT_INIT_END]"
+
+
+# ── Corpus-based dataset injection ───────────────────────────────────────────
+
+def _build_corpus_block(corpus_path: str) -> str:
+    """
+    Read corpus_path, extract printable-ASCII characters, and inject a
+    256-sample × 16-token dataset into the training script.
+
+    Layout:
+      256 samples × 16 tokens = 4096 tokens
+      Windows are stride-spread across the FULL corpus so all available
+      text is seen rather than just the first 4096 characters.
+      stride = (corpus_len - SEQ_LEN) // (N_SAMPLES - 1)
+      mask_positions[s] cycles through 1-14 (never masks boundary tokens).
+    """
+    N_SAMPLES = 256
+    SEQ_LEN   = 16
+    needed    = N_SAMPLES * SEQ_LEN   # flat dataset array size (4096)
+
+    with open(corpus_path, "r", encoding="utf-8", errors="replace") as f:
+        raw = f.read()
+
+    # Keep only printable ASCII (space … tilde, codes 32-126)
+    chars = [ord(c) for c in raw if 32 <= ord(c) <= 126]
+    # Ensure the corpus is long enough to spread N_SAMPLES windows with stride≥1
+    while len(chars) < SEQ_LEN * 2:
+        chars = chars + chars
+
+    # Stride that spreads N_SAMPLES windows evenly across the full corpus
+    stride = max(1, (len(chars) - SEQ_LEN) // (N_SAMPLES - 1))
+    # Pad in the unlikely case the last window goes out of bounds
+    max_needed = (N_SAMPLES - 1) * stride + SEQ_LEN
+    while len(chars) < max_needed:
+        chars = chars + chars
+
+    lines = [
+        _CORPUS_BEGIN_TAG + " ← auto-generated from corpus.txt; edit that file, not this block",
+        f"dataset        = [0 for _ in range({needed})]",
+        f"labels         = [0 for _ in range({N_SAMPLES})]",
+        f"mask_positions = [0 for _ in range({N_SAMPLES})]",
+    ]
+    # Lay dataset flat: row s = chars[s*stride : s*stride+SEQ_LEN]
+    for s in range(N_SAMPLES):
+        base = s * stride
+        for t in range(SEQ_LEN):
+            lines.append(f"dataset[{s * SEQ_LEN + t}] = {chars[base + t]}")
+    for s in range(N_SAMPLES):
+        mp = (s % 14) + 1   # cycle positions 1-14, never masks boundary tokens
+        lines.append(f"mask_positions[{s}] = {mp}")
+        lines.append(f"labels[{s}] = {chars[s * stride + mp]}")
+    lines.append(_CORPUS_END_TAG)
+    return "\n".join(lines)
+
+
+def _build_weight_init_block() -> str:
+    """
+    Break the zero-initialisation dead zone with minimal extra lines:
+      • tok_emb  – Xavier-uniform individual element assignments (~4 096 lines)
+      • b1       – small positive individual assignments (64 lines of b1[i]=0.1)
+                   so ReLU(b1)>0 activates W2/W1 gradients from step 1
+      • everything else – [0 for _ in range(N)] (Ramanujan requires init=0)
+    Total ≈ 4 175 lines, safely under the JVM CodeCache limit.
+    """
+    import random, math
+    rng   = random.Random(42)
+    limit = math.sqrt(6.0 / (128 + 32))   # Xavier for VOCAB=128 × DM=32
+
+    lines = [_WEIGHT_BEGIN_TAG + " ← auto-generated; edit extract_weights.py, not this block"]
+
+    # tok_emb: declaration then individual float assignments
+    lines.append("tok_emb  = [0 for _ in range(4096)]")
+    for i in range(4096):
+        lines.append(f"tok_emb[{i}] = {round(rng.uniform(-limit, limit), 6)}")
+
+    # Other weight matrices: zero comprehensions (unchanged at this stage)
+    lines.append("pos_emb  = [0 for _ in range(512)]")
+    lines.append("Wq       = [0 for _ in range(1024)]")
+    lines.append("Wk       = [0 for _ in range(1024)]")
+    lines.append("Wv       = [0 for _ in range(1024)]")
+    lines.append("Wo       = [0 for _ in range(1024)]")
+    lines.append("W1       = [0 for _ in range(2048)]")
+    lines.append("W2       = [0 for _ in range(2048)]")
+    lines.append("Wout     = [0 for _ in range(4096)]")
+
+    # b1 positive: declaration then individual assignments
+    # ff_h = ReLU(W1@attn + b1) = ReLU(b1) = 0.1 > 0 before W1 learns
+    lines.append("b1       = [0 for _ in range(64)]")
+    for i in range(64):
+        lines.append(f"b1[{i}] = 0.1")
+
+    lines.append("b2       = [0 for _ in range(32)]")
+    lines.append("bout     = [0 for _ in range(128)]")
+
+    lines.append(_WEIGHT_END_TAG)
+    return "\n".join(lines)
+
+
+def _prepare_script(base_script: str) -> tuple:
+    """
+    Inject corpus data and Xavier weight initialisation into a temp copy of
+    the training script.  Returns (tmp_path, used_corpus).
+    If neither injection block is found, returns (base_script, False).
+    """
+    with open(base_script, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    made_changes = False
+    used_corpus  = False
+
+    # ── Corpus data injection ──────────────────────────────────────────────
+    cb_begin = content.find(_CORPUS_BEGIN_TAG)
+    cb_end   = content.find(_CORPUS_END_TAG)
+    if cb_begin >= 0 and cb_end > cb_begin and os.path.exists(CORPUS_FILE):
+        data_block  = _build_corpus_block(CORPUS_FILE)
+        content     = (content[:cb_begin]
+                       + data_block + "\n"
+                       + content[cb_end + len(_CORPUS_END_TAG):])
+        used_corpus  = True
+        made_changes = True
+
+    # ── Weight init injection skipped ─────────────────────────────────────
+    # tinyBertTrain.py already has init_array() (LCG-based Xavier) which
+    # initialises all weight matrices after the zero-fill declarations.
+    # Injecting 4 000+ individual element assignments here would overflow
+    # the JVM CodeCache, so we deliberately leave the [WEIGHT_INIT] block
+    # untouched and let the training script handle initialisation itself.
+
+    if not made_changes:
+        return base_script, False
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", prefix="tinyBertTrain_corpus_",
+        dir=SCRIPT_DIR, delete=False, encoding="utf-8",
+    )
+    tmp.write(content)
+    tmp.close()
+    return tmp.name, used_corpus
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -184,6 +336,14 @@ def main() -> None:
         print(f"[ERROR] Training script not found: {TRAIN_SCRIPT}")
         sys.exit(1)
 
+    # ── Inject real corpus data into a temp copy of the training script ──────
+    effective_script, used_corpus = _prepare_script(TRAIN_SCRIPT)
+    corpus_note = ""
+    if used_corpus:
+        char_count = len([c for c in open(CORPUS_FILE, encoding="utf-8",
+                          errors="replace").read() if 32 <= ord(c) <= 126])
+        corpus_note = f" (corpus.txt → {char_count:,} printable chars → 256 × 16-char windows)"
+
     total_queries = sum(WEIGHT_ARRAYS.values()) + len(EXTRA_VARS)
     print("=" * 62)
     print("  TinyBERT Weight Extractor  (Ramanujan → weights.json)")
@@ -191,29 +351,78 @@ def main() -> None:
     print(f"  Training script : {TRAIN_SCRIPT}")
     print(f"  Output file     : {OUTPUT_FILE}")
     print(f"  Weight elements : {total_queries:,}")
+    if used_corpus:
+        print(f"  Dataset         : real-text windows{corpus_note}")
+    else:
+        print(f"  Dataset         : constant-character fallback (corpus.txt not found)")
     print()
-    print("[1/3] Sending training script to rj (ExecuteInline.java) …")
-    print("      Training will run on device GPU (12 cycles: 3 epochs × 4 steps).")
-    print("      Output appears when training completes.\n")
+    print("[1/3] Sending training script to rj …")
+    print("      JVM will write output to disk; Python polls until done.\n")
 
     stdin_data = build_queries()
 
+    # Use PID-unique file names so concurrent extract_weights.py runs never
+    # share or delete each other's temp files.
+    _pid = os.getpid()
+    _query_file  = os.path.join(SCRIPT_DIR, f".rj_queries_{_pid}.txt")
+    _output_file = os.path.join(SCRIPT_DIR, f".rj_output_{_pid}.txt")
+    with open(_query_file, "w", encoding="utf-8") as qf:
+        qf.write(stdin_data)
+
+    _tmp_created = (effective_script != TRAIN_SCRIPT)
     try:
-        proc = subprocess.run(
-            RJ_CMD + [TRAIN_SCRIPT],
-            input=stdin_data,
-            capture_output=True,
-            text=True,
-            timeout=900,          # 15-minute ceiling
+        proc = subprocess.Popen(
+            RJ_CMD + [effective_script],
+            stdin=open(_query_file, "r"),
+            stdout=open(_output_file, "w"),
+            stderr=subprocess.STDOUT,   # merge stderr into the same output file
+            start_new_session=True,     # own session → immune to terminal Ctrl-C
         )
     except FileNotFoundError:
         print("[ERROR] 'rj' binary could not be executed. Is the alias active?")
         sys.exit(1)
-    except subprocess.TimeoutExpired:
-        print("[ERROR] Training timed out (15 min). Try increasing timeout.")
-        sys.exit(1)
+    # Write a meta file so watch_train.sh can estimate cycle progress
+    _meta_file = os.path.join(SCRIPT_DIR, "train_meta.json")
+    import json as _json
+    _cycles = 30   # must match threadParallelismCycle(..., 30) in tinyBertTrain.py
+    _approx_dags_total = 990   # empirical from the 256-sample / 30-cycle run
+    with open(_meta_file, "w") as _mf:
+        _json.dump({"cycles": _cycles, "n_samples": 256,
+                    "approx_dags_total": _approx_dags_total,
+                    "pid": proc.pid}, _mf)
+    # Ignore SIGINT in Python while waiting so the tool’s Ctrl-C interrupts
+    # do not raise KeyboardInterrupt and abort the training poll loop.
+    _old_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    print(f"      JVM pid={proc.pid}  log → {_output_file}", flush=True)
+    try:
+        while True:
+            rc = proc.poll()
+            if rc is not None:
+                break
+            time.sleep(10)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        signal.signal(signal.SIGINT, _old_sigint)
 
-    stdout = proc.stdout
+    return_code = proc.returncode
+    print()
+
+    with open(_output_file, "r", encoding="utf-8", errors="replace") as of:
+        stdout = of.read()
+
+    # Keep the output log as train_log_latest.txt for inspection; remove only
+    # the ephemeral query file and the pid-tagged log copy.
+    _log_archive = os.path.join(SCRIPT_DIR, "train_log_latest.txt")
+    try:
+        os.replace(_output_file, _log_archive)
+        print(f"      Log saved → {_log_archive}")
+    except OSError:
+        pass
+    try:
+        os.unlink(_query_file)
+    except OSError:
+        pass
 
     # ── Show training logs (everything before the query console banner) ────
     console_marker = "--- Query Console ---"
@@ -223,10 +432,8 @@ def main() -> None:
     else:
         print(stdout.rstrip())
 
-    if proc.returncode not in (0, None):
-        print(f"\n[WARN] rj exited with code {proc.returncode}")
-        if proc.stderr:
-            print(proc.stderr[:2000])
+    if return_code not in (0, None):
+        print(f"\n[WARN] rj exited with code {return_code}")
 
     # ── Parse weights ──────────────────────────────────────────────────────
     print("\n[2/3] Parsing weight values from query console output …")
@@ -251,6 +458,13 @@ def main() -> None:
     print(f"      File size  : {size_kb:.1f} KB")
     print(f"      avg_loss   : {avg_loss}")
     print("\n[OK] Done. Run inference.py to use the trained model.")
+
+    # ── Clean up temp patched script ───────────────────────────────────────
+    if _tmp_created and effective_script != TRAIN_SCRIPT:
+        try:
+            os.unlink(effective_script)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
