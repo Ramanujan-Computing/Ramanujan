@@ -7,10 +7,14 @@
 #include <chrono>
 #include <fstream>
 #include <sstream>
+#include <vector>
+#include <algorithm>
+#include <cstdlib>
 
 //#include <boost/stacktrace.hpp>
 
 #include "Processor.hpp"
+#include "dataContainer/ArrayRE.h"
 #include<string>
 
 class Test {
@@ -99,6 +103,79 @@ public:
 
         std::unordered_map<std::string, std::unordered_map<std::string, double>*> * arrayMap = processor->arrChangeMap();
         std::unordered_map<std::string, double> *variableMap = processor->varChangeMap();
+
+        // ── Dump arrays to CSV if RAMANUJAN_DUMP_ARRAYS is set ──
+        // Format: "varname1:/path/to/out1.csv,varname2:/path/to/out2.csv"
+        const char* dumpSpec = std::getenv("RAMANUJAN_DUMP_ARRAYS");
+        if (dumpSpec != nullptr) {
+            // Build a map of arrayName -> (val ptr, size) from processor's arrayREs
+            std::unordered_map<std::string, std::pair<double*, int>> arrMap;
+            std::cerr << "[dump] Available arrays:\n";
+            for (auto* unit : processor->getArrayREs()) {
+                ArrayRE* arrayRE = (ArrayRE*)unit;
+                ArrayValue* av = arrayRE->arrayValue.arrayValue;
+                std::cerr << "  name='" << arrayRE->name << "' id='" << arrayRE->id
+                          << "' size=" << av->totalSize << "\n";
+                if (av->totalSize > 0) {
+                    arrMap[arrayRE->name] = {av->val, av->totalSize};
+                    arrMap[arrayRE->id] = {av->val, av->totalSize};
+                }
+            }
+
+            std::string spec(dumpSpec);
+            std::istringstream specStream(spec);
+            std::string pair;
+            while (std::getline(specStream, pair, ',')) {
+                size_t colonPos = pair.find(':');
+                if (colonPos == std::string::npos) continue;
+                std::string varName = pair.substr(0, colonPos);
+                std::string outPath = pair.substr(colonPos + 1);
+
+                auto it = arrMap.find(varName);
+                if (it == arrMap.end()) {
+                    std::cerr << "[dump] Array '" << varName << "' not found\n";
+                    std::cerr << "[dump] Available arrays:";
+                    for (auto const &e : arrMap) std::cerr << " " << e.first;
+                    std::cerr << "\n";
+                    continue;
+                }
+
+                double* vals = it->second.first;
+                int size = it->second.second;
+                std::ofstream out(outPath);
+                for (int i = 0; i < size; i++) {
+                    if (i > 0) out << ",";
+                    out << vals[i];
+                }
+                out << "\n";
+                out.close();
+                std::cerr << "[dump] " << varName << " -> " << outPath
+                          << " (" << size << " values)\n";
+            }
+        }
+
+        // ── Dump variables if RAMANUJAN_DUMP_VARS is set ──
+        const char* dumpVarSpec = std::getenv("RAMANUJAN_DUMP_VARS");
+        if (dumpVarSpec != nullptr && variableMap != nullptr) {
+            std::string spec(dumpVarSpec);
+            std::istringstream specStream(spec);
+            std::string pair;
+            while (std::getline(specStream, pair, ',')) {
+                size_t colonPos = pair.find(':');
+                if (colonPos == std::string::npos) continue;
+                std::string varName = pair.substr(0, colonPos);
+                std::string outPath = pair.substr(colonPos + 1);
+                auto it = variableMap->find(varName);
+                if (it != variableMap->end()) {
+                    std::ofstream out(outPath);
+                    out << it->second << "\n";
+                    out.close();
+                    std::cerr << "[dump] var " << varName << " = " << it->second << " -> " << outPath << "\n";
+                } else {
+                    std::cerr << "[dump] Variable '" << varName << "' not found\n";
+                }
+            }
+        }
 
         int a =1;
         a++;

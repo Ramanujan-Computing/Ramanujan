@@ -35,17 +35,11 @@ public class PackageBuildHelper {
 
     public static String readFileWithNewLine(String fileLocation) {
         try {
-            String data = "";
             File file = new File(fileLocation);
-            Scanner reader = new Scanner(file);
-            while (reader.hasNextLine()) {
-                data += reader.nextLine();
-                data += "\n";
-            }
-            reader.close();
-            return data;
-        } catch (FileNotFoundException e) {
-            System.out.println("An error occurred.");
+            byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            System.out.println("Failed to read file: " + fileLocation);
             System.exit(1);
             return null;
         }

@@ -257,7 +257,23 @@ public class GpuFunctionBodyConverter {
             return indent + convertExpr(aug.getTarget()) + " " + binOpToC(aug.getOp()) + "= " + convertExpr(aug.getValue()) + ";\n";
 
         } else if (stmt instanceof ExprNode) {
-            return indent + convertExpr(((ExprNode) stmt).getValue()) + ";\n";
+            // Handle in-place built-in functions: EXP(x) -> x = exp(x), LOG(x) -> x = log(x), SQRT(x) -> x = sqrt(x)
+            AstNode exprVal = ((ExprNode) stmt).getValue();
+            if (exprVal instanceof CallNode) {
+                CallNode call = (CallNode) exprVal;
+                String calledName = (call.getFunc() instanceof NameNode) ? ((NameNode) call.getFunc()).getId() : null;
+                if (calledName != null && call.getArgs().size() == 1) {
+                    String openclFunc = null;
+                    if ("EXP".equals(calledName)) openclFunc = "exp";
+                    else if ("LOG".equals(calledName)) openclFunc = "log";
+                    else if ("SQRT".equals(calledName)) openclFunc = "sqrt";
+                    if (openclFunc != null) {
+                        String arg = convertExpr(call.getArgs().get(0));
+                        return indent + arg + " = " + openclFunc + "(" + arg + ");\n";
+                    }
+                }
+            }
+            return indent + convertExpr(exprVal) + ";\n";
 
         } else if (stmt instanceof IfNode) {
             return convertIf((IfNode) stmt, indent);

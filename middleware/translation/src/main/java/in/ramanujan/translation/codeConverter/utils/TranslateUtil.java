@@ -55,10 +55,16 @@ public class TranslateUtil {
                 String code = pairCodeSnippetElementWithParent.getCodeSnippetElement().getCode();
 
                 // For the first code snippet, if it is Python, prepend 2D array declarations for each CSV
+                // (declaration only — no per-element assignments; values are bulk-populated after interpretation)
                 if (isFirstDagElementBeingCreated && isPythonCode(code) && csvInformationList != null && !csvInformationList.isEmpty()) {
-                    String csvInitCode = generateCsvInitPythonCode(csvInformationList);
-                    if (!csvInitCode.isEmpty()) {
-                        code = csvInitCode + code;
+                    System.out.println("[TranslateUtil] Generating CSV declarations for " + csvInformationList.size() + " files");
+                    System.out.flush();
+                    long declStart = System.currentTimeMillis();
+                    String csvDeclCode = generateCsvDeclPythonCode(csvInformationList);
+                    System.out.println("[TranslateUtil] CSV declarations generated in " + (System.currentTimeMillis() - declStart) + "ms (" + csvDeclCode.length() + " chars)");
+                    System.out.flush();
+                    if (!csvDeclCode.isEmpty()) {
+                        code = csvDeclCode + code;
                     }
                 }
 
@@ -67,10 +73,25 @@ public class TranslateUtil {
                 if (isPythonCode(code)) {
                     Map<Integer, RuleEngineInputUnits> functionFrameVariableMap = new HashMap<>();
                     Integer[] frameVariableCounterId = {0};
+                    System.out.println("[TranslateUtil] Starting interpretPython (code length=" + code.length() + " chars)");
+                    System.out.flush();
+                    long interpStart = System.currentTimeMillis();
                     commands = codeConverter.interpretPython(
                             code, ruleEngineInput,
                             new ArrayList<>(),
                             actualDebugCodeCreator, functionFrameVariableMap, frameVariableCounterId);
+                    System.out.println("[TranslateUtil] interpretPython completed in " + (System.currentTimeMillis() - interpStart) + "ms, commands=" + (commands == null ? "null" : commands.size()));
+                    System.out.println("[TranslateUtil]   Variables: " + ruleEngineInput.getVariables().size() + ", Arrays: " + ruleEngineInput.getArrays().size());
+                    System.out.flush();
+                    // Bulk-populate CSV array values directly (bypasses interpreter for millions of assignments)
+                    if (isFirstDagElementBeingCreated && csvInformationList != null && !csvInformationList.isEmpty()) {
+                        System.out.println("[TranslateUtil] Starting directPopulateCsvArrayValues for " + csvInformationList.size() + " CSVs");
+                        System.out.flush();
+                        long popStart = System.currentTimeMillis();
+                        directPopulateCsvArrayValues(ruleEngineInput, csvInformationList);
+                        System.out.println("[TranslateUtil] directPopulateCsvArrayValues completed in " + (System.currentTimeMillis() - popStart) + "ms");
+                        System.out.flush();
+                    }
                 } else {
                     codeConverter.interpret(
                             code, ruleEngineInput,
@@ -140,59 +161,236 @@ public class TranslateUtil {
     }
 
     /**
-     * Generates Python code that declares and populates a 2D array for each CsvInformation.
-     * Array name is derived from the CSV file name (extension stripped, invalid chars replaced).
-     * Array dimensions are determined from the CSV data (rows x columns).
+     * Extracts a clean Python identifier from a CSV filename.
+     * Strips directory path, .csv extension, and replaces invalid chars with underscores.
      */
-    private String generateCsvInitPythonCode(List<CsvInformation> csvInformationList) {
+    private static String csvFileNameToArrayName(String fileName) {
+        if (fileName == null || fileName.trim().isEmpty()) return null;
+        // Strip directory path — use only the basename
+        int lastSlash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            fileName = fileName.substring(lastSlash + 1);
+        }
+        if (fileName.endsWith(".csv")) {
+            fileName = fileName.substring(0, fileName.length() - 4);
+        }
+        String name = fileName.replaceAll("[^a-zA-Z0-9_]", "_");
+        return name.isEmpty() ? null : name;
+    }
+
+    /**
+     * Generates ONLY the 2D array declaration for each CSV (no per-element assignments).
+     * The actual values are bulk-populated via directPopulateCsvArrayValues() after interpretation.
+     */
+    private String generateCsvDeclPythonCode(List<CsvInformation> csvInformationList) {
         StringBuilder sb = new StringBuilder();
         for (CsvInformation csvInformation : csvInformationList) {
             String data = csvInformation.getData();
-            if (data == null || data.trim().isEmpty()) {
-                continue;
+            if (data == null || data.trim().isEmpty()) continue;
+
+            String arrayName = csvFileNameToArrayName(csvInformation.getFileName());
+            if (arrayName == null) continue;
+
+            // Count rows and columns
+            int firstNewline = data.indexOf('\n');
+            String firstRow = (firstNewline >= 0) ? data.substring(0, firstNewline) : data;
+            int numCols = 1;
+            for (int i = 0; i < firstRow.length(); i++) {
+                if (firstRow.charAt(i) == ',') numCols++;
             }
-
-            // Derive a valid Python identifier from the file name
-            String arrayName = csvInformation.getFileName();
-            if (arrayName == null || arrayName.trim().isEmpty()) {
-                continue;
+            int numRows = 1;
+            for (int i = 0; i < data.length(); i++) {
+                if (data.charAt(i) == '\n') numRows++;
             }
-            if (arrayName.endsWith(".csv")) {
-                arrayName = arrayName.substring(0, arrayName.length() - 4);
-            }
-            arrayName = arrayName.replaceAll("[^a-zA-Z0-9_]", "_");
+            // Trim trailing empty row
+            if (data.endsWith("\n")) numRows--;
 
-            // Parse rows
-            String[] rows = data.split("\n");
-            int numRows = rows.length;
-            if (numRows == 0) {
-                continue;
-            }
-
-            // Determine column count from first non-empty row
-            String[] firstRowCols = rows[0].split(",", -1);
-            int numCols = firstRowCols.length;
-
-            // Declare 2D array: name = [[0 for _ in range(cols)] for _ in range(rows)]
-            sb.append(arrayName)
-              .append(" = [[0 for _ in range(").append(numCols).append(")]");
-            sb.append(" for _ in range(").append(numRows).append(")]\n");
-
-            // Set each element: name[r][c] = value
-            for (int r = 0; r < numRows; r++) {
-                String[] cols = rows[r].split(",", -1);
-                for (int c = 0; c < cols.length; c++) {
-                    String value = cols[c].trim();
-                    if (!value.isEmpty()) {
-                        sb.append(arrayName)
-                          .append("[").append(r).append("]")
-                          .append("[").append(c).append("] = ")
-                          .append(value).append("\n");
-                    }
-                }
+            if (numRows == 1) {
+                sb.append(arrayName)
+                  .append(" = [0 for _ in range(").append(numCols).append(")]\n");
+            } else {
+                sb.append(arrayName)
+                  .append(" = [[0 for _ in range(").append(numCols).append(")]")
+                  .append(" for _ in range(").append(numRows).append(")]\n");
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Directly populates Array objects' values maps from CSV data, bypassing the interpreter.
+     * This is O(n) with just string parsing and map puts — no AST, no interpreter overhead.
+     * For a 50M-element CSV, this saves ~50M interpreted Python assignment statements.
+     * Multiple CSVs are processed in parallel using threads.
+     */
+    private void directPopulateCsvArrayValues(RuleEngineInput ruleEngineInput, List<CsvInformation> csvInformationList) {
+        // Build a lookup: arrayName -> Array object (using the _name_ convention)
+        Map<String, Array> arrayByName = new HashMap<>();
+        for (Array array : ruleEngineInput.getArrays()) {
+            String id = array.getId();
+            if (id != null && id.contains("_name_")) {
+                String name = id.split("_name_")[1];
+                arrayByName.put(name, array);
+            }
+        }
+
+        // Process CSVs in parallel
+        int nThreads = Math.min(csvInformationList.size(), Runtime.getRuntime().availableProcessors());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, nThreads));
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(csvInformationList.size());
+
+        for (CsvInformation csvInformation : csvInformationList) {
+            final CsvInformation csv = csvInformation;
+            pool.submit(() -> {
+                try {
+                    populateSingleCsvArray(csv, arrayByName);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        pool.shutdown();
+    }
+
+    /**
+     * Parses a single CSV and populates the corresponding Array's values map.
+     */
+    private void populateSingleCsvArray(CsvInformation csvInformation, Map<String, Array> arrayByName) {
+        String arrayName = csvFileNameToArrayName(csvInformation.getFileName());
+        if (arrayName == null) return;
+
+        Array array = arrayByName.get(arrayName);
+        if (array == null) {
+            System.err.println("[TranslateUtil] WARNING: No Array object found for CSV '" + arrayName + "', skipping");
+            return;
+        }
+
+        // Check for pre-existing .bin file (pre-converted offline)
+        String csvPath = csvInformation.getFileName();
+        if (csvPath != null && csvPath.endsWith(".csv")) {
+            String binPath = csvPath.substring(0, csvPath.length() - 4) + ".bin";
+            java.io.File binFile = new java.io.File(binPath);
+            if (binFile.exists() && binFile.length() > 0) {
+                String absoluteBinPath = binFile.getAbsolutePath();
+                System.out.println("[TranslateUtil] Found pre-converted binary: " + absoluteBinPath + " (" + (binFile.length() / 1024 / 1024) + " MB)");
+                array.setBinaryFile(absoluteBinPath);
+                return;
+            }
+        }
+
+        String data = csvInformation.getData();
+        if (data == null || data.trim().isEmpty()) return;
+
+        // Detect if single-row (no newlines except possibly trailing)
+        String trimmedData = data.endsWith("\n") ? data.substring(0, data.length() - 1) : data;
+        boolean singleRow = (trimmedData.indexOf('\n') < 0);
+
+        // Estimate value count from data size (rough: ~11 chars per float value)
+        long estimatedValues = data.length() / 8;
+
+        // For large arrays (>100K values), write binary file instead of populating HashMap
+        if (estimatedValues > 100000) {
+            try {
+                populateLargeArrayAsBinary(data, singleRow, array, arrayName);
+                return;
+            } catch (Exception e) {
+                System.err.println("[TranslateUtil] Binary write failed for '" + arrayName + "', falling back to HashMap: " + e.getMessage());
+                // Fall through to HashMap population
+            }
+        }
+
+        // Fast CSV parsing: parse directly into the values map (ConcurrentHashMap — thread-safe)
+        Map<String, Object> values = array.getValues();
+
+        int row = 0;
+        int col = 0;
+        int start = 0;
+        int len = data.length();
+        for (int i = 0; i <= len; i++) {
+            char c = (i < len) ? data.charAt(i) : '\n';
+            if (c == ',' || c == '\n') {
+                if (i > start) {
+                    String valStr = data.substring(start, i).trim();
+                    if (!valStr.isEmpty()) {
+                        double val = Double.parseDouble(valStr);
+                        if (singleRow) {
+                            values.put(String.valueOf(col), val);
+                        } else {
+                            values.put(row + "_" + col, val);
+                        }
+                    }
+                }
+                if (c == ',') {
+                    col++;
+                } else {
+                    row++;
+                    col = 0;
+                }
+                start = i + 1;
+            }
+        }
+        System.out.println("[TranslateUtil] Direct-populated array '" + arrayName + "' with " + values.size() + " values");
+    }
+
+    /**
+     * Write large CSV array data as a binary float32 file and set the binaryFile
+     * path on the Array object. The native C++ side will load this directly,
+     * bypassing JSON serialization entirely.
+     */
+    private void populateLargeArrayAsBinary(String data, boolean singleRow, Array array, String arrayName) throws Exception {
+        long t0 = System.currentTimeMillis();
+
+        // Create temp binary file
+        java.io.File tmpFile = java.io.File.createTempFile("rj_bin_" + arrayName + "_", ".bin");
+        tmpFile.deleteOnExit();
+
+        // Parse CSV and write as flat float32 (little-endian)
+        int valueCount = 0;
+        try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(
+                new java.io.FileOutputStream(tmpFile), 1024 * 1024)) {
+
+            int start = 0;
+            int len = data.length();
+            byte[] buf = new byte[4]; // float32
+
+            for (int i = 0; i <= len; i++) {
+                char c = (i < len) ? data.charAt(i) : '\n';
+                if (c == ',' || c == '\n') {
+                    if (i > start) {
+                        // Fast inline trim
+                        int s = start, e = i;
+                        while (s < e && data.charAt(s) <= ' ') s++;
+                        while (e > s && data.charAt(e - 1) <= ' ') e--;
+                        if (s < e) {
+                            float val = Float.parseFloat(data.substring(s, e));
+                            int bits = Float.floatToRawIntBits(val);
+                            buf[0] = (byte) (bits);
+                            buf[1] = (byte) (bits >> 8);
+                            buf[2] = (byte) (bits >> 16);
+                            buf[3] = (byte) (bits >> 24);
+                            bos.write(buf);
+                            valueCount++;
+                        }
+                    }
+                    start = i + 1;
+                }
+            }
+        }
+
+        // Set the binary file path on the Array — native side will load from here
+        array.setBinaryFile(tmpFile.getAbsolutePath());
+        // Clear the values map to avoid JSON serialization of data
+        array.getValues().clear();
+
+        long elapsed = System.currentTimeMillis() - t0;
+        System.out.println("[TranslateUtil] Binary-populated array '" + arrayName + "' with " + valueCount
+                + " float32 values (" + (tmpFile.length() / 1024) + " KB) in " + elapsed + "ms -> " + tmpFile.getAbsolutePath());
     }
 
     /**

@@ -30,63 +30,95 @@ Processor::~Processor() {
 
 std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngineInput ruleEngineInput,
         std::string firstCommandId) {
+    FILE* pdbg = fopen("/tmp/phi3_processor_debug.log", "w");
+    if(pdbg) { fprintf(pdbg, "[Processor] process() entered, firstCommandId=%s\n", firstCommandId.c_str()); fflush(pdbg); }
+
     // Create memory maintainer for efficient function call memory management
     DataContainerValueFunctionCommandREMemMaintainer* memMaintainer = new DataContainerValueFunctionCommandREMemMaintainer();
+    if(pdbg) { fprintf(pdbg, "[Processor] memMaintainer created\n"); fflush(pdbg); }
     
     std::unordered_map<std::string, RuleEngineInputUnits*>* mapBetweenIdAndRuleInput
         = createMap(ruleEngineInput);
+    if(pdbg) { fprintf(pdbg, "[Processor] createMap done, map size=%lu, commands=%lu, vars=%lu, arrays=%lu\n",
+        mapBetweenIdAndRuleInput->size(),
+        ruleEngineInput.commands ? ruleEngineInput.commands->size() : 0,
+        variableREs.size(), arrayREs.size()); fflush(pdbg); }
     
     /*
      * First, call chooseRuleEngineUnits on all CommandRE objects to select their internal units
      */
+    int cmdIdx = 0;
     for (auto command : *ruleEngineInput.commands) {
         CommandRE* commandRE = dynamic_cast<CommandRE*>(mapBetweenIdAndRuleInput->at(command->id));
         commandRE->chooseRuleEngineUnits(mapBetweenIdAndRuleInput);
+        cmdIdx++;
     }
+    if(pdbg) { fprintf(pdbg, "[Processor] chooseRuleEngineUnits done for %d commands\n", cmdIdx); fflush(pdbg); }
     
     /*
      * Right now, the map does have info of each other, for ex, lets take Command,
      * it does not have refs to the componenets of the Command.
      */
     fixGraph(mapBetweenIdAndRuleInput);
+    if(pdbg) { fprintf(pdbg, "[Processor] fixGraph done\n"); fflush(pdbg); }
 
     fixOperator(mapBetweenIdAndRuleInput, *ruleEngineInput.operations);
+    if(pdbg) { fprintf(pdbg, "[Processor] fixOperator done\n"); fflush(pdbg); }
     fixReturnOperations(mapBetweenIdAndRuleInput, *ruleEngineInput.returnOperations);
+    if(pdbg) { fprintf(pdbg, "[Processor] fixReturnOperations done\n"); fflush(pdbg); }
     fixConditions(mapBetweenIdAndRuleInput, *ruleEngineInput.conditions);
+    if(pdbg) { fprintf(pdbg, "[Processor] fixConditions done\n"); fflush(pdbg); }
 
     for(RuleEngineInputUnits* variable : variableREs) {
         VariableRE* variableRE = (VariableRE*)(variable);
         dataFieldOriginalData.insert(std::make_pair(variableRE->getValPtrPtr(), *variableRE->getValPtrPtr()));
     }
+    if(pdbg) { fprintf(pdbg, "[Processor] variable tracking done, %lu entries\n", dataFieldOriginalData.size()); fflush(pdbg); }
 
     for(RuleEngineInputUnits* array : arrayREs) {
         ArrayRE* arrayRE = (ArrayRE*)(array);
         ArrayValue* arrayValue = ((ArrayDataContainerValue*)(arrayRE->getVal()))->arrayValue;
         int size = arrayValue->totalSize;
+        // Skip change-tracking for large arrays (read-only weights) - inserting millions
+        // of entries into a hashmap is extremely slow and unnecessary for inference
+        if (size > 100000) {
+            continue;
+        }
         for(int i = 0; i < size; i++) {
             dataFieldOriginalData.insert(std::make_pair(&arrayValue->val[i],arrayValue->val[i]));
         }
     }
+    if(pdbg) { fprintf(pdbg, "[Processor] array tracking done, total %lu entries\n", dataFieldOriginalData.size()); fflush(pdbg); }
 
+    int fcIdx = 0;
     for (auto command : *ruleEngineInput.commands)
     {
         auto commandRE = dynamic_cast<CommandRE*>(mapBetweenIdAndRuleInput->at(command->id));
         if(commandRE->functionCommandRE != nullptr) {
+            if(pdbg) { fprintf(pdbg, "[Processor] setFields for functionCommandRE #%d\n", fcIdx); fflush(pdbg); }
             // Now call setFields for FunctionCommandRE - deferred from CommandRE::setFields
             // This must be done after all CommandRE are initialized
             commandRE->functionCommandRE->setFields(mapBetweenIdAndRuleInput);
             commandRE->functionCommandRE->setMemMaintainer(memMaintainer);
+            fcIdx++;
         }
     }
+    if(pdbg) { fprintf(pdbg, "[Processor] functionCommandRE setFields done for %d functions\n", fcIdx); fflush(pdbg); }
 
 #ifdef DEBUG_BUILD
     debugger->clear();
 #endif
     CommandRE *command = dynamic_cast<CommandRE*> (mapBetweenIdAndRuleInput->at(firstCommandId));
     auto unit = command->getUnit();
+    if(pdbg) { fprintf(pdbg, "[Processor] starting execution loop, unit=%p\n", (void*)unit); fflush(pdbg); }
+    int stepCount = 0;
     while(unit != nullptr) {
         unit = unit->process();
+        stepCount++;
+        if(stepCount <= 20 && pdbg) { fprintf(pdbg, "[Processor] step %d done, next unit=%p\n", stepCount, (void*)unit); fflush(pdbg); }
+        if(stepCount == 21 && pdbg) { fprintf(pdbg, "[Processor] (suppressing further step logs)\n"); fflush(pdbg); }
     }
+    if(pdbg) { fprintf(pdbg, "[Processor] execution loop done, %d steps total\n", stepCount); fflush(pdbg); fclose(pdbg); }
 
     delete memMaintainer;
     return new std::unordered_map<std::string, ProcessingResult>();

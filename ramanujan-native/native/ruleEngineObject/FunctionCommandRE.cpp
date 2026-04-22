@@ -349,6 +349,11 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
  * Returns: nextUnit after function completes (return statements are handled internally)
  */
 RuleEngineInputUnits* FunctionCommandRE::process() {
+    {
+        FILE* dbg = fopen("/tmp/phi3_native_debug.log", "a");
+        if(dbg) { fprintf(dbg, "[FunctionCommandRE] process() called, isGpu=%d\n",
+            (int)functionInfoRE->isGpu); fflush(dbg); fclose(dbg); }
+    }
 
 #ifdef GPU_ENABLED
     // ==================== GPU FAST PATH ====================
@@ -435,6 +440,10 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             globalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
                 methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
         }
+        fprintf(stderr, "[GPU] Kernel '%s': workDim=%u, globalWorkSize=", gpuExtractKernelName(kernelSrc).c_str(), workDim);
+        for (size_t ws = 0; ws < globalWorkSize.size(); ws++) fprintf(stderr, "%s%zu", ws?",":"", globalWorkSize[ws]);
+        fprintf(stderr, ", dataArgs=%d\n", (int)dataArgIndices.size());
+        fflush(stderr);
 
         // -- Allocate OpenCL buffers for data args (convert double→float staging) --
         std::vector<cl_mem>              buffers(dataArgIndices.size(), nullptr);
@@ -444,9 +453,13 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
 
         for (int di = 0; di < (int)dataArgIndices.size(); di++) {
             int argIdx = dataArgIndices[di];
+            fprintf(stderr, "[GPU] Buffer arg %d/%d (argIdx=%d)...\n", di, (int)dataArgIndices.size(), argIdx);
+            fflush(stderr);
             ArrayDataContainerValue* arrVal =
                 static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
             ArrayValue* av = arrVal->arrayValue;
+            fprintf(stderr, "[GPU]   totalSize=%d, staging %.1f MB\n", av->totalSize, av->totalSize * 4.0 / 1048576.0);
+            fflush(stderr);
 
             staging[di].resize(av->totalSize);
             for (int j = 0; j < av->totalSize; j++)
@@ -466,7 +479,13 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &buffers[di]);
         }
 
-        if (!bufferError) {
+        // Skip dispatch when any globalWorkSize dimension is 0 (nothing to compute)
+        bool zeroWorkSize = false;
+        for (size_t wi = 0; wi < globalWorkSize.size(); wi++) {
+            if (globalWorkSize[wi] == 0) { zeroWorkSize = true; break; }
+        }
+
+        if (!bufferError && !zeroWorkSize) {
             // -- Enqueue kernel --
             err = clEnqueueNDRangeKernel(
                 clQueue, kernel, workDim,

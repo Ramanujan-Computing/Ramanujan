@@ -23,19 +23,18 @@ public class NativeLibraryLoader {
             throw new IOException("Environment variable '" + ENV_TMP_DIR + "' is not set");
         }
         Path targetPath = Paths.get(tmpDir, libFileName);
-        if (!Files.exists(targetPath)) {
-            try (InputStream in = NativeLibraryLoader.class.getResourceAsStream(resourcePath)) {
-                if (in == null) {
-                    throw new FileNotFoundException("Native library not found in resources: " + resourcePath);
-                }
-                Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        // Always overwrite the cached copy so that rebuilds are picked up
+        try (InputStream in = NativeLibraryLoader.class.getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                throw new FileNotFoundException("Native library not found in resources: " + resourcePath);
             }
-            if (!isExecutable(ext)) {
-                targetPath.toFile().setReadable(true);
-                targetPath.toFile().setWritable(true);
-            } else {
-                targetPath.toFile().setExecutable(true);
-            }
+            Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+        if (!isExecutable(ext)) {
+            targetPath.toFile().setReadable(true);
+            targetPath.toFile().setWritable(true);
+        } else {
+            targetPath.toFile().setExecutable(true);
         }
         System.load(targetPath.toAbsolutePath().toString());
     }

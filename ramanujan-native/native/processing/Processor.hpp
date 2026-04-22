@@ -22,6 +22,8 @@ class Processor {
         ~Processor();
     std::unordered_map<std::string, double>* varChangeMap();
     std::unordered_map<std::string, std::unordered_map<std::string, double>*>* arrChangeMap();
+    std::list<RuleEngineInputUnits*>& getArrayREs() { return arrayREs; }
+    std::list<RuleEngineInputUnits*>& getVariableREs() { return variableREs; }
     
     private:
         std::unordered_map<std::string, RuleEngineInputUnits*> * createMap(RuleEngineInput ruleEngineInput);

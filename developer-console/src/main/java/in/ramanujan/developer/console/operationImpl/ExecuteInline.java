@@ -78,13 +78,23 @@ public class ExecuteInline implements Operation {
         }
         String ruleEngineInputJson = objectMapper.writeValueAsString(dagElement.getRuleEngineInput());
         if (shouldWriteRuleEngineDebug()) {
-            Files.write(new File("/tmp/rule_engine_debug.json").toPath(), ruleEngineInputJson.getBytes(StandardCharsets.UTF_8));
+            // Write combined wrapper that Test.cpp loadFromTmp() expects: {firstCommandId, ruleEngineInput}
+            Map<String, Object> wrapper = new LinkedHashMap<>();
+            wrapper.put("firstCommandId", dagElement.getFirstCommandId());
+            wrapper.put("ruleEngineInput", objectMapper.readTree(ruleEngineInputJson));
+            objectMapper.writeValue(new File("/tmp/rule_engine_debug.json"), wrapper);
             objectMapper.writeValue(new File("/tmp/rule_engine_debug_meta.json"),
                     Collections.singletonMap("firstCommandId", dagElement.getFirstCommandId()));
         }
 
+        System.out.println("[ExecuteInline] Calling NativeProcessor for DAG element " + dagElement.getId() + " (firstCmd=" + dagElement.getFirstCommandId() + ")");
+        System.out.println("[ExecuteInline]   RuleEngineInput JSON size: " + (ruleEngineInputJson.length() / 1024) + " KB");
+        System.out.flush();
+        long nativeStart = System.currentTimeMillis();
         in.ramanujan.rule.engine.NativeProcessor nativeProcessor = new in.ramanujan.rule.engine.NativeProcessor();
         nativeProcessor.process(ruleEngineInputJson, dagElement.getFirstCommandId());
+        System.out.println("[ExecuteInline]   NativeProcessor completed in " + (System.currentTimeMillis() - nativeStart) + "ms");
+        System.out.flush();
         for(Object en : nativeProcessor.jniObject.entrySet()) {
             Map.Entry<String, Object> entry = (Map.Entry<String, Object>) en;
             String key = entry.getKey();
@@ -293,10 +303,18 @@ public class ExecuteInline implements Operation {
             long startTime = System.currentTimeMillis();
             Map<String, Variable> variableMap = new HashMap<>();
             Map<String, Array> arrayMap = new HashMap<>();
+            System.out.println("[ExecuteInline] Creating JSON from args: " + args.get(0) + " + " + (args.size()-1) + " CSV files");
+            System.out.flush();
             CodeRunRequest codeRunRequest = createJson(args);
             String code = codeRunRequest.getCode();
             List<CsvInformation> csvInformationList = codeRunRequest.getCsvInformationList() != null
                     ? codeRunRequest.getCsvInformationList() : new ArrayList<>();
+            System.out.println("[ExecuteInline] CSV files loaded: " + csvInformationList.size());
+            for (CsvInformation ci : csvInformationList) {
+                String d = ci.getData();
+                System.out.println("[ExecuteInline]   " + ci.getFileName() + " -> " + (d == null ? "null" : (d.length() / 1024) + " KB"));
+            }
+            System.out.flush();
             TranslateResponse translateResponse = new TranslateResponse();
             Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
             ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", 0);
@@ -338,7 +356,10 @@ public class ExecuteInline implements Operation {
             translateResponse.setCodeAndDagElementMap(dagElementAndCodeMap);
             translateResponse.setCommonFunctionCode(functionCode);
 
-            System.out.println("compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
+            System.out.println("[ExecuteInline] compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
+            System.out.println("[ExecuteInline] DAG elements: " + (dagElementList.size() + 1) + " (1 first + " + dagElementList.size() + " others)");
+            System.out.println("[ExecuteInline] Variables: " + variableMap.size() + ", Arrays: " + arrayMap.size());
+            System.out.flush();
 
             startTime = System.currentTimeMillis();
             

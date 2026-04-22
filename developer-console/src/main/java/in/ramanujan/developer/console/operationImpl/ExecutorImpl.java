@@ -121,7 +121,7 @@ public class ExecutorImpl implements Operation {
     public static void startQueryConsole() {
         java.util.Scanner scanner = new java.util.Scanner(System.in);
         System.out.println("\n--- Query Console ---");
-        System.out.println("Type 'var <variableName>' or 'arr <arrayName> <index>' to query. Type 'exit' to quit.");
+        System.out.println("Commands: 'var <name>', 'arr <name> <index>', 'dump <name> [file]', 'exit'");
         while (true) {
             System.out.print("> ");
             String line = scanner.nextLine();
@@ -140,6 +140,65 @@ public class ExecutorImpl implements Operation {
                 } else {
                     System.out.println("Usage: var <variableName>");
                 }
+            } else if (line.startsWith("dump ")) {
+                // dump <arrayName> [outputFile] — outputs entire array as CSV
+                String[] parts = line.split(" ");
+                String arrName = parts.length >= 2 ? parts[1] : null;
+                String outFile = parts.length >= 3 ? parts[2] : null;
+                if (arrName == null) {
+                    System.out.println("Usage: dump <arrayName> [outputFile]");
+                    continue;
+                }
+                Map<String, Object> arr = arrayStore.get(arrName);
+                if (arr == null || arr.isEmpty()) {
+                    System.out.println("Array not found or empty: " + arrName);
+                    continue;
+                }
+                // Determine dimensions from keys (support both "idx" for 1D and "row_col" for 2D)
+                boolean is1D = true;
+                int maxRow = 0, maxCol = 0;
+                for (String key : arr.keySet()) {
+                    String[] dims = key.split("_");
+                    if (dims.length >= 2) {
+                        is1D = false;
+                        maxRow = Math.max(maxRow, Integer.parseInt(dims[0]));
+                        maxCol = Math.max(maxCol, Integer.parseInt(dims[1]));
+                    } else if (dims.length == 1) {
+                        maxRow = Math.max(maxRow, Integer.parseInt(dims[0]));
+                    }
+                }
+                StringBuilder csv = new StringBuilder();
+                if (is1D) {
+                    // 1D array: output as single row, comma-separated
+                    for (int i = 0; i <= maxRow; i++) {
+                        if (i > 0) csv.append(',');
+                        Object val = arr.get(String.valueOf(i));
+                        csv.append(val != null ? val.toString() : "0.0");
+                    }
+                    csv.append('\n');
+                } else {
+                    // 2D array: output as multi-row CSV
+                    for (int r = 0; r <= maxRow; r++) {
+                        for (int c = 0; c <= maxCol; c++) {
+                            if (c > 0) csv.append(',');
+                            Object val = arr.get(r + "_" + c);
+                            csv.append(val != null ? val.toString() : "0.0");
+                        }
+                        csv.append('\n');
+                    }
+                }
+                String dims = is1D ? String.valueOf(maxRow+1) : (maxRow+1) + "x" + (maxCol+1);
+                if (outFile != null) {
+                    try {
+                        java.nio.file.Files.write(java.nio.file.Paths.get(outFile),
+                            csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        System.out.println("Dumped " + arrName + " (" + dims + ") to " + outFile);
+                    } catch (Exception e) {
+                        System.out.println("Error writing file: " + e.getMessage());
+                    }
+                } else {
+                    System.out.print(csv.toString());
+                }
             } else if (line.startsWith("arr ")) {
                 String[] parts = line.split(" ");
                 if (parts.length == 3) {
@@ -153,7 +212,7 @@ public class ExecutorImpl implements Operation {
                     System.out.println("Usage: arr <arrayName> <index>");
                 }
             } else {
-                System.out.println("Unknown command. Use 'var <variableName>' or 'arr <arrayName> <index>' or 'exit'.");
+                System.out.println("Unknown command. Use 'var <name>', 'arr <name> <index>', 'dump <name> [file]', or 'exit'.");
             }
         }
     }
@@ -175,10 +234,16 @@ public class ExecutorImpl implements Operation {
         codeRunRequest.setCsvInformationList(new ArrayList<>());
         if(args.size() > 0) {
             for(int iter = 1; iter < args.size(); iter++) {
+                long csvReadStart = System.currentTimeMillis();
+                System.out.println("[createJson] Reading CSV " + iter + "/" + (args.size()-1) + ": " + args.get(iter));
+                System.out.flush();
                 CsvInformation csvInformation = new CsvInformation();
-                csvInformation.setData(PackageBuildHelper.readFileWithNewLine(args.get(iter)));
+                String csvData = PackageBuildHelper.readFileWithNewLine(args.get(iter));
+                csvInformation.setData(csvData);
                 csvInformation.setFileName(args.get(iter));
                 codeRunRequest.getCsvInformationList().add(csvInformation);
+                System.out.println("[createJson]   Read " + (csvData == null ? "null" : (csvData.length()/1024) + " KB") + " in " + (System.currentTimeMillis() - csvReadStart) + "ms");
+                System.out.flush();
             }
         }
 
