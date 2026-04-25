@@ -184,9 +184,9 @@ def integrate_GPU_1(positions, velocities, dt_buf, gid):
     py_idx = gid * 3 + 1
     pz_idx = gid * 3 + 2
 
-    vx = velocities[px_idx] * 0.985
-    vy = velocities[py_idx] * 0.985
-    vz = velocities[pz_idx] * 0.985
+    vx = velocities[px_idx] * 0.995
+    vy = velocities[py_idx] * 0.995
+    vz = velocities[pz_idx] * 0.995
 
     new_x = positions[px_idx] + vx * dt_local
     new_y = positions[py_idx] + vy * dt_local
@@ -195,9 +195,9 @@ def integrate_GPU_1(positions, velocities, dt_buf, gid):
     if new_z < 0:
         new_z = 0
         if vz < 0:
-            vz = vz * (-0.25)
-        vx = vx * 0.75
-        vy = vy * 0.75
+            vz = vz * (-0.65)
+        vx = vx * 0.90
+        vy = vy * 0.90
 
     positions[px_idx] = new_x
     positions[py_idx] = new_y

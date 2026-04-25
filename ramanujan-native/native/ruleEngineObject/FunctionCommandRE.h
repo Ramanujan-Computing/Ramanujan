@@ -17,6 +17,15 @@
 #include "DataContainerValueFunctionCommandREMemMaintainer.h"
 #include<unordered_map>
 #include <list>
+#include <vector>
+#ifdef GPU_ENABLED
+#include <atomic>
+#ifdef __APPLE__
+#  include <OpenCL/cl.h>
+#else
+#  include <CL/cl.h>
+#endif
+#endif
 
 /**
  * FunctionCommandRE class handles function call execution in the rule engine.
@@ -208,6 +217,25 @@ private:
      */
     std::unordered_map<std::string, std::string> dataContainerNameMethodMap;
 
+#ifdef GPU_ENABLED
+    // ==================== GPU Dispatch Caches (lazily initialised on first GPU call) ====================
+    // Indices into methodCallingOriginalPlaceHolderAddrs that correspond to data (buffer) args,
+    // i.e. all args that are NOT in functionInfoRE->gpuParallelismArgIndices.
+    // Computed once per instance; immutable across threads thereafter.
+    std::vector<int> gpuDataArgIndices;
+    bool gpuMetaInitialized = false;
+
+    // Cached cl_program for this kernel source (compiled once across all threads).
+    // Slow-path init synchronised via the existing program-cache mutex in the .cpp.
+    std::atomic<void*>              gpuProgramCache{nullptr};
+    cl_command_queue                gpuQueue        = nullptr;
+    cl_kernel                       gpuKernel       = nullptr;
+    std::vector<float>              gpuStaging[maxArgSize];
+    cl_mem                          gpuBuffers[maxArgSize] = {};
+    unsigned char                   gpuIsReadOnly[maxArgSize] = {};
+    std::vector<size_t>             gpuGlobalWorkSize;
+#endif
+
 public:
     // ==================== Constructor and Destructor ====================
     
@@ -241,9 +269,10 @@ public:
         if(functionInfoRE != nullptr) {
             delete functionInfoRE;
         }
-        
-        // Legacy cleanup code kept for reference
-        // These arrays are managed differently to prevent double deletion
+#ifdef GPU_ENABLED
+        if (gpuKernel) { clReleaseKernel(gpuKernel); gpuKernel = nullptr; }
+        if (gpuQueue)  { clFlush(gpuQueue); clFinish(gpuQueue); clReleaseCommandQueue(gpuQueue); gpuQueue = nullptr; }
+#endif
     }
     
     // ==================== Core Interface Methods ====================

@@ -17,7 +17,6 @@
 #ifdef GPU_ENABLED
 #include <set>
 #include <mutex>
-#include <chrono>
 
 // ==================== OpenCL ====================
 #ifdef __APPLE__
@@ -29,8 +28,7 @@
 // ---------------------------------------------------------------------------
 // Singleton OpenCL context  (created once, reused for all GPU dispatches)
 // cl_context and cl_device_id are thread-safe to share across threads.
-// cl_command_queue is NOT thread-safe — each thread owns a private queue
-// (see ThreadQueue / t_threadQueue below).
+// cl_command_queue is per-instance (FunctionCommandRE::gpuQueue), lazily created.
 // The shared context is initialised once under GpuContext::initMutex.
 // ---------------------------------------------------------------------------
 namespace {
@@ -125,57 +123,13 @@ struct GpuContext {
 
 static GpuContext s_clCtx;
 
-// ── Per-thread command queue ─────────────────────────────────────────────
-// Each Java thread (spawned by executeInParallel) gets its own queue so
-// multiple threads can dispatch kernels to the GPU concurrently.
-// The queue is lazily created on first GPU call within that thread.
-struct ThreadQueue {
-    cl_command_queue queue = nullptr;
-
-    cl_command_queue get() {
-        if (queue) return queue;
-        if (!s_clCtx.available) return nullptr;
-        cl_int err;
-#if defined(CL_VERSION_2_0)
-        const cl_queue_properties qprops[] = {0};
-        queue = clCreateCommandQueueWithProperties(s_clCtx.context, s_clCtx.device, qprops, &err);
-#else
-#   ifdef __APPLE__
-#       pragma clang diagnostic push
-#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#   endif
-        queue = clCreateCommandQueue(s_clCtx.context, s_clCtx.device, 0, &err);
-#   ifdef __APPLE__
-#       pragma clang diagnostic pop
-#   endif
-#endif
-        if (err != CL_SUCCESS) {
-            fprintf(stderr, "[GPU] clCreateCommandQueue (per-thread) failed: %d\n", err);
-            queue = nullptr;
-        }
-        return queue;
-    }
-
-    ~ThreadQueue() {
-        if (queue) {
-            clFlush(queue);
-            clFinish(queue);
-            clReleaseCommandQueue(queue);
-        }
-    }
-};
-static thread_local ThreadQueue t_threadQueue;
-
 // ── Shared program cache (cl_program is thread-safe after clBuildProgram) ──
 // Compile each source string only once; threads then create their own kernels.
+// The program pointer is *also* memoised on the FunctionCommandRE instance
+// (FunctionCommandRE::gpuProgramCache) so the hot path can skip this map
+// entirely after the first dispatch.
 static std::unordered_map<std::string, cl_program> s_programCache;
 static std::mutex                                   s_programCacheMutex;
-static std::once_flag                               s_gpuDispatchLogOnce;
-
-// ── Per-thread kernel cache ──────────────────────────────────────────────────
-// cl_kernel is NOT thread-safe for concurrent clSetKernelArg calls on the
-// same object.  Each thread therefore owns its own cl_kernel per source string.
-static thread_local std::unordered_map<std::string, cl_kernel> t_kernelCache;
 
 // Extract "kernelName" from "__kernel void kernelName("
 static std::string gpuExtractKernelName(const std::string& src) {
@@ -355,23 +309,35 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
     // If this function is flagged as a GPU kernel, skip the normal unit-chain
     // execution entirely and dispatch through OpenCL instead.
     if (functionInfoRE->isGpu) {
-        // Each thread uses its own cl_command_queue (t_threadQueue) so GPU
-        // dispatches from parallel Java threads can overlap freely.
         // The shared cl_context + cl_device_id are thread-safe in OpenCL.
+        // gpuQueue and gpuKernel are per-instance fields, lazily initialised below.
         s_clCtx.init();
         if (!s_clCtx.available) {
             fprintf(stderr, "[GPU] OpenCL unavailable – cannot execute GPU function\n");
             return nextUnit;
         }
 
-        cl_command_queue clQueue = t_threadQueue.get();
-        if (!clQueue) {
-            fprintf(stderr, "[GPU] Could not obtain per-thread command queue\n");
-            return nextUnit;
+        if (!gpuQueue) {
+            cl_int qerr;
+#if defined(CL_VERSION_2_0)
+            const cl_queue_properties qprops[] = {0};
+            gpuQueue = clCreateCommandQueueWithProperties(s_clCtx.context, s_clCtx.device, qprops, &qerr);
+#else
+#   ifdef __APPLE__
+#       pragma clang diagnostic push
+#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#   endif
+            gpuQueue = clCreateCommandQueue(s_clCtx.context, s_clCtx.device, 0, &qerr);
+#   ifdef __APPLE__
+#       pragma clang diagnostic pop
+#   endif
+#endif
+            if (qerr != CL_SUCCESS) {
+                fprintf(stderr, "[GPU] clCreateCommandQueue failed: %d\n", qerr);
+                return nextUnit;
+            }
         }
-
-        auto _t0 = std::chrono::steady_clock::now();
-        auto _tBuf = _t0, _tEnq = _t0, _tFin = _t0, _tRB = _t0;
+        cl_command_queue clQueue = gpuQueue;
 
         const std::string&      kernelSrc        = functionInfoRE->openClCode;
         const std::vector<int>& parallelismIdxs  = functionInfoRE->gpuParallelismArgIndices;
@@ -379,75 +345,89 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
         // range-dim args – no dedicated M parameter exists any more.
         cl_uint workDim = (cl_uint)parallelismIdxs.size();
 
-        // -- Step 1: ensure cl_program is compiled (shared, lock only on miss) --
-        // cl_program is thread-safe after clBuildProgram completes.
-        {
+        // -- Step 1: ensure cl_program is compiled.  Hot path: per-instance atomic
+        //    cache hit, no mutex, no string-keyed lookup.  Slow path (first call):
+        //    take the global mutex and compile once across all threads.
+        cl_program prog = static_cast<cl_program>(gpuProgramCache.load(std::memory_order_acquire));
+        if (!prog) {
             std::lock_guard<std::mutex> cacheLock(s_programCacheMutex);
-            if (s_programCache.find(kernelSrc) == s_programCache.end()) {
-                cl_int err;
-                const char* csrc = kernelSrc.c_str();
-                size_t srcLen    = kernelSrc.size();
-                cl_program prog  = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
-                err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
-                if (err != CL_SUCCESS) {
-                    size_t logLen = 0;
-                    clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
-                    std::string log(logLen, '\0');
-                    clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
-                    fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
-                    clReleaseProgram(prog);
-                    return nextUnit;
+            // Re-check under the lock; another thread may have compiled it.
+            prog = static_cast<cl_program>(gpuProgramCache.load(std::memory_order_relaxed));
+            if (!prog) {
+                auto srcIt = s_programCache.find(kernelSrc);
+                if (srcIt != s_programCache.end()) {
+                    prog = srcIt->second;
+                } else {
+                    cl_int err;
+                    const char* csrc = kernelSrc.c_str();
+                    size_t srcLen    = kernelSrc.size();
+                    prog = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
+                    err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
+                    if (err != CL_SUCCESS) {
+                        size_t logLen = 0;
+                        clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
+                        std::string log(logLen, '\0');
+                        clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
+                        fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
+                        clReleaseProgram(prog);
+                        return nextUnit;
+                    }
+                    s_programCache[kernelSrc] = prog;
+                    // program is retained in cache; released at process exit.
                 }
-                s_programCache[kernelSrc] = prog;
-                // Note: program is retained in cache; released at process exit.
+                gpuProgramCache.store(prog, std::memory_order_release);
             }
         }
 
-        // -- Step 2: get (or create) a per-thread cl_kernel from the compiled program --
-        // clSetKernelArg on the same cl_kernel object is NOT safe across threads.
-        // Each thread owns its own cl_kernel instance.
-        cl_kernel kernel = nullptr;
-        {
-            auto kIt = t_kernelCache.find(kernelSrc);
-            if (kIt != t_kernelCache.end()) {
-                kernel = kIt->second;
-            } else {
-                cl_program prog = s_programCache[kernelSrc];   // safe read after build
-                std::string kname = gpuExtractKernelName(kernelSrc);
-                cl_int err;
-                kernel = clCreateKernel(prog, kname.c_str(), &err);
-                if (err != CL_SUCCESS) {
-                    fprintf(stderr, "[GPU] clCreateKernel (per-thread) '%s' failed: %d\n", kname.c_str(), err);
-                    return nextUnit;
-                }
-                t_kernelCache[kernelSrc] = kernel;
+        // -- Step 2: get (or create) per-instance cl_kernel from the compiled program --
+        if (!gpuKernel) {
+            std::string kname = gpuExtractKernelName(kernelSrc);
+            cl_int err;
+            gpuKernel = clCreateKernel(prog, kname.c_str(), &err);
+            if (err != CL_SUCCESS) {
+                fprintf(stderr, "[GPU] clCreateKernel '%s' failed: %d\n", kname.c_str(), err);
+                return nextUnit;
             }
         }
+        cl_kernel kernel = gpuKernel;
 
-        // -- Identify data arg indices (all args that are NOT range-dim/parallelism args) --
-        std::set<int> parallelismSet(parallelismIdxs.begin(), parallelismIdxs.end());
-        std::vector<int> dataArgIndices;
-        for (int i = 0; i < argSize; i++) {
-            if (parallelismSet.count(i) == 0)
-                dataArgIndices.push_back(i);
+        // -- Identify data arg indices once per instance (immutable thereafter) --
+        if (!gpuMetaInitialized) {
+            std::set<int> parallelismSet(parallelismIdxs.begin(), parallelismIdxs.end());
+            gpuDataArgIndices.clear();
+            gpuDataArgIndices.reserve(argSize);
+            for (int i = 0; i < argSize; i++) {
+                if (parallelismSet.count(i) == 0)
+                    gpuDataArgIndices.push_back(i);
+            }
+            gpuMetaInitialized = true;
         }
+        const std::vector<int>& dataArgIndices = gpuDataArgIndices;
+        const int dataArgCount = (int)dataArgIndices.size();
 
         // -- global_work_size from calling-context scalar values at parallelism arg positions --
-        std::vector<size_t> globalWorkSize(parallelismIdxs.size());
+        gpuGlobalWorkSize.resize(parallelismIdxs.size());
         for (int pi = 0; pi < (int)parallelismIdxs.size(); pi++) {
-            globalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
+            gpuGlobalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
                 methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
         }
-
+        std::vector<size_t>& globalWorkSize = gpuGlobalWorkSize;
 
         // -- Allocate OpenCL buffers for data args (convert double→float staging) --
-        std::vector<cl_mem>              buffers(dataArgIndices.size(), nullptr);
-        std::vector<std::vector<float>>  staging(dataArgIndices.size());
-        std::vector<bool>                isReadOnly(dataArgIndices.size(), false);
+        // Per-instance arrays retain capacity across calls — no re-allocation
+        // of large arrays on every kernel dispatch.
+        // Reset only the first dataArgCount slots that we are about to use.
+        for (int di = 0; di < dataArgCount; di++) {
+            gpuBuffers[di]    = nullptr;
+            gpuIsReadOnly[di] = 0;
+        }
+        cl_mem*              buffers    = gpuBuffers;
+        std::vector<float>*  staging    = gpuStaging;
+        unsigned char*       isReadOnly = gpuIsReadOnly;
         cl_int err = CL_SUCCESS;
         bool   bufferError = false;
 
-        for (int di = 0; di < (int)dataArgIndices.size(); di++) {
+        for (int di = 0; di < dataArgCount; di++) {
             int argIdx = dataArgIndices[di];
             ArrayDataContainerValue* arrVal =
                 static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
@@ -456,7 +436,7 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             if (av->isBinaryLoaded && av->cachedFloatData != nullptr) {
                 // Weight array: already float32 in memory, zero-copy read-only upload.
                 // CL_MEM_USE_HOST_PTR on Apple unified memory means no DMA copy at all.
-                isReadOnly[di] = true;
+                isReadOnly[di] = 1;
                 buffers[di] = clCreateBuffer(
                     s_clCtx.context,
                     CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
@@ -464,15 +444,18 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                     av->cachedFloatData, &err);
             } else {
                 // Activation/mutable array: convert double→float, upload read-write.
-                isReadOnly[di] = false;
-                staging[di].resize(av->totalSize);
+                isReadOnly[di] = 0;
+                std::vector<float>& stage = staging[di];
+                if ((int)stage.size() < av->totalSize) stage.resize(av->totalSize);
+                const double* src = av->val;
+                float* dst = stage.data();
                 for (int j = 0; j < av->totalSize; j++)
-                    staging[di][j] = (float)av->val[j];
+                    dst[j] = (float)src[j];
                 buffers[di] = clCreateBuffer(
                     s_clCtx.context,
                     CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
                     av->totalSize * sizeof(float),
-                    staging[di].data(), &err);
+                    dst, &err);
             }
 
             if (err != CL_SUCCESS) {
@@ -482,7 +465,6 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             }
             clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &buffers[di]);
         }
-        _tBuf = std::chrono::steady_clock::now();
 
         // Skip dispatch when any globalWorkSize dimension is 0 (nothing to compute)
         bool zeroWorkSize = false;
@@ -498,56 +480,36 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                 0, nullptr, nullptr);
 
             if (err == CL_SUCCESS) {
-                std::call_once(s_gpuDispatchLogOnce, [&]() {
-                    std::string kernelName = gpuExtractKernelName(kernelSrc);
-                    fprintf(stderr, "[GPU] First kernel dispatch succeeded: %s (workDim=%u",
-                            kernelName.c_str(), workDim);
-                    for (size_t workSizeIndex = 0; workSizeIndex < globalWorkSize.size(); workSizeIndex++) {
-                        fprintf(stderr, "%s%zu", workSizeIndex == 0 ? ", global=" : "x", globalWorkSize[workSizeIndex]);
-                    }
-                    fprintf(stderr, ")\n");
-                });
-                _tEnq = std::chrono::steady_clock::now();
                 clFinish(clQueue);
-                _tFin = std::chrono::steady_clock::now();
 
                 // -- Read back results: float→double (skip read-only weight buffers) --
-                for (int di = 0; di < (int)dataArgIndices.size(); di++) {
+                for (int di = 0; di < dataArgCount; di++) {
                     if (isReadOnly[di]) continue;  // weight: unchanged, no read-back needed
                     int argIdx = dataArgIndices[di];
                     ArrayDataContainerValue* arrVal =
                         static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
                     ArrayValue* av = arrVal->arrayValue;
 
+                    float* stageData = staging[di].data();
                     clEnqueueReadBuffer(
                         clQueue, buffers[di], CL_TRUE, 0,
-                        av->totalSize * sizeof(float), staging[di].data(),
+                        av->totalSize * sizeof(float), stageData,
                         0, nullptr, nullptr);
 
+                    double* dst = av->val;
                     for (int j = 0; j < av->totalSize; j++)
-                        av->val[j] = (double)staging[di][j];
+                        dst[j] = (double)stageData[j];
                 }
-                _tRB = std::chrono::steady_clock::now();
             } else {
                 fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
             }
         }
 
         // -- Release per-call buffers (kernel and context are cached/long-lived) --
-        for (cl_mem buf : buffers)
-            if (buf) clReleaseMemObject(buf);
-
-        // -- Timing report (only for large dispatches: >1M total work) --
-        {
-            size_t totalWork = 1;
-            for (auto w : globalWorkSize) totalWork *= w;
-            if (totalWork > 1000) {
-                auto ms = [](auto a, auto b){ return (double)std::chrono::duration_cast<std::chrono::microseconds>(b-a).count()/1000.0; };
-                std::string kn = gpuExtractKernelName(kernelSrc);
-                fprintf(stderr, "[TIMING] %s(%zu): buf=%.1fms enq=%.1fms gpu=%.1fms rb=%.1fms\n",
-                    kn.c_str(), totalWork,
-                    ms(_t0, _tBuf), ms(_tBuf, _tEnq), ms(_tEnq, _tFin), ms(_tFin, _tRB));
-                fflush(stderr);
+        for (int di = 0; di < dataArgCount; di++) {
+            if (buffers[di]) {
+                clReleaseMemObject(buffers[di]);
+                buffers[di] = nullptr;
             }
         }
 
