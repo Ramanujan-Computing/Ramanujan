@@ -48,6 +48,12 @@ STEP_HEIGHT = 0.08
 GRAVITY_Z = -9.81
 DT = 1.0 / 60.0
 
+# Ramanujan environment (must use correct Java version like phi3 does)
+JAVA_HOME = os.environ.get("JAVA_HOME",
+    "/Users/pranav/Library/Java/JavaVirtualMachines/corretto-1.8.0_402/Contents/Home")
+RJ_JAR = os.environ.get("RAMANUJAN_FAT_JAR", None)
+RJ_WS = os.environ.get("RAMANUJAN_WS", "/tmp")
+
 
 def log(msg=""):
     ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -69,7 +75,11 @@ def read_csv_1d(path):
         text = f.read().strip()
     if not text:
         return []
-    return [float(tok) for tok in text.split(",") if tok]
+    vals = [float(tok) for tok in text.split(",") if tok]
+    # Ramanujan CSV writer drops trailing zeros; pad feet array if needed
+    if len(vals) == 11 and path.endswith("_feet_0.csv"):
+        vals.append(0.0)
+    return vals
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,20 +89,14 @@ def read_csv_1d(path):
 def resolve_rj_command():
     """Return the command prefix used to launch the Ramanujan dev console.
 
-    Honors RAMANUJAN_FAT_JAR if set, otherwise looks for the `rj` alias
-    installed by ramanujan/install_ramanujan.sh, otherwise falls back to a
-    `java -jar` invocation rooted at the local repo build output.
+    Uses JAVA_HOME to find the correct Java binary (critical for native lib
+    compatibility), and RAMANUJAN_FAT_JAR for the JAR, falling back to the
+    local build output.
     """
-    fat_jar = os.environ.get("RAMANUJAN_FAT_JAR")
-    if fat_jar and os.path.isfile(fat_jar):
-        return ["java", "-Xmx2g", "-jar", fat_jar]
+    java_bin = os.path.join(JAVA_HOME, "bin", "java")
 
-    rj = shutil.which("rj")
-    if rj:
-        # rj wraps `java -jar developer-console.jar execute ...`. We need the
-        # `execute_inline` mode for CSV+dump workflows, so we still prefer the
-        # JAR path. Try to discover it from the alias contents.
-        return None  # signal failure; user must export RAMANUJAN_FAT_JAR
+    if RJ_JAR and os.path.isfile(RJ_JAR):
+        return [java_bin, "-Xmx2g", "-jar", RJ_JAR]
 
     # Heuristic fallback: typical built location relative to this script
     here = os.path.dirname(os.path.abspath(__file__))
@@ -100,7 +104,8 @@ def resolve_rj_command():
         here, "..", "..", "developer-console", "target",
         "developer-console-1.0-SNAPSHOT-fat.jar"))
     if os.path.isfile(candidate):
-        return ["java", "-Xmx2g", "-jar", candidate]
+        return [java_bin, "-Xmx2g", "-jar", candidate]
+
     return None
 
 
@@ -138,6 +143,11 @@ def run_kernel_one_frame(rj_cmd, kernel_path, work_dir, frame_num,
     cmd = list(rj_cmd) + [
         "execute_inline", kernel_path, pos_csv, vel_csv, par_csv,
     ]
+
+    env = os.environ.copy()
+    env["JAVA_HOME"] = JAVA_HOME
+    env["RAMANUJAN_WS"] = RJ_WS
+
     try:
         subprocess.run(
             cmd,
@@ -145,6 +155,7 @@ def run_kernel_one_frame(rj_cmd, kernel_path, work_dir, frame_num,
             text=True,
             check=True,
             capture_output=True,
+            env=env,
         )
     except subprocess.CalledProcessError as exc:
         sys.stderr.write(
@@ -193,9 +204,12 @@ def build_model_and_viewer(viewer_kind, output_path, initial_positions,
     # the feet were.
     foot_body_ids = []
     for i in range(4):
-        fx = initial_feet[i * 3 + 0]
-        fy = initial_feet[i * 3 + 1]
-        fz = initial_feet[i * 3 + 2]
+        fx_idx = i * 3
+        fy_idx = i * 3 + 1
+        fz_idx = i * 3 + 2
+        fx = initial_feet[fx_idx] if fx_idx < len(initial_feet) else 0.0
+        fy = initial_feet[fy_idx] if fy_idx < len(initial_feet) else 0.0
+        fz = initial_feet[fz_idx] if fz_idx < len(initial_feet) else 0.0
         body = builder.add_body(
             xform=wp.transform(wp.vec3(fx, fy, fz), wp.quat_identity()),
             mass=0.0,  # kinematic
@@ -248,9 +262,12 @@ def playback(model, viewer, foot_body_ids, frames):
         # Foot transforms: identity rotation, translation from kernel output
         body_xforms = []
         for i in range(4):
-            fx = feet[i * 3 + 0]
-            fy = feet[i * 3 + 1]
-            fz = feet[i * 3 + 2]
+            fx_idx = i * 3
+            fy_idx = i * 3 + 1
+            fz_idx = i * 3 + 2
+            fx = feet[fx_idx] if fx_idx < len(feet) else 0.0
+            fy = feet[fy_idx] if fy_idx < len(feet) else 0.0
+            fz = feet[fz_idx] if fz_idx < len(feet) else 0.0
             body_xforms.append(
                 wp.transform(wp.vec3(fx, fy, fz), wp.quat_identity()))
         wp.copy(state.body_q,
@@ -282,6 +299,10 @@ def main():
     parser.add_argument("--keep-tmp", action="store_true",
                         help="Don't delete the per-frame CSVs.")
     args = parser.parse_args()
+
+    log(f"JAVA_HOME: {JAVA_HOME}")
+    log(f"RAMANUJAN_JAR: {RJ_JAR}")
+    log(f"RAMANUJAN_WS: {RJ_WS}")
 
     rj_cmd = resolve_rj_command()
     if rj_cmd is None:

@@ -69,12 +69,15 @@ if frame_num < 0.5:
         while iy < GRID_NY:
             ix = 0
             while ix < GRID_NX:
-                positions[pi * 3] = ORIGIN_X + ix * SPACING
-                positions[pi * 3 + 1] = ORIGIN_Y + iy * SPACING
-                positions[pi * 3 + 2] = ORIGIN_Z + iz * SPACING
-                velocities[pi * 3] = 0
-                velocities[pi * 3 + 1] = 0
-                velocities[pi * 3 + 2] = 0
+                base = pi * 3
+                base1 = base + 1
+                base2 = base + 2
+                positions[base] = ORIGIN_X + ix * SPACING
+                positions[base1] = ORIGIN_Y + iy * SPACING
+                positions[base2] = ORIGIN_Z + iz * SPACING
+                velocities[base] = 0
+                velocities[base1] = 0
+                velocities[base2] = 0
                 pi = pi + 1
                 ix = ix + 1
             iy = iy + 1
@@ -122,7 +125,8 @@ feet[11] = lift_a
 
 # ── GPU kernel: gravity (one work item per particle) ────────────────────────
 def apply_gravity_GPU_1(velocities, gravity_buf, gid):
-    velocities[gid * 3 + 2] = velocities[gid * 3 + 2] + gravity_buf[0]
+    vz_idx = gid * 3 + 2
+    velocities[vz_idx] = velocities[vz_idx] + gravity_buf[0]
 
 
 # ── GPU kernel: 4-foot collision push ──────────────────────────────────────
@@ -130,22 +134,28 @@ def apply_gravity_GPU_1(velocities, gravity_buf, gid):
 # in local scalars before writing to the velocity array once. No nested GPU
 # calls (forbidden by translator).
 def apply_feet_GPU_1(positions, velocities, feet, foot_params, gid):
-    px = positions[gid * 3]
-    py = positions[gid * 3 + 1]
-    pz = positions[gid * 3 + 2]
+    px_idx = gid * 3
+    py_idx = gid * 3 + 1
+    pz_idx = gid * 3 + 2
+    px = positions[px_idx]
+    py = positions[py_idx]
+    pz = positions[pz_idx]
     radius = foot_params[0]
     strength = foot_params[1]
     r_sq = radius * radius
 
-    acc_vx = velocities[gid * 3]
-    acc_vy = velocities[gid * 3 + 1]
-    acc_vz = velocities[gid * 3 + 2]
+    acc_vx = velocities[px_idx]
+    acc_vy = velocities[py_idx]
+    acc_vz = velocities[pz_idx]
 
     fi = 0
     while fi < 4:
-        fx = feet[fi * 3]
-        fy = feet[fi * 3 + 1]
-        fz = feet[fi * 3 + 2]
+        fx_idx = fi * 3
+        fy_idx = fi * 3 + 1
+        fz_idx = fi * 3 + 2
+        fx = feet[fx_idx]
+        fy = feet[fy_idx]
+        fz = feet[fz_idx]
         dx = px - fx
         dy = py - fy
         dz = pz - fz
@@ -156,22 +166,25 @@ def apply_feet_GPU_1(positions, velocities, feet, foot_params, gid):
             acc_vz = acc_vz + dz * strength + 0.05
         fi = fi + 1
 
-    velocities[gid * 3] = acc_vx
-    velocities[gid * 3 + 1] = acc_vy
-    velocities[gid * 3 + 2] = acc_vz
+    velocities[px_idx] = acc_vx
+    velocities[py_idx] = acc_vy
+    velocities[pz_idx] = acc_vz
 
 
 # ── GPU kernel: ground collide + Euler integrate + damping ─────────────────
 def integrate_GPU_1(positions, velocities, dt_buf, gid):
     dt_local = dt_buf[0]
+    px_idx = gid * 3
+    py_idx = gid * 3 + 1
+    pz_idx = gid * 3 + 2
 
-    vx = velocities[gid * 3] * 0.985
-    vy = velocities[gid * 3 + 1] * 0.985
-    vz = velocities[gid * 3 + 2] * 0.985
+    vx = velocities[px_idx] * 0.985
+    vy = velocities[py_idx] * 0.985
+    vz = velocities[pz_idx] * 0.985
 
-    new_x = positions[gid * 3] + vx * dt_local
-    new_y = positions[gid * 3 + 1] + vy * dt_local
-    new_z = positions[gid * 3 + 2] + vz * dt_local
+    new_x = positions[px_idx] + vx * dt_local
+    new_y = positions[py_idx] + vy * dt_local
+    new_z = positions[pz_idx] + vz * dt_local
 
     if new_z < 0:
         new_z = 0
@@ -180,12 +193,12 @@ def integrate_GPU_1(positions, velocities, dt_buf, gid):
         vx = vx * 0.75
         vy = vy * 0.75
 
-    positions[gid * 3] = new_x
-    positions[gid * 3 + 1] = new_y
-    positions[gid * 3 + 2] = new_z
-    velocities[gid * 3] = vx
-    velocities[gid * 3 + 1] = vy
-    velocities[gid * 3 + 2] = vz
+    positions[px_idx] = new_x
+    positions[py_idx] = new_y
+    positions[pz_idx] = new_z
+    velocities[px_idx] = vx
+    velocities[py_idx] = vy
+    velocities[pz_idx] = vz
 
 
 # ── Run physics step (skip on frame 0; that frame just initialises state) ──
