@@ -1,0 +1,197 @@
+# =============================================================================
+# MPM-style Anymal Sand Kernel for Ramanujan
+# =============================================================================
+#
+# A simplified Material-Point-Method-flavoured sand simulation inspired by
+# Newton's `mpm_anymal` example. A 4-legged kinematic walker (the "Anymal"
+# stand-in) tramples through a bed of sand particles. Every physics step
+# runs entirely on the Ramanujan platform; OpenCL `_GPU_N` kernels do the
+# per-particle work, host-side Ramanujan code computes foot positions for
+# the trot gait.
+#
+# Usage (driven by run_mpm_anymal.py via execute_inline):
+#   rj mpm_anymal_kernel.py positions.csv velocities.csv params.csv
+#
+# Input arrays (loaded from same-named CSV files):
+#   positions   1D, NUM_PARTICLES * 3  (x,y,z per particle, flattened)
+#   velocities  1D, NUM_PARTICLES * 3  (vx,vy,vz per particle, flattened)
+#   params      1D, 7 floats
+#                 [0]  dt              physics step (s)
+#                 [1]  gravity         z-acceleration (m/s^2, negative)
+#                 [2]  foot_radius     collision radius (m)
+#                 [3]  foot_strength   impulse magnitude
+#                 [4]  gait_speed      forward velocity (m/s)
+#                 [5]  step_height     foot lift amplitude (m)
+#                 [6]  frame_num       integer-valued frame counter
+#
+# Outputs (extracted via dump):
+#   positions  (updated in place)
+#   velocities (updated in place)
+#   feet       12 floats: foot0_xyz, foot1_xyz, foot2_xyz, foot3_xyz
+# =============================================================================
+
+# ── Particle grid: 8 x 8 x 4 = 256 particles ────────────────────────────────
+NUM_PARTICLES = 256
+GRID_NX = 8
+GRID_NY = 8
+GRID_NZ = 4
+SPACING = 0.06
+ORIGIN_X = -0.24
+ORIGIN_Y = -0.24
+ORIGIN_Z = 0.005
+
+# Working buffers exposed to the orchestrator
+feet = [0 for _ in range(12)]
+gravity_buf = [0 for _ in range(1)]
+dt_buf = [0 for _ in range(1)]
+foot_params = [0 for _ in range(2)]
+
+# ── Unpack params on host (Ramanujan host-side runs as doubles) ─────────────
+dt = params[0]
+gravity_z = params[1]
+foot_radius = params[2]
+foot_strength = params[3]
+gait_speed = params[4]
+step_height = params[5]
+frame_num = params[6]
+
+dt_buf[0] = dt
+gravity_buf[0] = gravity_z * dt
+foot_params[0] = foot_radius
+foot_params[1] = foot_strength
+
+# ── Frame 0: lay out the particle grid on host (no division/modulo needed) ──
+if frame_num < 0.5:
+    pi = 0
+    iz = 0
+    while iz < GRID_NZ:
+        iy = 0
+        while iy < GRID_NY:
+            ix = 0
+            while ix < GRID_NX:
+                positions[pi * 3] = ORIGIN_X + ix * SPACING
+                positions[pi * 3 + 1] = ORIGIN_Y + iy * SPACING
+                positions[pi * 3 + 2] = ORIGIN_Z + iz * SPACING
+                velocities[pi * 3] = 0
+                velocities[pi * 3 + 1] = 0
+                velocities[pi * 3 + 2] = 0
+                pi = pi + 1
+                ix = ix + 1
+            iy = iy + 1
+        iz = iz + 1
+
+# ── Foot kinematics: trot gait, body walks in +y, lift in +z ───────────────
+# Diagonal pairs lift together: (LF, RH) phase 0, (RF, LH) phase pi.
+body_y = frame_num * dt * gait_speed
+phase_a = frame_num * dt * gait_speed * 6.283185307
+phase_b = phase_a + 3.141592653
+
+# Use SIN built-in on host (it mutates its argument by reference).
+sa = phase_a
+SIN(sa)
+sb = phase_b
+SIN(sb)
+
+lift_a = sa * step_height
+if lift_a < 0:
+    lift_a = 0
+lift_b = sb * step_height
+if lift_b < 0:
+    lift_b = 0
+
+# foot 0 LF (-x, +y, lifted on phase_a)
+feet[0] = -0.18
+feet[1] = body_y + 0.30
+feet[2] = lift_a
+
+# foot 1 RF (+x, +y, lifted on phase_b)
+feet[3] = 0.18
+feet[4] = body_y + 0.30
+feet[5] = lift_b
+
+# foot 2 LH (-x, -y, lifted on phase_b)
+feet[6] = -0.18
+feet[7] = body_y - 0.30
+feet[8] = lift_b
+
+# foot 3 RH (+x, -y, lifted on phase_a)
+feet[9] = 0.18
+feet[10] = body_y - 0.30
+feet[11] = lift_a
+
+
+# ── GPU kernel: gravity (one work item per particle) ────────────────────────
+def apply_gravity_GPU_1(velocities, gravity_buf, gid):
+    velocities[gid * 3 + 2] = velocities[gid * 3 + 2] + gravity_buf[0]
+
+
+# ── GPU kernel: 4-foot collision push ──────────────────────────────────────
+# Each work item is a particle, loops over the 4 feet and accumulates impulse
+# in local scalars before writing to the velocity array once. No nested GPU
+# calls (forbidden by translator).
+def apply_feet_GPU_1(positions, velocities, feet, foot_params, gid):
+    px = positions[gid * 3]
+    py = positions[gid * 3 + 1]
+    pz = positions[gid * 3 + 2]
+    radius = foot_params[0]
+    strength = foot_params[1]
+    r_sq = radius * radius
+
+    acc_vx = velocities[gid * 3]
+    acc_vy = velocities[gid * 3 + 1]
+    acc_vz = velocities[gid * 3 + 2]
+
+    fi = 0
+    while fi < 4:
+        fx = feet[fi * 3]
+        fy = feet[fi * 3 + 1]
+        fz = feet[fi * 3 + 2]
+        dx = px - fx
+        dy = py - fy
+        dz = pz - fz
+        dist_sq = dx * dx + dy * dy + dz * dz
+        if dist_sq < r_sq:
+            acc_vx = acc_vx + dx * strength
+            acc_vy = acc_vy + dy * strength
+            acc_vz = acc_vz + dz * strength + 0.05
+        fi = fi + 1
+
+    velocities[gid * 3] = acc_vx
+    velocities[gid * 3 + 1] = acc_vy
+    velocities[gid * 3 + 2] = acc_vz
+
+
+# ── GPU kernel: ground collide + Euler integrate + damping ─────────────────
+def integrate_GPU_1(positions, velocities, dt_buf, gid):
+    dt_local = dt_buf[0]
+
+    vx = velocities[gid * 3] * 0.985
+    vy = velocities[gid * 3 + 1] * 0.985
+    vz = velocities[gid * 3 + 2] * 0.985
+
+    new_x = positions[gid * 3] + vx * dt_local
+    new_y = positions[gid * 3 + 1] + vy * dt_local
+    new_z = positions[gid * 3 + 2] + vz * dt_local
+
+    if new_z < 0:
+        new_z = 0
+        if vz < 0:
+            vz = vz * (-0.25)
+        vx = vx * 0.75
+        vy = vy * 0.75
+
+    positions[gid * 3] = new_x
+    positions[gid * 3 + 1] = new_y
+    positions[gid * 3 + 2] = new_z
+    velocities[gid * 3] = vx
+    velocities[gid * 3 + 1] = vy
+    velocities[gid * 3 + 2] = vz
+
+
+# ── Run physics step (skip on frame 0; that frame just initialises state) ──
+# Work-size is the literal particle count (256 = 8*8*4) to match the
+# constant-only call-site convention used by the other kernels in this repo.
+if frame_num > 0.5:
+    apply_gravity_GPU_1(velocities, gravity_buf, 256)
+    apply_feet_GPU_1(positions, velocities, feet, foot_params, 256)
+    integrate_GPU_1(positions, velocities, dt_buf, 256)
