@@ -251,15 +251,14 @@ def playback(model, viewer, foot_body_ids, frames):
     pos_dtype = state.particle_q.dtype if state.particle_q is not None else wp.vec3
     body_dtype = state.body_q.dtype if state.body_q is not None else wp.transform
 
-    for f_idx, frame in enumerate(frames):
-        positions, _vels, feet = frame
-
-        # Particle positions: pure pass-through (Ramanujan computed these)
+    # Pre-build warp arrays for every frame so playback is fast
+    num_frames = len(frames)
+    pos_arrays = []
+    body_xform_arrays = []
+    for positions, _vels, feet in frames:
         pos_array = np.asarray(positions, dtype=np.float32).reshape(-1, 3)
-        wp.copy(state.particle_q,
-                wp.array(pos_array, dtype=pos_dtype, device=state.particle_q.device))
+        pos_arrays.append(wp.array(pos_array, dtype=pos_dtype))
 
-        # Foot transforms: identity rotation, translation from kernel output
         body_xforms = []
         for i in range(4):
             fx_idx = i * 3
@@ -268,17 +267,20 @@ def playback(model, viewer, foot_body_ids, frames):
             fx = feet[fx_idx] if fx_idx < len(feet) else 0.0
             fy = feet[fy_idx] if fy_idx < len(feet) else 0.0
             fz = feet[fz_idx] if fz_idx < len(feet) else 0.0
-            body_xforms.append(
-                wp.transform(wp.vec3(fx, fy, fz), wp.quat_identity()))
-        wp.copy(state.body_q,
-                wp.array(body_xforms, dtype=body_dtype, device=state.body_q.device))
+            body_xforms.append(wp.transform(wp.vec3(fx, fy, fz), wp.quat_identity()))
+        body_xform_arrays.append(wp.array(body_xforms, dtype=body_dtype))
+
+    # Loop animation continuously until the user closes the viewer
+    f_idx = 0
+    while viewer.is_running():
+        wp.copy(state.particle_q, pos_arrays[f_idx])
+        wp.copy(state.body_q, body_xform_arrays[f_idx])
 
         viewer.begin_frame(f_idx * DT)
         viewer.log_state(state)
         viewer.end_frame()
 
-        if not viewer.is_running():
-            break
+        f_idx = (f_idx + 1) % num_frames
 
     if hasattr(viewer, "close"):
         viewer.close()
