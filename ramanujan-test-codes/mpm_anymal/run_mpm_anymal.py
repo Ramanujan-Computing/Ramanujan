@@ -22,7 +22,7 @@
 #   # 1. Create venv and install deps:
 #   #      python3 -m venv .venv && source .venv/bin/activate
 #   #      pip install "warp-lang" "newton[examples]" "ast2json"
-#   # 2. Build Ramanujan with -DENABLE_GPU=ON (see README.md)
+#   # 2. Build Ramanujan with -DGPU_ENABLED=ON (see README.md)
 #   # 3. Run:
 #   #      python3 run_mpm_anymal.py --frames 200
 #   #      python3 run_mpm_anymal.py --frames 200 --num-particles 1000000
@@ -36,6 +36,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import threading
 
 KERNEL_NAME = "mpm_anymal_kernel.py"
 
@@ -64,6 +66,114 @@ RJ_WS = os.environ.get("RAMANUJAN_WS", "/tmp")
 def log(msg=""):
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}", flush=True)
+
+
+class RjServer:
+    """Persistent JVM server for frame execution (avoids JVM startup per frame)."""
+
+    def __init__(self, java_home, rj_ws):
+        self.java_home = java_home
+        self.rj_ws = rj_ws
+        self.proc = None
+        self._stderr_thread = None
+
+    def start(self, timeout=60):
+        """Spawn JVM in server mode and wait for SERVER_READY."""
+        java_bin = os.path.join(self.java_home, "bin", "java")
+        rj_jar = os.environ.get("RAMANUJAN_FAT_JAR", "/Users/pranav/Desktop/ws/developer-console-1.0-SNAPSHOT-fat.jar")
+        cmd = [java_bin, "-Xmx4g", "-XX:+UseG1GC", "-jar", rj_jar, "server"]
+
+        log("Starting persistent JVM server...")
+        env = os.environ.copy()
+        env["JAVA_HOME"] = self.java_home
+        env["RAMANUJAN_WS"] = self.rj_ws
+
+        self.proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # line-buffered
+            env=env,
+        )
+
+        # drain stderr in background so it never blocks
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
+
+        # wait for SERVER_READY
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            line = self.proc.stdout.readline()
+            if not line:
+                log("ERROR: JVM exited before SERVER_READY")
+                sys.exit(1)
+            line = line.rstrip()
+            if line == "SERVER_READY":
+                log("JVM server ready")
+                return
+        log("ERROR: timeout waiting for SERVER_READY")
+        sys.exit(1)
+
+    def _drain_stderr(self):
+        """Background thread: print JVM stderr (GPU logs, etc.)."""
+        for line in self.proc.stderr:
+            sys.stderr.write("[JVM] " + line)
+
+    def run_kernel(self, kernel_py, csv_args, dump_vars, timeout=300):
+        """Send a run command and wait for KERNEL_DONE, then dump outputs."""
+        kname = os.path.basename(kernel_py)
+        args_str = " ".join([kernel_py] + csv_args)
+        t0 = time.time()
+
+        self.proc.stdin.write(f"run {args_str}\n")
+        self.proc.stdin.flush()
+
+        # wait for KERNEL_DONE sentinel
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            line = self.proc.stdout.readline()
+            if not line:
+                log(f"ERROR: JVM stdout closed during {kname}")
+                sys.exit(1)
+            line = line.rstrip()
+            if line == "KERNEL_DONE":
+                break
+            if line.startswith("KERNEL_ERROR"):
+                log(f"ERROR {kname}: {line}")
+                sys.exit(1)
+        else:
+            log(f"TIMEOUT {kname}: no KERNEL_DONE after {timeout}s")
+            sys.exit(1)
+
+        # dump output arrays
+        results = {}
+        for name, path in dump_vars.items():
+            self.proc.stdin.write(f"dump {name} {path}\n")
+            self.proc.stdin.flush()
+            # wait for "Dumped ..." confirmation
+            ddl = time.time() + 30
+            while time.time() < ddl:
+                dline = self.proc.stdout.readline()
+                if not dline:
+                    log(f"ERROR: JVM closed during dump {name}")
+                    sys.exit(1)
+                dline = dline.rstrip()
+                if dline.startswith("Dumped"):
+                    break
+            results[name] = path
+
+        kernel_elapsed = time.time() - t0
+        return kernel_elapsed
+
+    def shutdown(self):
+        """Send quit command and wait for JVM to exit."""
+        if self.proc:
+            self.proc.stdin.write("quit\n")
+            self.proc.stdin.flush()
+            self.proc.wait(timeout=10)
+            log("JVM server shutdown")
 
 
 def compute_grid(num_particles):
@@ -125,9 +235,9 @@ def resolve_rj_command():
     return None
 
 
-def run_kernel_one_frame(rj_cmd, kernel_path, work_dir, frame_num,
+def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
                          positions, velocities, grid_params):
-    """Run mpm_anymal_kernel.py for one frame.
+    """Run mpm_anymal_kernel.py for one frame using persistent JVM server.
     grid_params: (grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles)
     Returns (new_positions, new_velocities, foot_positions).
     """
@@ -160,36 +270,16 @@ def run_kernel_one_frame(rj_cmd, kernel_path, work_dir, frame_num,
         float(oz),
     ])
 
-    dump_script = (
-        f"dump positions {out_pos}\n"
-        f"dump velocities {out_vel}\n"
-        f"dump feet {out_feet}\n"
-        f"exit\n"
-    )
-
-    cmd = list(rj_cmd) + [
-        "execute_inline", kernel_path, pos_csv, vel_csv, par_csv,
-    ]
-
-    env = os.environ.copy()
-    env["JAVA_HOME"] = JAVA_HOME
-    env["RAMANUJAN_WS"] = RJ_WS
+    dump_vars = {
+        "positions": out_pos,
+        "velocities": out_vel,
+        "feet": out_feet,
+    }
 
     try:
-        subprocess.run(
-            cmd,
-            input=dump_script,
-            text=True,
-            check=True,
-            capture_output=True,
-            env=env,
-        )
-    except subprocess.CalledProcessError as exc:
-        sys.stderr.write(
-            f"Ramanujan invocation failed at frame {frame_num}\n"
-            f"  cmd: {' '.join(cmd)}\n"
-            f"  stdout: {exc.stdout}\n"
-            f"  stderr: {exc.stderr}\n")
+        rj_server.run_kernel(kernel_path, [pos_csv, vel_csv, par_csv], dump_vars)
+    except Exception as exc:
+        log(f"ERROR: kernel execution failed at frame {frame_num}: {exc}")
         raise
 
     return (
@@ -339,13 +429,9 @@ def main():
     log(f"Particles:      {num_particles}  ({grid_nx}×{grid_ny}×{grid_nz}, spacing={spacing:.4f} m)")
     log(f"Particle radius:{particle_radius:.4f} m  (viewer only)")
 
-    rj_cmd = resolve_rj_command()
-    if rj_cmd is None:
-        sys.stderr.write(
-            "Could not locate the Ramanujan developer-console JAR.\n"
-            "Set RAMANUJAN_FAT_JAR=/abs/path/to/"
-            "developer-console-1.0-SNAPSHOT-fat.jar and re-run.\n")
-        sys.exit(1)
+    # Start persistent JVM server (no per-frame subprocess overhead)
+    rj_server = RjServer(JAVA_HOME, RJ_WS)
+    rj_server.start()
 
     here       = os.path.dirname(os.path.abspath(__file__))
     kernel_path = os.path.join(here, KERNEL_NAME)
@@ -358,13 +444,21 @@ def main():
     velocities = [0.0] * (num_particles * 3)
 
     frames = []
-    for frame_num in range(args.frames):
-        positions, velocities, feet = run_kernel_one_frame(
-            rj_cmd, kernel_path, work_dir, frame_num,
-            positions, velocities, grid_params)
-        frames.append((positions, velocities, feet))
-        if frame_num % 10 == 0:
-            log(f"  frame {frame_num}/{args.frames}")
+    frame_times = []
+    try:
+        for frame_num in range(args.frames):
+            t0 = time.time()
+            positions, velocities, feet = run_kernel_one_frame(
+                rj_server, kernel_path, work_dir, frame_num,
+                positions, velocities, grid_params)
+            frames.append((positions, velocities, feet))
+            frame_time = time.time() - t0
+            frame_times.append(frame_time)
+            if frame_num % 10 == 0:
+                avg_time = sum(frame_times) / len(frame_times) if frame_times else 0
+                log(f"  frame {frame_num}/{args.frames} (latest={frame_time:.2f}s, avg={avg_time:.2f}s)")
+    finally:
+        rj_server.shutdown()
 
     log(f"Ramanujan finished {len(frames)} frames; opening Newton viewer.")
 

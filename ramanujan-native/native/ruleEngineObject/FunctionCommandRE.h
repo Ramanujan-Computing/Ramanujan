@@ -231,8 +231,10 @@ private:
     cl_command_queue                gpuQueue        = nullptr;
     cl_kernel                       gpuKernel       = nullptr;
     std::vector<float>              gpuStaging[maxArgSize];
-    cl_mem                          gpuBuffers[maxArgSize] = {};
-    unsigned char                   gpuIsReadOnly[maxArgSize] = {};
+    cl_mem                          gpuBuffers[maxArgSize]      = {};
+    size_t                          gpuBufferSizes[maxArgSize]  = {};
+    const void*                     gpuBufferHostPtrs[maxArgSize] = {};
+    unsigned char                   gpuIsReadOnly[maxArgSize]   = {};
     std::vector<size_t>             gpuGlobalWorkSize;
 #endif
 
@@ -272,6 +274,9 @@ public:
 #ifdef GPU_ENABLED
         if (gpuKernel) { clReleaseKernel(gpuKernel); gpuKernel = nullptr; }
         if (gpuQueue)  { clFlush(gpuQueue); clFinish(gpuQueue); clReleaseCommandQueue(gpuQueue); gpuQueue = nullptr; }
+        for (int _i = 0; _i < maxArgSize; _i++) {
+            if (gpuBuffers[_i]) { clReleaseMemObject(gpuBuffers[_i]); gpuBuffers[_i] = nullptr; }
+        }
 #endif
     }
     

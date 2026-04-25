@@ -84,7 +84,7 @@ From the repository root:
 ```bash
 cd ramanujan-native/native
 mkdir -p build-gpu && cd build-gpu
-cmake -DENABLE_GPU=ON ..
+cmake -DGPU_ENABLED=ON ..
 cmake --build .
 ```
 

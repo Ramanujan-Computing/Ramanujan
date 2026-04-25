@@ -413,14 +413,8 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
         }
         std::vector<size_t>& globalWorkSize = gpuGlobalWorkSize;
 
-        // -- Allocate OpenCL buffers for data args (convert double→float staging) --
-        // Per-instance arrays retain capacity across calls — no re-allocation
-        // of large arrays on every kernel dispatch.
-        // Reset only the first dataArgCount slots that we are about to use.
-        for (int di = 0; di < dataArgCount; di++) {
-            gpuBuffers[di]    = nullptr;
-            gpuIsReadOnly[di] = 0;
-        }
+        // -- Allocate / reuse OpenCL buffers for data args (convert double→float staging) --
+        // gpuBuffers[] are cached across calls; only reallocated when size changes.
         cl_mem*              buffers    = gpuBuffers;
         std::vector<float>*  staging    = gpuStaging;
         unsigned char*       isReadOnly = gpuIsReadOnly;
@@ -432,34 +426,60 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             ArrayDataContainerValue* arrVal =
                 static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
             ArrayValue* av = arrVal->arrayValue;
+            size_t needed = (size_t)av->totalSize * sizeof(float);
 
             if (av->isBinaryLoaded && av->cachedFloatData != nullptr) {
-                // Weight array: already float32 in memory, zero-copy read-only upload.
-                // CL_MEM_USE_HOST_PTR on Apple unified memory means no DMA copy at all.
+                // Read-only weight array: zero-copy via USE_HOST_PTR.
+                // Invalidate cached buffer if size or host pointer changed.
+                const void* hostPtr = av->cachedFloatData;
+                if (buffers[di] && (gpuBufferSizes[di] != needed || gpuBufferHostPtrs[di] != hostPtr)) {
+                    clReleaseMemObject(buffers[di]);
+                    buffers[di] = nullptr;
+                }
                 isReadOnly[di] = 1;
-                buffers[di] = clCreateBuffer(
-                    s_clCtx.context,
-                    CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                    av->totalSize * sizeof(float),
-                    av->cachedFloatData, &err);
+                if (!buffers[di]) {
+                    buffers[di] = clCreateBuffer(
+                        s_clCtx.context,
+                        CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+                        needed, av->cachedFloatData, &err);
+                    if (err == CL_SUCCESS) {
+                        gpuBufferSizes[di]    = needed;
+                        gpuBufferHostPtrs[di] = hostPtr;
+                    }
+                } else {
+                    err = CL_SUCCESS; // reused: host ptr mapping unchanged
+                }
             } else {
-                // Activation/mutable array: convert double→float, upload read-write.
-                isReadOnly[di] = 0;
+                // Mutable array: convert double→float into persistent staging buffer.
                 std::vector<float>& stage = staging[di];
                 if ((int)stage.size() < av->totalSize) stage.resize(av->totalSize);
                 const double* src = av->val;
                 float* dst = stage.data();
                 for (int j = 0; j < av->totalSize; j++)
                     dst[j] = (float)src[j];
-                buffers[di] = clCreateBuffer(
-                    s_clCtx.context,
-                    CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                    av->totalSize * sizeof(float),
-                    dst, &err);
+
+                // Invalidate cached buffer only if size changed.
+                if (buffers[di] && gpuBufferSizes[di] != needed) {
+                    clReleaseMemObject(buffers[di]);
+                    buffers[di] = nullptr;
+                }
+                isReadOnly[di] = 0;
+                if (!buffers[di]) {
+                    // First call or size change: allocate and upload in one shot.
+                    buffers[di] = clCreateBuffer(
+                        s_clCtx.context,
+                        CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                        needed, dst, &err);
+                    if (err == CL_SUCCESS)
+                        gpuBufferSizes[di] = needed;
+                } else {
+                    // Reuse: enqueue non-blocking write (kernel is queued after, so ordering is preserved).
+                    err = clEnqueueWriteBuffer(clQueue, buffers[di], CL_FALSE, 0, needed, dst, 0, nullptr, nullptr);
+                }
             }
 
             if (err != CL_SUCCESS) {
-                fprintf(stderr, "[GPU] clCreateBuffer failed (arg %d): %d\n", di, err);
+                fprintf(stderr, "[GPU] buffer setup failed (arg %d): %d\n", di, err);
                 bufferError = true;
                 break;
             }
@@ -502,14 +522,6 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                 }
             } else {
                 fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
-            }
-        }
-
-        // -- Release per-call buffers (kernel and context are cached/long-lived) --
-        for (int di = 0; di < dataArgCount; di++) {
-            if (buffers[di]) {
-                clReleaseMemObject(buffers[di]);
-                buffers[di] = nullptr;
             }
         }
 
