@@ -271,13 +271,22 @@ public class TranslateUtil {
             return;
         }
 
-        // Check for pre-existing .bin file (pre-converted offline)
+        // Check for pre-existing .bin file (pre-converted offline).
+        // Also resolve symlinks so that temp-dir .csv symlinks find the real .bin.
         String csvPath = csvInformation.getFileName();
         if (csvPath != null && csvPath.endsWith(".csv")) {
-            String binPath = csvPath.substring(0, csvPath.length() - 4) + ".bin";
-            java.io.File binFile = new java.io.File(binPath);
+            // 1. Try next to the CSV as-is
+            java.io.File binFile = new java.io.File(csvPath.substring(0, csvPath.length() - 4) + ".bin");
+            if (!binFile.exists() || binFile.length() == 0) {
+                // 2. Resolve symlink and try next to the real file
+                try {
+                    java.nio.file.Path real = java.nio.file.Paths.get(csvPath).toRealPath();
+                    binFile = new java.io.File(real.toString().substring(0, real.toString().length() - 4) + ".bin");
+                } catch (Exception ignored) {}
+            }
             if (binFile.exists() && binFile.length() > 0) {
-                String absoluteBinPath = binFile.getAbsolutePath();
+                String absoluteBinPath;
+                try { absoluteBinPath = binFile.getCanonicalPath(); } catch (Exception e) { absoluteBinPath = binFile.getAbsolutePath(); }
                 System.out.println("[TranslateUtil] Found pre-converted binary: " + absoluteBinPath + " (" + (binFile.length() / 1024 / 1024) + " MB)");
                 array.setBinaryFile(absoluteBinPath);
                 return;

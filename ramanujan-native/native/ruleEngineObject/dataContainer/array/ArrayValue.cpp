@@ -6,6 +6,10 @@
 #include "../DataContainerValueFunctionCommandRE.h"
 
 
+// Global cache: binaryFilePath -> {float* data, int count}
+static std::mutex                                              s_binaryMutex;
+static std::unordered_map<std::string, std::pair<float*, int>> s_binaryCache;
+
 ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     this->array = array;
 
@@ -29,24 +33,43 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
 
     // Fast path: load from binary float32 file directly into val[]
     if (!array->binaryFile.empty()) {
-        std::ifstream file(array->binaryFile, std::ios::binary | std::ios::ate);
-        if (file.is_open()) {
-            size_t fileSize = file.tellg();
-            file.seekg(0, std::ios::beg);
-            size_t numFloats = fileSize / sizeof(float);
-            int count = (int)numFloats < totalSize ? (int)numFloats : totalSize;
-
-            // Read float32 values and convert to double
-            std::vector<float> floatBuf(count);
-            file.read(reinterpret_cast<char*>(floatBuf.data()), count * sizeof(float));
-            file.close();
-
-            for (int idx = 0; idx < count; idx++) {
-                val[idx] = (double)floatBuf[idx];
+        // Check cache first (avoids re-reading disk on every kernel call)
+        std::string key = array->binaryFile;
+        float* fdata = nullptr;
+        int fcount = 0;
+        {
+            std::lock_guard<std::mutex> lk(s_binaryMutex);
+            auto it = s_binaryCache.find(key);
+            if (it != s_binaryCache.end()) {
+                fdata  = it->second.first;
+                fcount = it->second.second;
             }
-            std::cout << "[ArrayValue] Loaded " << count << " values from binary: " << array->binaryFile << std::endl;
-        } else {
-            std::cerr << "[ArrayValue] Failed to open binary file: " << array->binaryFile << std::endl;
+        }
+        if (!fdata) {
+            // First time: read from disk, insert into cache
+            std::ifstream file(key, std::ios::binary | std::ios::ate);
+            if (file.is_open()) {
+                size_t fileSize = file.tellg();
+                file.seekg(0, std::ios::beg);
+                fcount = (int)(fileSize / sizeof(float));
+                if (fcount > totalSize) fcount = totalSize;
+                fdata = new float[fcount];  // static lifetime – never deleted
+                file.read(reinterpret_cast<char*>(fdata), fcount * sizeof(float));
+                file.close();
+                {
+                    std::lock_guard<std::mutex> lk(s_binaryMutex);
+                    s_binaryCache[key] = {fdata, fcount};
+                }
+            } else {
+                std::cerr << "[ArrayValue] Failed to open binary file: " << key << std::endl;
+            }
+        }
+        if (fdata) {
+            // Convert float -> double for the CPU-side val[]
+            for (int idx = 0; idx < fcount; idx++)
+                val[idx] = (double)fdata[idx];
+            isBinaryLoaded  = true;
+            cachedFloatData = fdata;  // keep for zero-copy GPU upload
         }
     } else {
         // Slow path: parse string-keyed map

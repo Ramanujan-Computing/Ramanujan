@@ -17,6 +17,7 @@
 #ifdef GPU_ENABLED
 #include <set>
 #include <mutex>
+#include <chrono>
 
 // ==================== OpenCL ====================
 #ifdef __APPLE__
@@ -349,12 +350,6 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
  * Returns: nextUnit after function completes (return statements are handled internally)
  */
 RuleEngineInputUnits* FunctionCommandRE::process() {
-    {
-        FILE* dbg = fopen("/tmp/phi3_native_debug.log", "a");
-        if(dbg) { fprintf(dbg, "[FunctionCommandRE] process() called, isGpu=%d\n",
-            (int)functionInfoRE->isGpu); fflush(dbg); fclose(dbg); }
-    }
-
 #ifdef GPU_ENABLED
     // ==================== GPU FAST PATH ====================
     // If this function is flagged as a GPU kernel, skip the normal unit-chain
@@ -374,6 +369,9 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             fprintf(stderr, "[GPU] Could not obtain per-thread command queue\n");
             return nextUnit;
         }
+
+        auto _t0 = std::chrono::steady_clock::now();
+        auto _tBuf = _t0, _tEnq = _t0, _tFin = _t0, _tRB = _t0;
 
         const std::string&      kernelSrc        = functionInfoRE->openClCode;
         const std::vector<int>& parallelismIdxs  = functionInfoRE->gpuParallelismArgIndices;
@@ -440,36 +438,42 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             globalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
                 methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
         }
-        fprintf(stderr, "[GPU] Kernel '%s': workDim=%u, globalWorkSize=", gpuExtractKernelName(kernelSrc).c_str(), workDim);
-        for (size_t ws = 0; ws < globalWorkSize.size(); ws++) fprintf(stderr, "%s%zu", ws?",":"", globalWorkSize[ws]);
-        fprintf(stderr, ", dataArgs=%d\n", (int)dataArgIndices.size());
-        fflush(stderr);
+
 
         // -- Allocate OpenCL buffers for data args (convert double→float staging) --
         std::vector<cl_mem>              buffers(dataArgIndices.size(), nullptr);
         std::vector<std::vector<float>>  staging(dataArgIndices.size());
+        std::vector<bool>                isReadOnly(dataArgIndices.size(), false);
         cl_int err = CL_SUCCESS;
         bool   bufferError = false;
 
         for (int di = 0; di < (int)dataArgIndices.size(); di++) {
             int argIdx = dataArgIndices[di];
-            fprintf(stderr, "[GPU] Buffer arg %d/%d (argIdx=%d)...\n", di, (int)dataArgIndices.size(), argIdx);
-            fflush(stderr);
             ArrayDataContainerValue* arrVal =
                 static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
             ArrayValue* av = arrVal->arrayValue;
-            fprintf(stderr, "[GPU]   totalSize=%d, staging %.1f MB\n", av->totalSize, av->totalSize * 4.0 / 1048576.0);
-            fflush(stderr);
 
-            staging[di].resize(av->totalSize);
-            for (int j = 0; j < av->totalSize; j++)
-                staging[di][j] = (float)av->val[j];
-
-            buffers[di] = clCreateBuffer(
-                s_clCtx.context,
-                CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                av->totalSize * sizeof(float),
-                staging[di].data(), &err);
+            if (av->isBinaryLoaded && av->cachedFloatData != nullptr) {
+                // Weight array: already float32 in memory, zero-copy read-only upload.
+                // CL_MEM_USE_HOST_PTR on Apple unified memory means no DMA copy at all.
+                isReadOnly[di] = true;
+                buffers[di] = clCreateBuffer(
+                    s_clCtx.context,
+                    CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+                    av->totalSize * sizeof(float),
+                    av->cachedFloatData, &err);
+            } else {
+                // Activation/mutable array: convert double→float, upload read-write.
+                isReadOnly[di] = false;
+                staging[di].resize(av->totalSize);
+                for (int j = 0; j < av->totalSize; j++)
+                    staging[di][j] = (float)av->val[j];
+                buffers[di] = clCreateBuffer(
+                    s_clCtx.context,
+                    CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                    av->totalSize * sizeof(float),
+                    staging[di].data(), &err);
+            }
 
             if (err != CL_SUCCESS) {
                 fprintf(stderr, "[GPU] clCreateBuffer failed (arg %d): %d\n", di, err);
@@ -478,6 +482,7 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             }
             clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &buffers[di]);
         }
+        _tBuf = std::chrono::steady_clock::now();
 
         // Skip dispatch when any globalWorkSize dimension is 0 (nothing to compute)
         bool zeroWorkSize = false;
@@ -502,10 +507,13 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                     }
                     fprintf(stderr, ")\n");
                 });
+                _tEnq = std::chrono::steady_clock::now();
                 clFinish(clQueue);
+                _tFin = std::chrono::steady_clock::now();
 
-                // -- Read back results: float→double --
+                // -- Read back results: float→double (skip read-only weight buffers) --
                 for (int di = 0; di < (int)dataArgIndices.size(); di++) {
+                    if (isReadOnly[di]) continue;  // weight: unchanged, no read-back needed
                     int argIdx = dataArgIndices[di];
                     ArrayDataContainerValue* arrVal =
                         static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
@@ -519,6 +527,7 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                     for (int j = 0; j < av->totalSize; j++)
                         av->val[j] = (double)staging[di][j];
                 }
+                _tRB = std::chrono::steady_clock::now();
             } else {
                 fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
             }
@@ -528,7 +537,22 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
         for (cl_mem buf : buffers)
             if (buf) clReleaseMemObject(buf);
 
+        // -- Timing report (only for large dispatches: >1M total work) --
+        {
+            size_t totalWork = 1;
+            for (auto w : globalWorkSize) totalWork *= w;
+            if (totalWork > 1000) {
+                auto ms = [](auto a, auto b){ return (double)std::chrono::duration_cast<std::chrono::microseconds>(b-a).count()/1000.0; };
+                std::string kn = gpuExtractKernelName(kernelSrc);
+                fprintf(stderr, "[TIMING] %s(%zu): buf=%.1fms enq=%.1fms gpu=%.1fms rb=%.1fms\n",
+                    kn.c_str(), totalWork,
+                    ms(_t0, _tBuf), ms(_tBuf, _tEnq), ms(_tEnq, _tFin), ms(_tFin, _tRB));
+                fflush(stderr);
+            }
+        }
+
         return nextUnit;
+
     }
     // ==================== END GPU FAST PATH ====================
 #endif // GPU_ENABLED

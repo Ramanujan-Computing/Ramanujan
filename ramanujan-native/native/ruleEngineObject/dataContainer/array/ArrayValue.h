@@ -31,6 +31,12 @@ public:
     double* val = nullptr;
     int totalSize = 0;
     int* sizeAtIndex = nullptr;
+    // Set when loaded from a .bin weight file.
+    // cachedFloatData: aligned float32 buffer for zero-copy GPU uploads (CL_MEM_USE_HOST_PTR).
+    // isCachedVal: val points into the static weight cache, do NOT delete[].
+    bool   isBinaryLoaded  = false;
+    bool   isCachedVal     = false;
+    float* cachedFloatData = nullptr;  // non-null after first load; never freed (static lifetime)
     
     // Optimized default constructor - no allocations
     ArrayValue() : array(nullptr), dimensions(nullptr), dimensionSize(0), 

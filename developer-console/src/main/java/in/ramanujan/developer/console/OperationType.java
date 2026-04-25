@@ -8,7 +8,8 @@ public enum OperationType {
     execute_all("executePackage", new ExecutePackageImpl()),
     suspend("suspend", new SuspendImpl()),
     debug("debug", new DebugFetcher()),
-    execute_inline("execute_inline", new ExecuteInline());
+    execute_inline("execute_inline", new ExecuteInline()),
+    execute_inline_server("server", new ExecuteInlineServer());
 
     String type;
     Operation implementation;

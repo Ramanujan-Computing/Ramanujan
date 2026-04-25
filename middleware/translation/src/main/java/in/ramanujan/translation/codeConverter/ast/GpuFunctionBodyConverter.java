@@ -64,7 +64,21 @@ public class GpuFunctionBodyConverter {
 
     // Per-conversion state – reset at the start of each convert() call.
     private Set<String> paramNames            = new HashSet<>();
+    /**
+     * Subset of paramNames that are float array parameters (__global float*).
+     * Excludes range-dimension arguments (gid, etc.) which are integer.
+     * Used by exprIsFloat to propagate float-ness through variable assignments.
+     */
+    private Set<String> floatParamNames       = new HashSet<>();
     private Set<String> declaredLocals        = new HashSet<>();
+    /**
+     * Local variables that must be declared {@code float} because they are ever
+     * assigned from an expression containing an array read ({@link SubscriptNode})
+     * or a floating-point literal.  All other locals are declared {@code int} so
+     * that index arithmetic (e.g. {@code base = gid * 3072}) stays in the integer
+     * domain and avoids float32 precision loss for large indices.
+     */
+    private Set<String> floatLocals           = new HashSet<>();
     /**
      * Name of the function currently being translated to OpenCL C.
      * Set during {@link #convert} and {@link #convertHelperFunction} to enable
@@ -184,7 +198,18 @@ public class GpuFunctionBodyConverter {
         // All parameter names (data args + range dims) – used to distinguish locals.
         paramNames = new HashSet<>();
         for (ArgNode arg : allArgs) paramNames.add(arg.getArg());
+        // Float-typed params: only data args (__global float*), NOT range-dim args (int gid).
+        floatParamNames = new HashSet<>();
+        for (ArgNode arg : dataArgs) floatParamNames.add(arg.getArg());
         declaredLocals = new HashSet<>();
+
+        // Pre-scan: determine which locals must be float vs int.
+        // A local is float if it is EVER assigned from an expression that contains an
+        // array read (SubscriptNode) or a floating-point constant.  All other locals
+        // are declared int, keeping index arithmetic in the integer domain so that
+        // large indices (e.g. gid*3072 for gid up to 9215) are computed exactly.
+        floatLocals = new HashSet<>();
+        collectFloatLocalNamesFromStmts(funcDef.getBody(), floatLocals);
 
         // Build kernel source.
         String rawName    = funcDef.getName();
@@ -246,7 +271,9 @@ public class GpuFunctionBodyConverter {
             if (target instanceof NameNode) {
                 String varName = ((NameNode) target).getId();
                 if (!paramNames.contains(varName) && !declaredLocals.contains(varName)) {
-                    typePrefix = "float ";
+                    // Use 'int' for pure index/counter variables to avoid float32
+                    // precision loss when computing large array indices (e.g. gid*3072).
+                    typePrefix = floatLocals.contains(varName) ? "float " : "int ";
                     declaredLocals.add(varName);
                 }
             }
@@ -449,19 +476,26 @@ public class GpuFunctionBodyConverter {
     private String convertHelperFunction(FunctionDefNode helper) {
         // Save per-conversion state so helper conversion does not corrupt kernel conversion.
         Set<String> savedParamNames            = this.paramNames;
+        Set<String> savedFloatParamNames       = this.floatParamNames;
         Set<String> savedDeclaredLocals        = this.declaredLocals;
+        Set<String> savedFloatLocals           = this.floatLocals;
         String      savedGeneratingFuncName    = this.currentGeneratingFuncName;
 
         this.paramNames             = new HashSet<>();
+        this.floatParamNames        = new HashSet<>();
         this.declaredLocals         = new HashSet<>();
+        this.floatLocals            = new HashSet<>();
         // Temporarily set the current function name to the helper's name so that
         // convertExpr can detect self-recursion within the helper body.
         this.currentGeneratingFuncName = helper.getName();
+        // Pre-scan the helper body for float locals.
+        if (helper.getBody() != null) collectFloatLocalNamesFromStmts(helper.getBody(), this.floatLocals);
 
         List<ArgNode> args = helper.getArgs() != null ? helper.getArgs().getArgs()
                                                       : Collections.emptyList();
         for (ArgNode arg : args) {
             this.paramNames.add(arg.getArg());
+            this.floatParamNames.add(arg.getArg());  // helper params are all float
         }
 
         StringBuilder sb = new StringBuilder();
@@ -483,7 +517,9 @@ public class GpuFunctionBodyConverter {
 
         // Restore state.
         this.paramNames             = savedParamNames;
+        this.floatParamNames        = savedFloatParamNames;
         this.declaredLocals         = savedDeclaredLocals;
+        this.floatLocals            = savedFloatLocals;
         this.currentGeneratingFuncName = savedGeneratingFuncName;
 
         return sb.toString();
@@ -576,6 +612,103 @@ public class GpuFunctionBodyConverter {
             case "Not":    return "!";
             default:       return "-";
         }
+    }
+
+    // =========================================================================
+    //  Float-local analysis
+    // =========================================================================
+
+    /**
+     * Pre-scans {@code stmts} (recursing into while/if bodies) and adds to
+     * {@code floatSet} the name of every local variable that is EVER assigned
+     * from an expression containing an array subscript, a floating-point
+     * constant, or a variable already known to be float.
+     *
+     * <p>Iterates to a fixpoint so that float-ness propagates through chains
+     * like {@code gate_val = arr[i]; neg_gate = 0 - gate_val;} —
+     * {@code neg_gate} is also marked float even though its RHS has no direct
+     * subscript.</p>
+     */
+    private void collectFloatLocalNamesFromStmts(List<AstNode> stmts, Set<String> floatSet) {
+        if (stmts == null) return;
+        // Iterate to a fixpoint so float-ness propagates through variable chains.
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (AstNode stmt : flattenStmts(stmts)) {
+                if (!(stmt instanceof AssignNode)) continue;
+                AssignNode assign = (AssignNode) stmt;
+                if (assign.getTargets() == null || assign.getTargets().isEmpty()) continue;
+                AstNode target = assign.getTargets().get(0);
+                if (!(target instanceof NameNode)) continue;
+                String varName = ((NameNode) target).getId();
+                if (!floatSet.contains(varName) && exprIsFloat(assign.getValue(), floatSet)) {
+                    floatSet.add(varName);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    /** Flattens a nested block into a single list of all statements. */
+    private List<AstNode> flattenStmts(List<AstNode> stmts) {
+        List<AstNode> result = new ArrayList<>();
+        if (stmts == null) return result;
+        for (AstNode stmt : stmts) {
+            result.add(stmt);
+            if (stmt instanceof WhileNode) {
+                result.addAll(flattenStmts(((WhileNode) stmt).getBody()));
+            } else if (stmt instanceof IfNode) {
+                IfNode ifNode = (IfNode) stmt;
+                result.addAll(flattenStmts(ifNode.getBody()));
+                result.addAll(flattenStmts(ifNode.getOrelse()));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns {@code true} if {@code expr} produces a {@code float} result.
+     * An expression is float if it:
+     * <ul>
+     *   <li>is an array subscript ({@link SubscriptNode}),</li>
+     *   <li>is a floating-point literal,</li>
+     *   <li>is a {@link NameNode} whose name is already in {@code knownFloats}
+     *       or in the data-arg parameter set (kernel {@code __global float*} args),</li>
+     *   <li>is a binary/unary expression with at least one float operand,</li>
+     *   <li>is a function call (helper calls return {@code float}).</li>
+     * </ul>
+     */
+    private boolean exprIsFloat(AstNode expr, Set<String> knownFloats) {
+        if (expr == null) return false;
+        if (expr instanceof SubscriptNode) return true;
+        if (expr instanceof ConstantNode) {
+            Object val = ((ConstantNode) expr).getValue();
+            return (val instanceof Double) || (val instanceof Float);
+        }
+        if (expr instanceof NameNode) {
+            String name = ((NameNode) expr).getId();
+            // data-arg parameters are __global float* — using them unsubscripted is unusual
+            // but accessing by name alone (as a scalar) should be treated as float.
+            return knownFloats.contains(name) || floatParamNames.contains(name);
+        }
+        if (expr instanceof BinOpNode) {
+            BinOpNode bin = (BinOpNode) expr;
+            return exprIsFloat(bin.getLeft(), knownFloats) ||
+                   exprIsFloat(bin.getRight(), knownFloats);
+        }
+        if (expr instanceof UnaryOpNode) {
+            return exprIsFloat(((UnaryOpNode) expr).getOperand(), knownFloats);
+        }
+        // CallNode results (e.g. helper function calls) are float by convention.
+        if (expr instanceof CallNode) return true;
+        return false;
+    }
+
+    // Keep the old name as a delegate for the helper-function path (uses empty knownFloats).
+    @SuppressWarnings("unused")
+    private boolean containsSubscriptOrFloat(AstNode expr) {
+        return exprIsFloat(expr, floatLocals);
     }
 
     // =========================================================================

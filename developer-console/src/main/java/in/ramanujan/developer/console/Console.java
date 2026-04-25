@@ -11,6 +11,11 @@ public class Console {
         if(args.length == 0) {
             return;
         }
+        // 'server' keyword: start persistent JVM server mode (must be checked FIRST)
+        if ("server".equalsIgnoreCase(args[0])) {
+            OperationType.execute_inline_server.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
         // If one argument is given, treat it as a path and use execute_inline
         if(args.length == 1) {
             OperationType.execute_inline.getImplementation().execute(Arrays.asList(args));

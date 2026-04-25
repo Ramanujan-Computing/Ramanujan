@@ -6,11 +6,8 @@
 
 JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
         (JNIEnv *env, jobject obj, jstring ruleEngineInputJsonStr, jstring firstCommandIdStr) {
-    FILE* dbg = fopen("/tmp/phi3_native_debug.log", "w");
-    if(dbg) { fprintf(dbg, "[NativeProcessor] JNI entry point reached\n"); fflush(dbg); }
     // Convert jstring to std::string
     const char *cStr = env->GetStringUTFChars(ruleEngineInputJsonStr, 0);
-    if(dbg) { fprintf(dbg, "[NativeProcessor] JSON string length: %lu\n", strlen(cStr)); fflush(dbg); }
     std::string str(cStr);
     env->ReleaseStringUTFChars(ruleEngineInputJsonStr, cStr);
 
@@ -25,20 +22,13 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
     std::istringstream iss(str);
     Json::parseFromStream(builder, iss, &root, &errors);
 
-    if(dbg) { fprintf(dbg, "[NativeProcessor] JSON parsed (errors='%s'), creating RuleEngineInput...\n", errors.c_str()); fflush(dbg); }
     RuleEngineInput *ruleEngineInput = new RuleEngineInput(&root);
-    if(dbg) { fprintf(dbg, "[NativeProcessor] RuleEngineInput created, starting Processor...\n"); fflush(dbg); }
     Processor *processor = new Processor();
-    if(dbg) { fprintf(dbg, "[NativeProcessor] About to call process(), ruleEngineInput=%p\n", (void*)ruleEngineInput); fflush(dbg); }
 
     processor->process(*ruleEngineInput, str1);
 
-    if(dbg) { fprintf(dbg, "[NativeProcessor] Processor done, collecting results...\n"); fflush(dbg); }
-
     std::unordered_map<std::string, std::unordered_map<std::string, double> *> *arrayMap = processor->arrChangeMap();
-    if(dbg) { fprintf(dbg, "[NativeProcessor] arrChangeMap done (%lu arrays)\n", arrayMap->size()); fflush(dbg); }
     std::unordered_map<std::string, double> *variableMap = processor->varChangeMap();
-    if(dbg) { fprintf(dbg, "[NativeProcessor] varChangeMap done (%lu vars)\n", variableMap->size()); fflush(dbg); }
 
 
 
@@ -188,7 +178,7 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
 #endif
 
     delete processor;
-
+    delete ruleEngineInput;
 
     return map;
 }
