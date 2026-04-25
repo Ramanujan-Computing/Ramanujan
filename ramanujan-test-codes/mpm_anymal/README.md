@@ -1,7 +1,7 @@
 # MPM Anymal on Ramanujan
 
 A scaled-down port of Newton's [`mpm_anymal`](https://github.com/newton-physics/newton/blob/main/newton/examples/mpm/example_mpm_anymal.py)
-example, where every per-frame physics calculation runs on **Ramanujan's
+example, where **every per-frame physics calculation runs on Ramanujan's
 OpenCL GPU runtime** instead of on NVIDIA Warp / MuJoCo. Newton is used
 purely as the viewer to play back the trajectory Ramanujan produced.
 
@@ -28,10 +28,12 @@ invocation, and viewer wiring.
 
 ## What it simulates
 
-* 256 sand particles in an 8×8×4 grid spawned by the kernel itself on frame 0.
+* A configurable number of sand particles (default 256, up to 1 million+) in a
+  flat square bed spawned by the kernel on frame 0. Grid dimensions and spacing
+  are computed automatically so the bed is always ~1 m × 1 m.
 * A four-legged kinematic walker (a stand-in for ANYmal C) doing a diagonal
   trot (LF + RH lift together, RF + LH lift together) while the body translates
-  forward in `+y`.
+  forward in `+y`. The **torso box** moves with the robot in the viewer.
 * Each foot is a sphere of radius `FOOT_RADIUS_PARAM` that pushes any particle
   it overlaps; particles damp, bounce off the ground, and integrate via Euler.
 
@@ -61,16 +63,19 @@ shape of the demo while staying inside what Ramanujan can compile.
 ```bash
 cd /path/to/ramanujan_oss
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # macOS / Linux
+# .venv\Scripts\activate    # Windows
 ```
 
-### 2. Install dependencies for the viewer (Newton/Warp) and Ramanujan's Python AST tooling
+### 2. Install viewer dependencies and Ramanujan's Python AST tooling
 
 ```bash
 pip install "warp-lang" "newton[examples]" "ast2json"
 ```
 
-These are only needed for visualization. The **core physics simulation runs entirely on GPU via Ramanujan** and does not depend on Newton/Warp.
+`warp-lang` and `newton` are only needed for visualization.
+**The core GPU physics runs entirely on Ramanujan** — no Newton/Warp involvement
+in the simulation itself.
 
 ### 3. Build Ramanujan with GPU support
 
@@ -90,32 +95,62 @@ cd /path/to/ramanujan_oss
 mvn clean install
 ```
 
-### 4. (Optional) Set RAMANUJAN_FAT_JAR if not in standard location
+### 4. (Optional) Set environment variables
 
-The orchestrator will look for the JAR at:
+The orchestrator looks for the JAR at:
 ```
 ramanujan-oss/ramanujan/developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar
 ```
 
-If you built it elsewhere, set:
+Override if needed:
 ```bash
 export RAMANUJAN_FAT_JAR=/absolute/path/to/developer-console-1.0-SNAPSHOT-fat.jar
+export JAVA_HOME=/path/to/jdk          # must match JDK used to build the native lib
+export RAMANUJAN_WS=/path/to/writable  # directory where libnative.dylib is staged
 ```
 
 ### 5. Run the simulation
 
 ```bash
-# Interactive OpenGL viewer (GPU physics on Ramanujan)
+# Default — 256 particles, interactive OpenGL viewer
 python3 run_mpm_anymal.py --frames 200
 
-# Headless USD output (GPU physics on Ramanujan)
+# Scale up particle count (GPU handles all particles in parallel on Ramanujan)
+python3 run_mpm_anymal.py --frames 200 --num-particles 10000
+python3 run_mpm_anymal.py --frames 200 --num-particles 100000
+python3 run_mpm_anymal.py --frames 50  --num-particles 1000000   # 1 M particles
+
+# Headless USD output
 python3 run_mpm_anymal.py --frames 200 --viewer usd --output-path mpm_anymal.usd
 
-# Null viewer (GPU physics only, no visualization)
+# Null viewer — GPU physics only, no visualization (useful for benchmarking)
 python3 run_mpm_anymal.py --frames 200 --viewer null
 ```
 
-**All physics — gravity, collision, particle integration — executes on GPU through Ramanujan's OpenCL runtime.** The orchestrator orchestrates: it writes CSVs, invokes `rj`, reads results, and pipes them to the viewer. No computation happens in Python.
+**All physics — gravity, collision, particle integration — executes on GPU through
+Ramanujan's OpenCL runtime.** The orchestrator is pure I/O: it writes CSVs,
+invokes `rj`, reads results, and pipes them to the viewer. No computation happens
+in Python.
+
+#### Particle count and performance
+
+| `--num-particles` | Grid | Approx. time / frame |
+|---|---|---|
+| 256 (default) | 8 × 8 × 4 | ~0.75 s |
+| 10 000 | 50 × 50 × 4 | ~1 s |
+| 60 000 | 122 × 122 × 4 | ~2–3 s |
+
+The GPU kernel work scales with particle count; the per-frame bottleneck at large
+counts is CSV I/O between the Ramanujan JVM and the orchestrator.
+
+> **Current platform limit — ~60 000 particles:**
+> When an input array exceeds ~180 000 float values, Ramanujan's translator switches
+> to a binary fast-path for loading (logged as `Binary-populated array`). Arrays
+> loaded via the binary path are currently unavailable to the `dump` command —
+> the console returns "Array not found or empty" and the orchestrator gets an empty
+> result. Until this is fixed in the Ramanujan platform the practical maximum is
+> **~60 000 particles** (180 000 floats per array). The `--num-particles` argument
+> accepts any value, but values above ~60 000 will produce empty output frames.
 
 ---
 
@@ -123,18 +158,37 @@ python3 run_mpm_anymal.py --frames 200 --viewer null
 
 **Every physics calculation happens on GPU via Ramanujan's OpenCL backend:**
 
-- **Frame initialization** (frame 0): Particle grid layout computed on Ramanujan host-side
-- **Gravity kernel** (`apply_gravity_GPU_1`): Applied to all 256 particles in parallel on GPU
-- **Foot collision kernel** (`apply_feet_GPU_1`): Each particle checks 4 feet, accumulates impulses on GPU
-- **Integration kernel** (`integrate_GPU_1`): Euler step + ground collision + damping on GPU
+- **Frame 0 initialization**: Particle grid layout computed on Ramanujan host-side;
+  grid dimensions and spacing read from the `params` CSV so any particle count works
+  without recompiling the kernel.
+- **Gravity kernel** (`apply_gravity_GPU_1`): All N particles updated in parallel on GPU.
+- **Foot collision kernel** (`apply_feet_GPU_1`): Each particle checks 4 feet,
+  accumulates impulses — fully parallel on GPU.
+- **Integration kernel** (`integrate_GPU_1`): Euler step + ground collision + damping
+  — fully parallel on GPU.
 
 The orchestrator (`run_mpm_anymal.py`) is **zero-compute**:
-- Writes input CSVs (positions, velocities, parameters)
-- Invokes `rj execute_inline` to run the Ramanujan kernel
+- Writes input CSVs (positions, velocities, 15-element params)
+- Invokes `rj execute_inline` to dispatch the Ramanujan kernel
 - Reads output CSVs via `dump` commands
 - Replays trajectory in Newton's viewer (no physics)
 
-**Result:** ~0.75 seconds per frame for 256-particle simulation, entirely GPU-accelerated via Ramanujan.
+---
+
+## Viewer
+
+The Newton `ViewerGL` opens after all frames are computed. The viewer loops the
+animation continuously — close the window to exit.
+
+**Controls:**
+- Drag to rotate camera
+- Scroll to zoom
+- Right-click drag to pan
+
+**What you see:**
+- Sand particles (rendered as spheres)
+- 4 foot boxes trampling through the sand
+- **Torso box** moving forward with the robot body
 
 ---
 
@@ -144,9 +198,9 @@ The orchestrator (`run_mpm_anymal.py`) is **zero-compute**:
 positions.csv   ─┐
 velocities.csv  ─┼─►  rj execute_inline mpm_anymal_kernel.py
 params.csv      ─┘                │
-                                  │     ┌── apply_gravity_GPU_1
-                                  ├──►──┼── apply_feet_GPU_1
-                                  │     └── integrate_GPU_1
+                                  │     ┌── apply_gravity_GPU_1   (N work items)
+                                  ├──►──┼── apply_feet_GPU_1      (N work items)
+                                  │     └── integrate_GPU_1       (N work items)
                                   ▼
                        dump positions  ─►  out_positions_<frame>.csv
                        dump velocities ─►  out_velocities_<frame>.csv
@@ -171,3 +225,5 @@ the values flow straight from a Ramanujan-produced CSV into the viewer.
 * Builtins (`SIN`) are used host-side only, since the helper-function
   constraints in the kernel translator forbid arbitrary builtin calls
   inside `_GPU_N` bodies.
+* Grid dimensions, spacing, and particle count are passed via the `params` CSV
+  so the same kernel binary handles any particle count without recompilation.

@@ -13,9 +13,9 @@
 #   rj mpm_anymal_kernel.py positions.csv velocities.csv params.csv
 #
 # Input arrays (loaded from same-named CSV files):
-#   positions   1D, NUM_PARTICLES * 3  (x,y,z per particle, flattened)
-#   velocities  1D, NUM_PARTICLES * 3  (vx,vy,vz per particle, flattened)
-#   params      1D, 7 floats
+#   positions   1D, num_particles * 3  (x,y,z per particle, flattened)
+#   velocities  1D, num_particles * 3  (vx,vy,vz per particle, flattened)
+#   params      1D, 15 floats
 #                 [0]  dt              physics step (s)
 #                 [1]  gravity         z-acceleration (m/s^2, negative)
 #                 [2]  foot_radius     collision radius (m)
@@ -23,22 +23,20 @@
 #                 [4]  gait_speed      forward velocity (m/s)
 #                 [5]  step_height     foot lift amplitude (m)
 #                 [6]  frame_num       integer-valued frame counter
+#                 [7]  num_particles   total particle count
+#                 [8]  grid_nx         grid width
+#                 [9]  grid_ny         grid depth
+#                 [10] grid_nz         grid height layers
+#                 [11] spacing         inter-particle spacing (m)
+#                 [12] origin_x        grid origin x (m)
+#                 [13] origin_y        grid origin y (m)
+#                 [14] origin_z        grid origin z (m)
 #
 # Outputs (extracted via dump):
 #   positions  (updated in place)
 #   velocities (updated in place)
 #   feet       12 floats: foot0_xyz, foot1_xyz, foot2_xyz, foot3_xyz
 # =============================================================================
-
-# ── Particle grid: 8 x 8 x 4 = 256 particles ────────────────────────────────
-NUM_PARTICLES = 256
-GRID_NX = 8
-GRID_NY = 8
-GRID_NZ = 4
-SPACING = 0.06
-ORIGIN_X = -0.24
-ORIGIN_Y = -0.24
-ORIGIN_Z = 0.005
 
 # Working buffers exposed to the orchestrator
 feet = [0 for _ in range(12)]
@@ -54,27 +52,35 @@ foot_strength = params[3]
 gait_speed = params[4]
 step_height = params[5]
 frame_num = params[6]
+num_particles = params[7]
+grid_nx = params[8]
+grid_ny = params[9]
+grid_nz = params[10]
+spacing = params[11]
+origin_x = params[12]
+origin_y = params[13]
+origin_z = params[14]
 
 dt_buf[0] = dt
 gravity_buf[0] = gravity_z * dt
 foot_params[0] = foot_radius
 foot_params[1] = foot_strength
 
-# ── Frame 0: lay out the particle grid on host (no division/modulo needed) ──
+# ── Frame 0: lay out the particle grid on host ───────────────────────────────
 if frame_num < 0.5:
     pi = 0
     iz = 0
-    while iz < GRID_NZ:
+    while iz < grid_nz:
         iy = 0
-        while iy < GRID_NY:
+        while iy < grid_ny:
             ix = 0
-            while ix < GRID_NX:
+            while ix < grid_nx:
                 base = pi * 3
                 base1 = base + 1
                 base2 = base + 2
-                positions[base] = ORIGIN_X + ix * SPACING
-                positions[base1] = ORIGIN_Y + iy * SPACING
-                positions[base2] = ORIGIN_Z + iz * SPACING
+                positions[base] = origin_x + ix * spacing
+                positions[base1] = origin_y + iy * spacing
+                positions[base2] = origin_z + iz * spacing
                 velocities[base] = 0
                 velocities[base1] = 0
                 velocities[base2] = 0
@@ -202,9 +208,9 @@ def integrate_GPU_1(positions, velocities, dt_buf, gid):
 
 
 # ── Run physics step (skip on frame 0; that frame just initialises state) ──
-# Work-size is the literal particle count (256 = 8*8*4) to match the
-# constant-only call-site convention used by the other kernels in this repo.
+# num_particles from params drives the GPU work-item count dynamically.
+n = num_particles
 if frame_num > 0.5:
-    apply_gravity_GPU_1(velocities, gravity_buf, 256)
-    apply_feet_GPU_1(positions, velocities, feet, foot_params, 256)
-    integrate_GPU_1(positions, velocities, dt_buf, 256)
+    apply_gravity_GPU_1(velocities, gravity_buf, n)
+    apply_feet_GPU_1(positions, velocities, feet, foot_params, n)
+    integrate_GPU_1(positions, velocities, dt_buf, n)
