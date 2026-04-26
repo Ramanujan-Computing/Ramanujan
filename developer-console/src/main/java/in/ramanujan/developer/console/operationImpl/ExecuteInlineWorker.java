@@ -82,9 +82,8 @@ public class ExecuteInlineWorker implements Operation {
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                Thread.sleep(500L);
-
-                // Poll for work
+                // Long-poll: the server blocks up to 900 ms waiting for work
+                // before returning null, so no client-side sleep is needed.
                 Map<String, Object> pingResp = postJson(serverUrl + "/pings/open?uuid=" + hostId, "");
                 if (pingResp == null) continue;
                 if (!"SUCCESS".equalsIgnoreCase((String) pingResp.get("status"))) continue;

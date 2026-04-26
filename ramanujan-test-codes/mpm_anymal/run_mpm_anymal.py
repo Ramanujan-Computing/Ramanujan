@@ -32,6 +32,7 @@ import argparse
 import datetime
 import math
 import os
+import pickle
 import shutil
 import subprocess
 import sys
@@ -473,6 +474,8 @@ def main():
                         help="Connect to an existing homelab server instead of starting a local JVM.")
     parser.add_argument("--homelab-url", default="http://localhost:8888",
                         help="Homelab server URL (default http://localhost:8888). Only used with --homelab.")
+    parser.add_argument("--save-frames", action="store_true",
+                        help="Save frames to a .pkl file (e.g. frames_00123.pkl) and skip viewer.")
     args = parser.parse_args()
 
     grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles, particle_radius = \
@@ -516,6 +519,23 @@ def main():
                 log(f"  frame {frame_num}/{args.frames} (latest={frame_time:.2f}s, avg={avg_time:.2f}s)")
     finally:
         rj_server.shutdown()
+
+    # Save frames if requested
+    if args.save_frames:
+        timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+        pkl_file = f"frames_{timestamp}.pkl"
+        data = {
+            "frames": frames,
+            "num_particles": num_particles,
+            "particle_radius": particle_radius,
+            "frame_times": frame_times,
+            "grid_params": grid_params,
+        }
+        with open(pkl_file, "wb") as f:
+            pickle.dump(data, f)
+        log(f"Saved {len(frames)} frames to {pkl_file}")
+        log(f"To view later: python3 view_mpm_anymal.py {pkl_file}")
+        return
 
     log(f"Ramanujan finished {len(frames)} frames; opening Newton viewer.")
 

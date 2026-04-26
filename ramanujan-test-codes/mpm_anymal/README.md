@@ -17,7 +17,8 @@ purely as the viewer to play back the trajectory Ramanujan produced.
 | File | Role |
 |---|---|
 | `mpm_anymal_kernel.py` | Ramanujan kernel. Three OpenCL kernels (`apply_gravity_GPU_1`, `apply_feet_GPU_1`, `integrate_GPU_1`) plus host-side foot kinematics. Runs entirely under `rj` / the developer-console fat JAR. |
-| `run_mpm_anymal.py` | Python orchestrator. Loops frames, calls Ramanujan, collects positions/velocities/foot transforms, then hands them to Newton's `ViewerGL` for playback. **No physics here.** |
+| `run_mpm_anymal.py` | Python orchestrator. Loops frames, calls Ramanujan, collects positions/velocities/foot transforms, optionally saves to disk, then plays back in Newton's viewer. **No physics here.** |
+| `view_mpm_anymal.py` | Standalone viewer. Opens previously saved frame data (`.pkl` files) in Newton without recomputing. Lets you replay trajectories anytime. |
 | `README.md` | This file. |
 
 All physics — gravity, ground bounce, four-foot collision push, integration — happens
@@ -131,6 +132,30 @@ python3 run_mpm_anymal.py --frames 200 --viewer null
 Ramanujan's OpenCL runtime.** The orchestrator is pure I/O: it writes CSVs,
 invokes `rj`, reads results, and pipes them to the viewer. No computation happens
 in Python.
+
+#### Saving and replaying frame data
+
+Compute frames once and save them to disk for later viewing:
+
+```bash
+# Save frames to frames_YYMMDD_HHMMSS.pkl (no viewer opens)
+python3 run_mpm_anymal.py --frames 50 --num-particles 10000 --save-frames
+
+# View the saved frames anytime later (no recomputation!)
+python3 view_mpm_anymal.py frames_260426_143025.pkl
+
+# Export saved frames to USD
+python3 view_mpm_anymal.py frames_260426_143025.pkl --viewer usd --output-path mpm_anymal.usda
+```
+
+The `.pkl` file contains all frame data (positions, velocities, foot transforms),
+grid metadata, and timing information. This is useful for:
+- **Sharing trajectories** — send the `.pkl` file to colleagues; they can view it
+  without running the physics
+- **Comparing runs** — compute once with different parameters, save results, and
+  A/B view them
+- **Batch processing** — compute while you work on other things, then view later
+- **Archival** — keep a record of interesting simulations
 
 #### Particle count and performance
 

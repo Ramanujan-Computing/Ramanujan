@@ -356,10 +356,20 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
     }
 
-    /** Workers poll this to receive work. Returns null data when idle. */
+    /** Workers poll this to receive work.
+     *  Long-polls up to 900 ms so the worker's HTTP connection blocks here
+     *  rather than the worker sleeping between rapid fire empty polls.
+     *  Returns null data only if no task arrives within the window.
+     */
     private void handleOpenPing(HttpExchange ex) throws IOException {
         consumeBody(ex);
-        PendingTask task = taskQueue.poll();
+        PendingTask task;
+        try {
+            task = taskQueue.poll(900, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            task = null;
+        }
         String body = task != null
                 ? task.responseJson
                 : "{\"status\":\"SUCCESS\",\"data\":null}";

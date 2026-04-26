@@ -1,17 +1,19 @@
 package in.ramanujan.app;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import in.ramanujan.app.databinding.ActivityMainBinding;
 import in.ramanujan.devices.common.RamanujanController;
-import in.ramanujan.pojo.RuleEngineInput;
-import in.ramanujan.pojo.ruleEngineInputUnitsExt.FunctionCall;
-import in.ramanujan.rule.engine.NativeProcessor;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -24,17 +26,15 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String PREFS_NAME = "ramanujan_prefs";
+    private static final String PREFS_NAME      = "ramanujan_prefs";
     private static final String PREF_SERVER_URL = "server_url";
-    private static final String DEFAULT_SERVER = "https://server.ramanujan.dev";
+    private static final String DEFAULT_SERVER  = "https://server.ramanujan.dev";
+    private static final int    REQ_NOTIF_PERM  = 42;
 
     // ---- Logging ----
 
@@ -126,102 +126,31 @@ public class MainActivity extends AppCompatActivity {
             }).start();
         }
 
-        // Start Workers: read URL, save it, launch orchestration threads
+        // Start Workers: read URL, save it, launch foreground service
         binding.startWorkersButton.setOnClickListener(v -> {
                     String url = binding.serverUrlInput.getText().toString().trim();
                     if (url.isEmpty()) url = DEFAULT_SERVER;
 
                     prefs.edit().putString(PREF_SERVER_URL, url).apply();
 
-                    final String serverUrl = url;
-                    binding.startWorkersButton.setEnabled(false);
-                    binding.startWorkersButton.setText("Workers running…");
-
-                    Logger1.clearLogs();
-
-
-                    final String hostId = UUID.randomUUID().toString();;
-
-                    new Thread(() -> {
-                        while (!Thread.currentThread().isInterrupted()) {
-                            try {
-                                Thread.sleep(500L);
-
-                                // Poll for work
-                                Map<String, Object> pingResp = postJson(serverUrl + "/pings/open?uuid=" + hostId, "");
-                                if (pingResp == null) continue;
-                                if (!"SUCCESS".equalsIgnoreCase((String) pingResp.get("status"))) continue;
-
-                                Object dataObj = pingResp.get("data");
-                                if (dataObj == null) continue; // no pending tasks
-
-                                Map<String, Object> taskData = (Map<String, Object>) dataObj;
-                                String uuid           = (String) taskData.get("uuid");
-                                String firstCommandId = (String) taskData.get("firstCommandId");
-                                Object reiObj         = taskData.get("ruleEngineInput");
-                                if (uuid == null || reiObj == null) continue;
-
-                                System.err.println("[Worker] task " + uuid + " firstCmd=" + firstCommandId);
-
-                                // Deserialize as typed POJO so GPU flags are accessible
-                                RuleEngineInput rei = MAPPER.convertValue(reiObj, RuleEngineInput.class);
-
-                                List<String> gpuKernels = new ArrayList<>();
-                                if (rei.getFunctionCalls() != null) {
-                                    for (FunctionCall fc : rei.getFunctionCalls()) {
-                                        if (Boolean.TRUE.equals(fc.getIsGpu()) && fc.getId() != null) {
-                                            gpuKernels.add(fc.getId());
-                                        }
-                                    }
-                                }
-                                if (!gpuKernels.isEmpty()) {
-                                    System.err.println("[Worker] [GPU] " + gpuKernels.size()
-                                            + " GPU kernel(s): " + gpuKernels);
-                                }
-
-                                // Execute via NativeProcessor (same path as Android app)
-                                Map<String, Object> results = new HashMap<>();
-                                long start = System.currentTimeMillis();
-                                try {
-                                    String reiJson = MAPPER.writeValueAsString(rei);
-                                    NativeProcessor np = new NativeProcessor();
-                                    if (firstCommandId != null && !firstCommandId.isEmpty()) {
-                                        np.process(reiJson, firstCommandId);
-                                        if (np.jniObject != null) results = np.jniObject;
-                                    }
-                                } catch (Exception e) {
-                                    System.err.println("[Worker] execution error for " + uuid + ": " + e.getMessage());
-                                }
-                                long elapsed = System.currentTimeMillis() - start;
-
-                                if (!gpuKernels.isEmpty()) {
-                                    System.err.println("[Worker] [GPU] run latency: " + elapsed
-                                            + " ms (kernels: " + gpuKernels + ")");
-                                } else {
-                                    System.err.println("[Worker] task " + uuid + " done in " + elapsed + "ms"
-                                            + "  result keys=" + results.keySet());
-                                }
-
-                                // Submit results back to homelab server
-                                Map<String, Object> payload = new LinkedHashMap<>();
-                                payload.put("uuid",   uuid);
-                                payload.put("hostId", hostId);
-                                payload.put("data",   results);
-                                postJson(serverUrl + "/task/complete", MAPPER.writeValueAsString(payload));
-
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                break;
-                            } catch (Exception e) {
-                                System.err.println("[Worker] error: " + e.getMessage());
-                            }
+                    // On Android 13+ we need POST_NOTIFICATIONS permission before the
+                    // foreground service can show its persistent notification.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (ContextCompat.checkSelfPermission(this,
+                                android.Manifest.permission.POST_NOTIFICATIONS)
+                                != PackageManager.PERMISSION_GRANTED) {
+                            // Store URL temporarily so we can start after permission grant
+                            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                    .edit().putString(PREF_SERVER_URL, url).apply();
+                            ActivityCompat.requestPermissions(this,
+                                    new String[]{android.Manifest.permission.POST_NOTIFICATIONS},
+                                    REQ_NOTIF_PERM);
+                            return;
                         }
-                    }).start();
+                    }
 
+                    startWorkerService(url);
                 });
-
-
-
         binding.showLogsButton.setOnClickListener(v -> {
             List<String> logs = Logger1.getLogs();
             StringBuilder sb = new StringBuilder();
@@ -241,6 +170,31 @@ public class MainActivity extends AppCompatActivity {
                     .setPositiveButton("OK", null)
                     .show();
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // Service helpers
+    // -------------------------------------------------------------------------
+
+    private void startWorkerService(String url) {
+        Intent intent = new Intent(this, WorkerService.class);
+        intent.putExtra(WorkerService.EXTRA_SERVER_URL, url);
+        ContextCompat.startForegroundService(this, intent);
+
+        binding.startWorkersButton.setEnabled(false);
+        binding.startWorkersButton.setText("Workers running…");
+        Logger1.clearLogs();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_NOTIF_PERM) {
+            // Start regardless — on older Android the notification permission doesn't exist
+            String url = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .getString(PREF_SERVER_URL, DEFAULT_SERVER);
+            startWorkerService(url);
+        }
     }
 
     private static String getLocalIp() {
