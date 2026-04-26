@@ -9,7 +9,8 @@ public enum OperationType {
     suspend("suspend", new SuspendImpl()),
     debug("debug", new DebugFetcher()),
     execute_inline("execute_inline", new ExecuteInline()),
-    execute_inline_server("server", new ExecuteInlineServer());
+    execute_inline_server("server", new ExecuteInlineServer()),
+    execute_inline_homelab_server("homelab", new ExecuteInlineHomelabServer());
 
     String type;
     Operation implementation;

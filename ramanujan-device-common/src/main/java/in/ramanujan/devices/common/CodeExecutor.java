@@ -16,7 +16,6 @@ import lombok.Data;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static in.ramanujan.utils.Constants.arrayIndex;
 
@@ -53,12 +52,24 @@ public class CodeExecutor {
         ProcessorFutureMap processorFutureMap = new ProcessorFutureMap();
 //        processorFutureMap.setProcessor(processor);
 
-        AtomicInteger integer = new AtomicInteger(0);
-        String fileName = "/Users/pranav/Desktop/debug_";
+        // Detect GPU kernels in this rule engine input once, before spawning the thread.
+        final java.util.List<String> gpuKernelIds = new java.util.ArrayList<>();
+        if (ruleEngineInput.getFunctionCalls() != null) {
+            for (in.ramanujan.pojo.ruleEngineInputUnitsExt.FunctionCall fc : ruleEngineInput.getFunctionCalls()) {
+                if (Boolean.TRUE.equals(fc.getIsGpu()) && fc.getId() != null) {
+                    gpuKernelIds.add(fc.getId());
+                }
+            }
+        }
+        final boolean hasGpu = !gpuKernelIds.isEmpty();
+
         new Thread(() -> {
             try {
                 logger.info("start code exec for " + hostId);
-                long start = new Date().toInstant().toEpochMilli();
+                if (hasGpu) {
+                    logger.info("[GPU] " + gpuKernelIds.size() + " GPU kernel(s) detected: " + gpuKernelIds);
+                }
+                long start = System.currentTimeMillis();
                 NativeProcessor nativeProcessor = new NativeProcessor();
                 Map<String, Object> results = new HashMap<>();
                 if(openPingApiResponse.getFirstCommandId() != "") {
@@ -101,8 +112,13 @@ public class CodeExecutor {
                 }
 //                Map<String, Object> results = new Processor(ruleEngineInput, openPingApiResponse.getFirstCommandId(), new CheckpointPushClient(openPingApiResponse.getUuid())).process();
                 processorFutureMap.setResult(results);
+                long elapsed = System.currentTimeMillis() - start;
                 logger.info("end code exec for " + hostId);
-                logger.info("total time " + (new Date().toInstant().toEpochMilli() - start));
+                if (hasGpu) {
+                    logger.info("[GPU] run latency: " + elapsed + " ms (kernels: " + gpuKernelIds + ")");
+                } else {
+                    logger.info("total time " + elapsed + " ms");
+                }
                 processorFutureMap.setDone(true);
             } catch (Throwable e) {
                 logger.error("ERROR for " + hostId, e);

@@ -78,12 +78,12 @@ class RjServer:
         self._stderr_thread = None
 
     def start(self, timeout=60):
-        """Spawn JVM in server mode and wait for SERVER_READY."""
+        """Spawn JVM in local server mode and wait for readiness."""
         java_bin = os.path.join(self.java_home, "bin", "java")
         rj_jar = os.environ.get("RAMANUJAN_FAT_JAR", "/Users/pranav/Desktop/ws/developer-console-1.0-SNAPSHOT-fat.jar")
-        cmd = [java_bin, "-Xmx4g", "-XX:+UseG1GC", "-jar", rj_jar, "server"]
 
-        log("Starting persistent JVM server...")
+        cmd = [java_bin, "-Xmx4g", "-XX:+UseG1GC", "-jar", rj_jar, "server"]
+        log("Starting persistent JVM server (local mode)...")
         env = os.environ.copy()
         env["JAVA_HOME"] = self.java_home
         env["RAMANUJAN_WS"] = self.rj_ws
@@ -102,16 +102,14 @@ class RjServer:
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()
 
-        # wait for SERVER_READY
         deadline = time.time() + timeout
         while time.time() < deadline:
             line = self.proc.stdout.readline()
             if not line:
                 log("ERROR: JVM exited before SERVER_READY")
                 sys.exit(1)
-            line = line.rstrip()
-            if line == "SERVER_READY":
-                log("JVM server ready")
+            if line.rstrip() == "SERVER_READY":
+                log("JVM local server ready")
                 return
         log("ERROR: timeout waiting for SERVER_READY")
         sys.exit(1)
@@ -174,6 +172,58 @@ class RjServer:
             self.proc.stdin.flush()
             self.proc.wait(timeout=10)
             log("JVM server shutdown")
+
+
+class RjHomelabClient:
+    """Connects to an already-running homelab server via HTTP (no local JVM)."""
+
+    def __init__(self, homelab_url):
+        self.homelab_url = homelab_url.rstrip("/")
+
+    def start(self, timeout=10):
+        import urllib.request
+        try:
+            urllib.request.urlopen(f"{self.homelab_url}/pings/heartbeat", timeout=timeout)
+            log(f"Connected to homelab server at {self.homelab_url}")
+        except Exception as e:
+            log(f"ERROR: Cannot reach homelab server at {self.homelab_url}: {e}")
+            sys.exit(1)
+
+    def run_kernel(self, kernel_py, csv_args, dump_vars, timeout=300):
+        import json
+        import urllib.request
+
+        # Blocking POST — returns only when all workers have finished the frame
+        run_body = json.dumps({"args": [kernel_py] + csv_args}).encode()
+        run_req = urllib.request.Request(
+            f"{self.homelab_url}/orchestrator/run",
+            data=run_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(run_req, timeout=timeout)
+        except Exception as e:
+            raise RuntimeError(f"Homelab /orchestrator/run failed: {e}")
+
+        # Write each output array to its local file path
+        for name, path in dump_vars.items():
+            dump_body = json.dumps({"name": name, "path": path}).encode()
+            dump_req = urllib.request.Request(
+                f"{self.homelab_url}/orchestrator/dump",
+                data=dump_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(dump_req, timeout=30)
+            except Exception as e:
+                raise RuntimeError(f"Homelab /orchestrator/dump {name} failed: {e}")
+
+        return 0.0  # elapsed reported by server via stderr
+
+    def shutdown(self):
+        pass  # remote server keeps running
 
 
 def compute_grid(num_particles):
@@ -419,6 +469,10 @@ def main():
                         help="Required when --viewer usd")
     parser.add_argument("--keep-tmp", action="store_true",
                         help="Don't delete the per-frame CSVs.")
+    parser.add_argument("--homelab", action="store_true",
+                        help="Connect to an existing homelab server instead of starting a local JVM.")
+    parser.add_argument("--homelab-url", default="http://localhost:8888",
+                        help="Homelab server URL (default http://localhost:8888). Only used with --homelab.")
     args = parser.parse_args()
 
     grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles, particle_radius = \
@@ -429,8 +483,11 @@ def main():
     log(f"Particles:      {num_particles}  ({grid_nx}×{grid_ny}×{grid_nz}, spacing={spacing:.4f} m)")
     log(f"Particle radius:{particle_radius:.4f} m  (viewer only)")
 
-    # Start persistent JVM server (no per-frame subprocess overhead)
-    rj_server = RjServer(JAVA_HOME, RJ_WS)
+    # Start local JVM or connect to existing homelab server
+    if args.homelab:
+        rj_server = RjHomelabClient(args.homelab_url)
+    else:
+        rj_server = RjServer(JAVA_HOME, RJ_WS)
     rj_server.start()
 
     here       = os.path.dirname(os.path.abspath(__file__))

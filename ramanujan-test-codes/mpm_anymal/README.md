@@ -214,6 +214,130 @@ the values flow straight from a Ramanujan-produced CSV into the viewer.
 
 ---
 
+## Homelab Mode: Distributed Worker Execution
+
+By default, `run_mpm_anymal.py` runs physics on a single machine using a persistent local JVM server.
+You can also run it in **homelab mode**, where the orchestrator runs on one machine and the physics
+computations are distributed to multiple worker machines (e.g., Android phones, other desktops).
+
+### Homelab Architecture
+
+```
+Homelab Server             Worker Machines              Orchestrator
+(Developer Console)        (Android + ramanujan-device-common)
+                                                       (run_mpm_anymal.py)
+  +                           +
+  |                           |
+  | HTTP /pings/open          | polls for work
+  |<------ (queues DAG elements)
+  |
+  | HTTP /task/complete
+  | (receives results)  +------->
+  |                    |
+  | plots timeline     | submits via REST
+  |                    |
+  +---------stdin--+    |
+           (run ...)    |
+```
+
+### Starting a Homelab Server
+
+Run the developer-console in homelab mode on a dedicated machine (or your laptop):
+
+```bash
+# Port defaults to 8888; optionally override
+java -jar developer-console-1.0-SNAPSHOT-fat.jar homelab 8888
+```
+
+You will see output like:
+```
+HOMELAB_READY
+HOMELAB_ADDRESS http://192.168.1.42:8888
+```
+
+The homelab server stays running and listens for worker connections and orchestrator commands from stdin.
+
+### Connecting Android Worker Devices
+
+1. **Build the Android app** (if not already built):
+   ```bash
+   cd androidapp && ./gradlew assembleDebug
+   ```
+   Install to your Android device(s).
+
+2. **Start the app**:
+   - The app shows **Device IP** at the top (e.g., `192.168.1.100`)
+   - In the **Server URL** field, enter the homelab server address:
+     ```
+     http://192.168.1.42:8888
+     ```
+   - Tap **Start Workers** — the app spawns one orchestration thread per CPU core,
+     all connecting to your homelab server.
+
+3. **View logs**:
+   - Tap **Show Logs** to see GPU execution info:
+     ```
+     [GPU] 1 GPU kernel(s) detected: [integrate_GPU_1]
+     [GPU] run latency: 245 ms (kernels: [integrate_GPU_1])
+     ```
+
+### Running the Orchestrator Against the Homelab Server
+
+Once the homelab server is running and workers are connected:
+
+```bash
+# Run with homelab server flag (homelab server must be running locally on port 8888)
+python3 run_mpm_anymal.py --frames 200 --homelab
+
+# Or explicitly specify homelab server URL
+python3 run_mpm_anymal.py --frames 200 --homelab --homelab-url http://192.168.1.42:8888
+```
+
+The orchestrator will:
+1. Connect to the homelab server on stdin/stdout (local) or via HTTP (remote)
+2. Submit each frame as a `run` command
+3. Wait for all workers to complete the DAG elements
+4. Collect and display results
+5. Playback in Newton viewer as usual
+
+### Homelab Workflow Example
+
+**Terminal 1** (homelab server, desktop machine 192.168.1.42):
+```bash
+java -jar developer-console-1.0-SNAPSHOT-fat.jar homelab
+# Waits for orchestrator and worker connections...
+```
+
+**Terminal 2** (orchestrator, same desktop):
+```bash
+cd ramanujan-test-codes/mpm_anymal
+python3 run_mpm_anymal.py --frames 50 --num-particles 10000 --homelab
+```
+
+**Android Devices** (connected via WiFi to same network):
+- App shows "Device IP: 192.168.1.50", "Device IP: 192.168.1.51", etc.
+- Enter "http://192.168.1.42:8888" in Server URL
+- Tap "Start Workers" on each device
+- Workers begin polling homelab server for tasks
+
+**Result**:
+- Frame computation distributes across all connected workers
+- Homelab server queues DAG elements as they are compiled
+- Workers pick up tasks, execute GPU kernels, return results
+- Orchestrator collects all results and replays in Newton viewer
+
+### Performance Notes
+
+- **Single machine (no homelab)**: ~0.75 s/frame (256 particles, 1 JVM)
+- **Homelab with 2 Android devices**: ~0.5 s/frame (divided across GPUs)
+- **Homelab with 4+ devices**: scales with worker count and GPU availability
+
+> **Limitation**: Binary-loaded arrays (>180k floats) are unavailable to the `dump` command,
+> so particle counts are capped at ~60k with current Ramanujan version. This affects both
+> local and homelab modes equally.
+
+---
+
 ## Constraints honored
 
 * All physics runs inside Ramanujan (host-side `while` loops + `_GPU_N`
