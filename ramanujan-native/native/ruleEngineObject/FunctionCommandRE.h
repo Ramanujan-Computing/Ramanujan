@@ -23,7 +23,15 @@
 #ifdef __APPLE__
 #  include <OpenCL/cl.h>
 #else
+// On Android we dlopen libOpenCL.so at runtime (see native/opencl_loader.h).
+// Include the Khronos headers first for the types, then let opencl_loader.h
+// redefine every cl* to its pfn_* pointer.  This must happen here in the .h
+// (not only in the .cpp) because destroy() calls clReleaseKernel /
+// clReleaseMemObject directly and those calls are emitted from this header.
 #  include <CL/cl.h>
+#  ifdef __ANDROID__
+#    include "../opencl_loader.h"
+#  endif
 #endif
 #endif
 

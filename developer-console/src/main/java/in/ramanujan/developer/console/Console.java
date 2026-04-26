@@ -21,6 +21,11 @@ public class Console {
             OperationType.execute_inline_homelab_server.getImplementation().execute(Arrays.asList(args));
             return;
         }
+        // 'worker' keyword: start as local worker connecting to a homelab server
+        if ("worker".equalsIgnoreCase(args[0])) {
+            OperationType.execute_inline_worker.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
         // If one argument is given, treat it as a path and use execute_inline
         if(args.length == 1) {
             OperationType.execute_inline.getImplementation().execute(Arrays.asList(args));

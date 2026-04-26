@@ -189,33 +189,60 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         System.err.println("[Homelab] compiled " + args.get(0)
                 + " in " + (System.currentTimeMillis() - t0) + "ms  DAG=" + allElements.size());
 
-        KernelRun run = new KernelRun(variableMap, arrayMap, allElements.size());
+        // Execute DAG elements in topological order so each element sees the
+        // merged results of its predecessors.  Dispatching all elements at once
+        // (the old approach) sent every worker a snapshot of the initial arrays;
+        // dependent kernels (gravity → feet → integrate) never saw each other's
+        // outputs, so velocities stayed zero and positions never changed.
+        Set<DagElement> completed = new HashSet<>();
+        Deque<DagElement> readyQueue = new ArrayDeque<>();
+        readyQueue.add(firstDag);
 
-        for (DagElement el : allElements) {
+        while (completed.size() < allElements.size()) {
+            if (readyQueue.isEmpty()) {
+                for (DagElement el : allElements) {
+                    if (!completed.contains(el) && completed.containsAll(el.getPreviousElements())) {
+                        readyQueue.add(el);
+                    }
+                }
+                if (readyQueue.isEmpty()) break; // cycle or all done
+            }
+
+            DagElement element = readyQueue.poll();
+            if (completed.contains(element)) continue;
+
+            // Build the task JSON NOW, after all predecessor results have been
+            // merged into the shared arrayMap / variableMap objects that
+            // element.getRuleEngineInput() references.
             String taskUuid = UUID.randomUUID().toString();
-
-            // Build the OpenPingHttpResponse JSON that the worker's Orchestrator expects
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("uuid",           taskUuid);
-            data.put("ruleEngineInput", el.getRuleEngineInput());
-            data.put("firstCommandId", el.getFirstCommandId());
+            data.put("ruleEngineInput", element.getRuleEngineInput());
+            data.put("firstCommandId", element.getFirstCommandId());
             data.put("debug",          false);
-
             Map<String, Object> envelope = new LinkedHashMap<>();
             envelope.put("status", "SUCCESS");
             envelope.put("data",   data);
-
             String responseJson = MAPPER.writeValueAsString(envelope);
-            PendingTask task = new PendingTask(taskUuid, el, run, responseJson);
+
+            KernelRun run = new KernelRun(variableMap, arrayMap, 1);
+            PendingTask task = new PendingTask(taskUuid, element, run, responseJson);
             taskQueue.add(task);
             inflight.put(taskUuid, task);
+
+            System.err.println("[Homelab] dispatched element (firstCmd=" + element.getFirstCommandId() + "), waiting…");
+            run.latch.await();
+
+            completed.add(element);
+            for (DagElement next : element.getNextElements()) {
+                if (!completed.contains(next) && completed.containsAll(next.getPreviousElements())) {
+                    readyQueue.add(next);
+                }
+            }
         }
 
-        System.err.println("[Homelab] queued " + allElements.size() + " task(s), waiting for workers…");
-
-        run.latch.await(); // block stdin loop until all workers finish
-
-        System.err.println("[Homelab] all tasks done in " + (System.currentTimeMillis() - t0) + "ms");
+        System.err.println("[Homelab] all " + completed.size() + " element(s) done in "
+                + (System.currentTimeMillis() - t0) + "ms");
 
         // Populate ExecutorImpl stores so dump / var / arr commands work post-run
         Map<String, Object> varStore = new HashMap<>();
@@ -227,10 +254,13 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             if (id.contains("func") || !id.contains("_name_")) continue;
             String name = id.split("_name_")[1];
             Map<String, Object> vals = a.getValues();
+            int valCount = vals == null ? -1 : vals.size();
+            System.err.println("[Homelab] setStores: array id=" + id + " name=" + name + " vals=" + valCount);
             if (vals == null) continue;
             for (Map.Entry<String, Object> e : vals.entrySet())
                 arrStore.computeIfAbsent(name, k -> new HashMap<>()).put(e.getKey(), e.getValue());
         }
+        System.err.println("[Homelab] setStores: arrStore keys=" + arrStore.keySet());
         ExecutorImpl.setStores(varStore, arrStore);
     }
 
@@ -274,6 +304,8 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         String name = (String) req.get("name");
         String path = (String) req.get("path");
 
+        System.err.println("[Homelab] dump request: name=" + name + " path=" + path
+                + " storeKeys=" + ExecutorImpl.arrayStore.keySet());
         Map<String, Object> arr = ExecutorImpl.arrayStore.get(name);
         if (arr == null || arr.isEmpty()) {
             sendJson(ex, 404, "{\"status\":\"ERROR\",\"message\":\"Array not found: " + name + "\"}");
@@ -383,11 +415,18 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             Object value = entry.getValue();
             if ("arrayIndex".equalsIgnoreCase(key)) {
                 Map<String, Map<String, Object>> arrResults = (Map<String, Map<String, Object>>) value;
+                System.err.println("[Homelab] mergeResults: " + arrResults.size() + " array(s) in result; arrayMap has " + arrayMap.size() + " entries");
                 for (Map.Entry<String, Map<String, Object>> ae : arrResults.entrySet()) {
                     Array array = arrayMap.get(ae.getKey());
-                    if (array != null && array.getValues() != null) {
-                        array.getValues().putAll(ae.getValue());
+                    if (array == null) {
+                        System.err.println("[Homelab] mergeResults: no array for id=" + ae.getKey() + " (keys: " + arrayMap.keySet() + ")");
+                        continue;
                     }
+                    if (array.getValues() == null) {
+                        array.setValues(new HashMap<>());
+                    }
+                    array.getValues().putAll(ae.getValue());
+                    System.err.println("[Homelab] mergeResults: merged " + ae.getValue().size() + " entries into array id=" + ae.getKey());
                 }
             } else {
                 Variable variable = variableMap.get(key);

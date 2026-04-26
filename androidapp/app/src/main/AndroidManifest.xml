@@ -5,6 +5,7 @@
     <!-- Add the following permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -14,7 +15,15 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Nativetest"
+        android:usesCleartextTraffic="true"
         tools:targetApi="31">
+        <!--
+            Grants the system linker namespace access to the device vendor's OpenCL
+            library so that our native dlopen("libOpenCL.so") succeeds on Android 10+.
+            android:required="false" keeps the app installable on devices without OpenCL.
+            Must be a direct child of <application>, not <manifest>.
+        -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

@@ -110,6 +110,28 @@ public class CodeExecutor {
                 if(results == null) {
                     results = new HashMap<>();
                 }
+                // Diagnostic: log what the native layer returned before sending to homelab server
+                Object arrIdx = results.get("arrayIndex");
+                if (arrIdx instanceof Map) {
+                    Map<?, ?> arrMap = (Map<?, ?>) arrIdx;
+                    logger.info("[DEBUG] GPU result: " + arrMap.size() + " array(s) changed, keys=" + arrMap.keySet());
+                    for (Map.Entry<?, ?> e : arrMap.entrySet()) {
+                        Object inner = e.getValue();
+                        if (inner instanceof Map) {
+                            Map<?, ?> innerMap = (Map<?, ?>) inner;
+                            // Log first 3 entries as a sample
+                            int count = 0;
+                            StringBuilder sample = new StringBuilder();
+                            for (Map.Entry<?, ?> ie : innerMap.entrySet()) {
+                                if (count++ >= 3) { sample.append("..."); break; }
+                                sample.append(ie.getKey()).append("=").append(ie.getValue()).append(" ");
+                            }
+                            logger.info("[DEBUG]   array id=" + e.getKey() + " entries=" + innerMap.size() + " sample=[" + sample + "]");
+                        }
+                    }
+                } else {
+                    logger.info("[DEBUG] GPU result: no arrayIndex in results, keys=" + results.keySet());
+                }
 //                Map<String, Object> results = new Processor(ruleEngineInput, openPingApiResponse.getFirstCommandId(), new CheckpointPushClient(openPingApiResponse.getUuid())).process();
                 processorFutureMap.setResult(results);
                 long elapsed = System.currentTimeMillis() - start;

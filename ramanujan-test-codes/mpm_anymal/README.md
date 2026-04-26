@@ -217,28 +217,38 @@ the values flow straight from a Ramanujan-produced CSV into the viewer.
 ## Homelab Mode: Distributed Worker Execution
 
 By default, `run_mpm_anymal.py` runs physics on a single machine using a persistent local JVM server.
-You can also run it in **homelab mode**, where the orchestrator runs on one machine and the physics
-computations are distributed to multiple worker machines (e.g., Android phones, other desktops).
+You can also run it in **homelab mode**, where a long-running homelab server orchestrates GPU work
+across multiple worker machines (e.g., Android phones, other desktops), and the Python orchestrator
+submits frames via HTTP.
 
 ### Homelab Architecture
 
 ```
-Homelab Server             Worker Machines              Orchestrator
-(Developer Console)        (Android + ramanujan-device-common)
-                                                       (run_mpm_anymal.py)
-  +                           +
-  |                           |
-  | HTTP /pings/open          | polls for work
-  |<------ (queues DAG elements)
-  |
-  | HTTP /task/complete
-  | (receives results)  +------->
-  |                    |
-  | plots timeline     | submits via REST
-  |                    |
-  +---------stdin--+    |
-           (run ...)    |
+                 Homelab Server (once)      Worker Machines
+                 (java -jar homelab)        (Android + ramanujan-device-common)
+                        |                            ^
+                        |                            |
+                 /pings/open (poll)    /task/complete (results)
+                        |<---------workers--------->|
+                        |
+                        ^
+                        | HTTP /orchestrator/run    (blocking until done)
+                        | HTTP /orchestrator/dump   (read output arrays)
+                        |
+                   Orchestrator (per-frame)
+                  (run_mpm_anymal.py --homelab)
 ```
+
+The homelab server is a **persistent process** that:
+- Accepts frame compilation requests from the orchestrator via HTTP
+- Distributes DAG elements to connected workers  
+- Merges results as workers complete tasks
+- Writes CSV output files that the orchestrator reads
+
+The orchestrator (Python script) is **stateless and per-frame**:
+- Sends one `/orchestrator/run` request per frame (blocks until all workers finish)
+- Sends `/orchestrator/dump` requests to retrieve output arrays as CSV files
+- No JVM startup per frame; no local compute
 
 ### Starting a Homelab Server
 
@@ -283,58 +293,126 @@ The homelab server stays running and listens for worker connections and orchestr
 
 ### Running the Orchestrator Against the Homelab Server
 
-Once the homelab server is running and workers are connected:
+Once the homelab server is running (in Terminal 1) and workers are connected:
 
 ```bash
-# Run with homelab server flag (homelab server must be running locally on port 8888)
+# Connect to homelab server running locally on port 8888 (default)
+cd ramanujan-test-codes/mpm_anymal
 python3 run_mpm_anymal.py --frames 200 --homelab
 
-# Or explicitly specify homelab server URL
+# Or explicitly specify homelab server URL (e.g., different machine)
 python3 run_mpm_anymal.py --frames 200 --homelab --homelab-url http://192.168.1.42:8888
 ```
 
 The orchestrator will:
-1. Connect to the homelab server on stdin/stdout (local) or via HTTP (remote)
-2. Submit each frame as a `run` command
-3. Wait for all workers to complete the DAG elements
-4. Collect and display results
-5. Playback in Newton viewer as usual
+1. POST to `/orchestrator/run` with kernel path and input CSV paths (blocking until all workers finish)
+2. POST to `/orchestrator/dump` for each output array; server writes CSV files locally
+3. Read the CSV output files and display progress
+4. Playback in Newton viewer as usual
+
+**No JVM is started by the orchestrator.** All frame computation happens on the homelab server (and its connected workers).
 
 ### Homelab Workflow Example
 
-**Terminal 1** (homelab server, desktop machine 192.168.1.42):
+#### Step 1: Start the Homelab Server (once, stays running)
+
+**Terminal 1** (desktop machine 192.168.1.42):
 ```bash
-java -jar developer-console-1.0-SNAPSHOT-fat.jar homelab
-# Waits for orchestrator and worker connections...
+java -jar developer-console-1.0-SNAPSHOT-fat.jar homelab 8888
 ```
 
-**Terminal 2** (orchestrator, same desktop):
+Output:
+```
+HOMELAB_READY
+HOMELAB_ADDRESS http://192.168.1.42:8888
+[Homelab] HTTP server listening on :8888
+```
+
+The server now accepts:
+- Worker connections via `/pings/open` and `/pings/heartbeat`
+- Orchestrator requests via `/orchestrator/run` and `/orchestrator/dump`
+- Task completion results via `/task/complete`
+
+#### Step 2: Connect Android Workers
+
+**Android Devices** (connected via WiFi to the same network):
+1. Build and install the Android app: `cd androidapp && ./gradlew assembleDebug`
+2. Open the app on each device
+3. Device shows "Device IP: 192.168.1.50", "Device IP: 192.168.1.51", etc.
+4. In the **Server URL** field, enter: `http://192.168.1.42:8888`
+5. Tap **Start Workers** — the app spawns one orchestration thread per CPU core
+6. Tap **Show Logs** to see GPU execution: `[GPU] run latency: 245 ms (kernels: [integrate_GPU_1])`
+
+All workers begin polling the homelab server for tasks.
+
+#### Step 3: Run the Orchestrator (frame-by-frame)
+
+**Terminal 2** (same desktop or any machine on the network):
 ```bash
 cd ramanujan-test-codes/mpm_anymal
-python3 run_mpm_anymal.py --frames 50 --num-particles 10000 --homelab
+python3 run_mpm_anymal.py --frames 50 --num-particles 10000 --homelab --homelab-url http://192.168.1.42:8888
 ```
 
-**Android Devices** (connected via WiFi to same network):
-- App shows "Device IP: 192.168.1.50", "Device IP: 192.168.1.51", etc.
-- Enter "http://192.168.1.42:8888" in Server URL
-- Tap "Start Workers" on each device
-- Workers begin polling homelab server for tasks
+The orchestrator:
+- Writes input CSVs to a temp directory
+- For each frame:
+  - POSTs to `http://192.168.1.42:8888/orchestrator/run` (blocks until done)
+  - POSTs to `/orchestrator/dump` to retrieve output CSVs
+  - Reads the CSVs and continues
+- After all frames, displays Newton viewer playback
 
-**Result**:
-- Frame computation distributes across all connected workers
-- Homelab server queues DAG elements as they are compiled
-- Workers pick up tasks, execute GPU kernels, return results
-- Orchestrator collects all results and replays in Newton viewer
+**You can run multiple orchestrator instances in parallel** — they all submit work to the same homelab server, and workers execute all tasks in parallel.
 
 ### Performance Notes
 
-- **Single machine (no homelab)**: ~0.75 s/frame (256 particles, 1 JVM)
+- **Single machine (no homelab)**: ~0.75 s/frame (256 particles, 1 local JVM)
+- **Homelab with 1 local worker**: ~1 s/frame (similar to single-machine, but via HTTP)
 - **Homelab with 2 Android devices**: ~0.5 s/frame (divided across GPUs)
 - **Homelab with 4+ devices**: scales with worker count and GPU availability
+- **Multiple orchestrators**: can submit frames to the same homelab server in parallel; workers execute all tasks
 
 > **Limitation**: Binary-loaded arrays (>180k floats) are unavailable to the `dump` command,
 > so particle counts are capped at ~60k with current Ramanujan version. This affects both
 > local and homelab modes equally.
+
+### Homelab Server HTTP Endpoints
+
+For orchestrator integration (used by `run_mpm_anymal.py --homelab`):
+
+| Endpoint | Method | Body | Response | Purpose |
+|---|---|---|---|---|
+| `/orchestrator/run` | POST | `{"args": ["kernel.py", "csv1", ...]}` | `{"status": "SUCCESS\|ERROR"}` | Compile kernel, dispatch to workers, block until done |
+| `/orchestrator/dump` | POST | `{"name": "arrayName", "path": "/local/path.csv"}` | `{"status": "SUCCESS\|ERROR"}` | Write array to local CSV file |
+
+For worker connections (used by Android app):
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/pings/open` | POST | Workers poll for task(s); server returns queued DAG element or null |
+| `/pings/heartbeat` | POST | Workers ping to stay alive |
+| `/task/complete` | POST | Workers submit result(s); server merges and counts down latch |
+
+---
+
+### Choosing Between Local and Homelab Mode
+
+| Scenario | Mode | Command |
+|---|---|---|
+| **Testing locally on one machine** | Local | `python3 run_mpm_anymal.py --frames 200` |
+| **Distributing across Android devices** | Homelab | Terminal 1: `java -jar developer-console.jar homelab`<br/>Terminal 2: `python3 run_mpm_anymal.py --frames 200 --homelab` |
+| **Running multiple simulations in parallel** | Homelab | Start server once; run multiple orchestrators concurrently |
+| **Running from a different machine** | Homelab | `python3 run_mpm_anymal.py --homelab --homelab-url http://server.ip:8888` |
+
+**Homelab advantages:**
+- Distributes GPU work across multiple devices
+- Decouples orchestrator from compute — can run from anywhere
+- Supports parallel orchestrator instances
+- Server stays running; can reuse for multiple experiments
+
+**Local mode advantages:**
+- Simpler setup (no Android devices needed)
+- Faster for single-machine testing
+- No HTTP overhead
 
 ---
 

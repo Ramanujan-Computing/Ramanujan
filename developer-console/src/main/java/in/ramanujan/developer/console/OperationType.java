@@ -10,7 +10,8 @@ public enum OperationType {
     debug("debug", new DebugFetcher()),
     execute_inline("execute_inline", new ExecuteInline()),
     execute_inline_server("server", new ExecuteInlineServer()),
-    execute_inline_homelab_server("homelab", new ExecuteInlineHomelabServer());
+    execute_inline_homelab_server("homelab", new ExecuteInlineHomelabServer()),
+    execute_inline_worker("worker", new ExecuteInlineWorker());
 
     String type;
     Operation implementation;

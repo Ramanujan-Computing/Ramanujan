@@ -32,9 +32,23 @@ if(GPU_ENABLED)
         # Apple's platform and returns 0 platforms on macOS (including Apple Silicon).
         find_package(OpenCL REQUIRED)
         message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via system framework  (macOS, version ${OpenCL_VERSION_STRING})")
+    elseif(ANDROID)
+        # On Android we dlopen libOpenCL.so at runtime (see opencl_loader.h).
+        # The Khronos ICD loader looks for /etc/OpenCL/vendors/*.icd which does
+        # NOT exist on Android, so clGetPlatformIDs always returns 0 platforms.
+        # Instead we only fetch the headers for compilation and rely on dlopen
+        # at runtime — no ICD loader is linked.
+        FetchContent_Declare(
+            OpenCLHeaders
+            GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+            GIT_TAG        v2023.04.17
+        )
+        FetchContent_MakeAvailable(OpenCLHeaders)
+        message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via dlopen (Android) – headers only, no ICD loader")
     else()
-        # Linux / Windows: fetch Khronos headers and ICD loader from source,
-        # the same way jsoncpp is fetched above.
+        # Linux / Windows: compile the Khronos ICD loader from source.
+        # On Linux: sudo apt install ocl-icd-opencl-dev opencl-headers (or let
+        # FetchContent build it from source as done here).
         FetchContent_Declare(
             OpenCLHeaders
             GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
@@ -191,11 +205,19 @@ target_link_libraries(native PRIVATE jsoncpp_static)
 #set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
 #set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
 
-# Link OpenCL into all three targets when GPU support is enabled
+# Link OpenCL into all three targets when GPU support is enabled.
+# On Android we use dlopen at runtime so we only add the headers include path;
+# we do NOT link against OpenCL::OpenCL (the ICD loader) to avoid the
+# /etc/OpenCL/vendors discovery that doesn't work on Android.
 if(GPU_ENABLED)
-    target_link_libraries(native       PRIVATE OpenCL::OpenCL)
-#    target_link_libraries(native_lib   PRIVATE OpenCL::OpenCL)
-#    target_link_libraries(native_debug PRIVATE OpenCL::OpenCL)
+    if(ANDROID)
+        # Headers only — runtime loading via dlopen in opencl_loader.h.
+        # Link against libdl so dlopen/dlsym/dlerror resolve.
+        target_include_directories(native PRIVATE ${openclheaders_SOURCE_DIR})
+        target_link_libraries(native PRIVATE dl log)
+    else()
+        target_link_libraries(native PRIVATE OpenCL::OpenCL)
+    endif()
 endif()
 
 #find_package(Boost REQUIRED)

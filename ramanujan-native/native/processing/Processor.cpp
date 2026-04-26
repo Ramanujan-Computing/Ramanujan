@@ -85,14 +85,10 @@ std::unordered_map<std::string, ProcessingResult>* Processor::process(RuleEngine
         ArrayRE* arrayRE = (ArrayRE*)(array);
         ArrayValue* arrayValue = ((ArrayDataContainerValue*)(arrayRE->getVal()))->arrayValue;
         int size = arrayValue->totalSize;
-        // Skip change-tracking for large arrays (read-only weights) - inserting millions
-        // of entries into a hashmap is extremely slow and unnecessary for inference
         if (size > 100000) {
             continue;
         }
-        for(int i = 0; i < size; i++) {
-            dataFieldOriginalData.insert(std::make_pair(&arrayValue->val[i],arrayValue->val[i]));
-        }
+        arraySnapshotMap[arrayRE->id] = std::vector<float>(arrayValue->val, arrayValue->val + size);
     }
 
 
@@ -141,21 +137,21 @@ std::unordered_map<std::string, std::unordered_map<std::string, double>*>* Proce
     std::unordered_map<std::string, std::unordered_map<std::string, double>*> *arrChangeMap = new std::unordered_map<std::string, std::unordered_map<std::string, double>*>();
     for(RuleEngineInputUnits *arrayRE1 : arrayREs) {
         ArrayRE* arrayRE = (ArrayRE*)arrayRE1;
+        auto snapIt = arraySnapshotMap.find(arrayRE->id);
+        if (snapIt == arraySnapshotMap.end()) continue; // large array, not tracked
+        const std::vector<float>& snapshot = snapIt->second;
+
         ArrayDataContainerValue* pArrayDataContainerValueValue = (ArrayDataContainerValue*)(arrayRE->getVal());
         ArrayValue* arrayValue = pArrayDataContainerValueValue->arrayValue;
         int size = arrayValue->totalSize;
+        int compareSize = (int)snapshot.size() < size ? (int)snapshot.size() : size;
+
         std::unordered_map<std::string, double> *arrChangeMap1 = new std::unordered_map<std::string, double>();
         bool changed = false;
-        for(int i = 0; i < size; i++) {
-            auto itr = dataFieldOriginalData.find(&arrayValue->val[i]);
-            if(itr == dataFieldOriginalData.end()) {
-                break;
-            }
-            double originalVal = itr->second;
-            double newVal = arrayValue->val[i];
+        for(int i = 0; i < compareSize; i++) {
+            float originalVal = snapshot[i];
+            float newVal = arrayValue->val[i];
             if(originalVal != newVal) {
-//                std::ostd::stringstream oss;
-//                oss << std::fixed << std::setprecision(6) << newVal;
                 arrChangeMap1->insert(std::make_pair(arrayValue->to_string(i), newVal));
                 changed = true;
             }

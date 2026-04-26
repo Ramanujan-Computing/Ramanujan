@@ -40,6 +40,7 @@ class Processor {
     void fixConditions(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap, std::vector<Condition *> conditions);
 
     std::unordered_map<void*, double> dataFieldOriginalData;
+    std::unordered_map<std::string, std::vector<float>> arraySnapshotMap;
 
     std::list<RuleEngineInputUnits*> arrayREs;
     std::list<RuleEngineInputUnits*> variableREs;

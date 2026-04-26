@@ -19,10 +19,13 @@
 #include <mutex>
 
 // ==================== OpenCL ====================
+// On Android we must dlopen libOpenCL.so at runtime; the Khronos ICD loader
+// cannot discover vendor libraries via /etc/OpenCL/vendors/*.icd on Android.
+// opencl_loader.h does the dlopen and re-#defines all cl* to pfn_* pointers.
+// On all other platforms it is a no-op and we link against the system OpenCL.
 #ifdef __APPLE__
 #  include <OpenCL/cl.h>
-#else
-#  include <CL/cl.h>
+// opencl_loader.h is included by FunctionCommandRE.h on non-Apple/Android builds.
 #endif
 
 // ---------------------------------------------------------------------------
@@ -68,6 +71,20 @@ struct GpuContext {
         std::lock_guard<std::mutex> lk(initMutex);
         if (initialized) return;
         initialized = true;
+
+#ifdef __ANDROID__
+        // On Android the Khronos ICD loader cannot find /etc/OpenCL/vendors/*.icd
+        // files (they don't exist). Load libOpenCL.so via dlopen first so that
+        // all subsequent cl* calls resolve to the vendor implementation.
+        if (!openclLoad()) {
+            fprintf(stderr, "[GPU] Android: could not dlopen libOpenCL.so – "
+                            "GPU execution unavailable.\n"
+                            "  Ensure AndroidManifest.xml contains:\n"
+                            "  <uses-native-library android:name=\"libOpenCL.so\" "
+                            "android:required=\"false\"/>\n");
+            return;
+        }
+#endif
 
         cl_int err;
 
@@ -437,7 +454,10 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                 bufferError = true;
                 break;
             }
-            clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
+            cl_int setErr = clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
+            if (setErr != CL_SUCCESS) {
+                fprintf(stderr, "[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di, setErr);
+            }
         }
 
         // Skip dispatch when any globalWorkSize dimension is 0
@@ -445,6 +465,8 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
         for (size_t wi = 0; wi < gpuGlobalWorkSize.size(); wi++) {
             if (gpuGlobalWorkSize[wi] == 0) { zeroWorkSize = true; break; }
         }
+        if (zeroWorkSize) fprintf(stderr, "[GPU-DBG] SKIPPING dispatch: zeroWorkSize\n");
+        if (bufferError) fprintf(stderr, "[GPU-DBG] SKIPPING dispatch: bufferError\n");
 
         if (!bufferError && !zeroWorkSize) {
             err = clEnqueueNDRangeKernel(
