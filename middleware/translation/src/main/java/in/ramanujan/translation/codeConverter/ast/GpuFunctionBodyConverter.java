@@ -198,13 +198,13 @@ public class GpuFunctionBodyConverter {
         // All parameter names (data args + range dims) – used to distinguish locals.
         paramNames = new HashSet<>();
         for (ArgNode arg : allArgs) paramNames.add(arg.getArg());
-        // Float-typed params: only data args (__global float*), NOT range-dim args (int gid).
+        // Double-typed params: only data args (__global double*), NOT range-dim args (int gid).
         floatParamNames = new HashSet<>();
         for (ArgNode arg : dataArgs) floatParamNames.add(arg.getArg());
         declaredLocals = new HashSet<>();
 
-        // Pre-scan: determine which locals must be float vs int.
-        // A local is float if it is EVER assigned from an expression that contains an
+        // Pre-scan: determine which locals must be double vs int.
+        // A local is double if it is EVER assigned from an expression that contains an
         // array read (SubscriptNode) or a floating-point constant.  All other locals
         // are declared int, keeping index arithmetic in the integer domain so that
         // large indices (e.g. gid*3072 for gid up to 9215) are computed exactly.
@@ -229,6 +229,8 @@ public class GpuFunctionBodyConverter {
         }
 
         // Kernel signature: data args only, each as __global float*.
+        // Apple Metal-based OpenCL does not support cl_khr_fp64 (double precision on GPU).
+        // The CPU stores arrays as double; conversion happens at the JNI/native boundary.
         sb.append("__kernel void ").append(kernelName).append("(");
         for (int i = 0; i < dataArgs.size(); i++) {
             if (i > 0) sb.append(", ");
@@ -264,15 +266,15 @@ public class GpuFunctionBodyConverter {
             AssignNode assign = (AssignNode) stmt;
             if (assign.getTargets() == null || assign.getTargets().isEmpty()) return "";
             AstNode target = assign.getTargets().get(0);
-            // Declare scalar locals with 'float' on their first assignment.
+            // Declare scalar locals with 'double' on their first assignment.
             // Parameters (data args + range dims) are already declared in the kernel
             // signature / via get_global_id() and must not be re-declared.
             String typePrefix = "";
             if (target instanceof NameNode) {
                 String varName = ((NameNode) target).getId();
                 if (!paramNames.contains(varName) && !declaredLocals.contains(varName)) {
-                    // Use 'int' for pure index/counter variables to avoid float32
-                    // precision loss when computing large array indices (e.g. gid*3072).
+                    // Use 'int' for pure index/counter variables to avoid precision
+                    // loss when computing large array indices (e.g. gid*3072).
                     typePrefix = floatLocals.contains(varName) ? "float " : "int ";
                     declaredLocals.add(varName);
                 }
@@ -668,15 +670,15 @@ public class GpuFunctionBodyConverter {
     }
 
     /**
-     * Returns {@code true} if {@code expr} produces a {@code float} result.
-     * An expression is float if it:
+     * Returns {@code true} if {@code expr} produces a {@code double} result.
+     * An expression is double if it:
      * <ul>
      *   <li>is an array subscript ({@link SubscriptNode}),</li>
      *   <li>is a floating-point literal,</li>
      *   <li>is a {@link NameNode} whose name is already in {@code knownFloats}
-     *       or in the data-arg parameter set (kernel {@code __global float*} args),</li>
-     *   <li>is a binary/unary expression with at least one float operand,</li>
-     *   <li>is a function call (helper calls return {@code float}).</li>
+     *       or in the data-arg parameter set (kernel {@code __global double*} args),</li>
+     *   <li>is a binary/unary expression with at least one double operand,</li>
+     *   <li>is a function call (helper calls return {@code double}).</li>
      * </ul>
      */
     private boolean exprIsFloat(AstNode expr, Set<String> knownFloats) {
@@ -688,8 +690,8 @@ public class GpuFunctionBodyConverter {
         }
         if (expr instanceof NameNode) {
             String name = ((NameNode) expr).getId();
-            // data-arg parameters are __global float* — using them unsubscripted is unusual
-            // but accessing by name alone (as a scalar) should be treated as float.
+            // data-arg parameters are __global double* — using them unsubscripted is unusual
+            // but accessing by name alone (as a scalar) should be treated as double.
             return knownFloats.contains(name) || floatParamNames.contains(name);
         }
         if (expr instanceof BinOpNode) {

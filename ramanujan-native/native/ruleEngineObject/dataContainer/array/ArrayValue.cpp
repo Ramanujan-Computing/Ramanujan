@@ -29,7 +29,7 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     }
 
     totalSize = getTotalSize(dimensions, 0, dimensionSize);
-    val = new double[totalSize]();
+    val = new float[totalSize]();
 
     // Fast path: load from binary float32 file directly into val[]
     if (!array->binaryFile.empty()) {
@@ -65,11 +65,10 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
             }
         }
         if (fdata) {
-            // Convert float -> double for the CPU-side val[]
-            for (int idx = 0; idx < fcount; idx++)
-                val[idx] = (double)fdata[idx];
+            // val[] is now float* — direct copy, no conversion needed
+            memcpy(val, fdata, fcount * sizeof(float));
             isBinaryLoaded  = true;
-            cachedFloatData = fdata;  // keep for zero-copy GPU upload
+            cachedFloatData = fdata;
         }
     } else {
         // Slow path: parse string-keyed map
@@ -84,7 +83,7 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
 
 void ArrayValue::add(int* index, double value) {
     int indexInt = translateIndex(index);
-    val[indexInt] = (value);
+    val[indexInt] = (float)value;
 }
 
 void ArrayDataContainerValue::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) {

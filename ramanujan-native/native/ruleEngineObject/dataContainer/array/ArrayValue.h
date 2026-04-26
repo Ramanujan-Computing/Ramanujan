@@ -28,7 +28,7 @@ private:
 
 
 public:
-    double* val = nullptr;
+    float* val = nullptr;
     int totalSize = 0;
     int* sizeAtIndex = nullptr;
     // Set when loaded from a .bin weight file.
@@ -122,7 +122,7 @@ public:
         this->dimensions = toBeCopied.dimensions;
         this->sizeAtIndex = toBeCopied.sizeAtIndex;
         if (!shallowCopy)
-            this->val = new double[toBeCopied.totalSize]();
+            this->val = new float[toBeCopied.totalSize]();
         else
             this->val = toBeCopied.val;
         this->totalSize = toBeCopied.totalSize;
@@ -134,7 +134,7 @@ public:
         this->dimensions = toBeCopied->dimensions;
         this->sizeAtIndex = toBeCopied->sizeAtIndex;
         if (!shallowCopy)
-            this->val = new double[toBeCopied->totalSize]();
+            this->val = new float[toBeCopied->totalSize]();
         else
             this->val = toBeCopied->val;
         this->totalSize = toBeCopied->totalSize;
@@ -222,7 +222,7 @@ public:
     ArrayValue * arrayValue = nullptr, *oldValue = nullptr;
     bool isClone = false;
 
-    double* placeholder= nullptr;
+    float* placeholder= nullptr;
 
     ArrayDataContainerValue() = default;
 

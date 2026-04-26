@@ -16,7 +16,7 @@
 
 class samplePair {
 public:
-    double * ptr;
+    float * ptr;
     int index;
 };
 
@@ -36,7 +36,7 @@ private:
     ArrayValue * arrayVal;
     int* sizeAtIndex;
 
-    double * getArrayValueDataContainer() {
+    float * getArrayValueDataContainer() {
         translatedIndex = 0;
         arrayVal = arrayDataContainerValue->arrayValue;
         sizeAtIndex = arrayVal->sizeAtIndex;
@@ -90,19 +90,19 @@ public:
     }
 
     void set(double value) override {
-       *getArrayValueDataContainer() = value;
+       *getArrayValueDataContainer() = (float)value;
     }
 
     double get() override {
 #ifdef DEBUG_BUILD
         std::shared_ptr<DebugPoint> debugPoint = debugger->getDebugPointToBeCommitted();
         debugPoint->canAdd = false;
-        double val = *getArrayValueDataContainer();
+        double val = (double)*getArrayValueDataContainer();
         debugPoint->canAdd = true;
         debugPoint->addBeforeVal(val);
         return val;
 #endif
-        return *getArrayValueDataContainer();
+        return (double)*getArrayValueDataContainer();
     }
 
 };

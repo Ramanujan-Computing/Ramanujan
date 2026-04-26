@@ -110,7 +110,7 @@ class MethodAgnosticVariableInternal : public ArrayDataContainerValue {
         }
     }
 
-    double* arrayPlaceHolder = nullptr;
+    float* arrayPlaceHolder = nullptr;
     
     void saveRestoreAndPropagate(DataContainerValueFunctionCommandRE* restoreFrom, DataContainerValue* propagateTo) override
     {

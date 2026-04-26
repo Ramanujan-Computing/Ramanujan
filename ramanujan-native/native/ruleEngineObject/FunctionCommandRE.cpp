@@ -28,7 +28,7 @@
 // ---------------------------------------------------------------------------
 // Singleton OpenCL context  (created once, reused for all GPU dispatches)
 // cl_context and cl_device_id are thread-safe to share across threads.
-// cl_command_queue is per-instance (FunctionCommandRE::gpuQueue), lazily created.
+// cl_command_queue is shared (s_clCtx.queue), created once alongside the context.
 // The shared context is initialised once under GpuContext::initMutex.
 // ---------------------------------------------------------------------------
 namespace {
@@ -59,6 +59,7 @@ struct GpuContext {
     cl_platform_id    platform    = nullptr;
     cl_device_id      device      = nullptr;
     cl_context        context     = nullptr;
+    cl_command_queue  queue       = nullptr;
     bool initialized = false;
     bool available   = false;
     std::mutex        initMutex;   // guards one-time initialisation only
@@ -106,6 +107,27 @@ struct GpuContext {
             return;
         }
 
+        // Create a single shared command queue (created once, reused for all kernel dispatches)
+#if defined(CL_VERSION_2_0)
+        const cl_queue_properties qprops[] = {0};
+        queue = clCreateCommandQueueWithProperties(context, device, qprops, &err);
+#else
+#   ifdef __APPLE__
+#       pragma clang diagnostic push
+#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#   endif
+        queue = clCreateCommandQueue(context, device, 0, &err);
+#   ifdef __APPLE__
+#       pragma clang diagnostic pop
+#   endif
+#endif
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clCreateCommandQueue failed: %d\n", err);
+            clReleaseContext(context);
+            context = nullptr;
+            return;
+        }
+
         available = true;
         std::string platformName = gpuInfoString(platform, CL_PLATFORM_NAME);
         std::string deviceName = gpuInfoString(device, CL_DEVICE_NAME);
@@ -117,6 +139,7 @@ struct GpuContext {
     }
 
     ~GpuContext() {
+        if (queue)   { clFlush(queue); clFinish(queue); clReleaseCommandQueue(queue); }
         if (context) clReleaseContext(context);
     }
 };
@@ -310,34 +333,12 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
     // execution entirely and dispatch through OpenCL instead.
     if (functionInfoRE->isGpu) {
         // The shared cl_context + cl_device_id are thread-safe in OpenCL.
-        // gpuQueue and gpuKernel are per-instance fields, lazily initialised below.
+        // s_clCtx.queue is the shared static queue; gpuKernel is per-instance, lazily initialised below.
         s_clCtx.init();
         if (!s_clCtx.available) {
             fprintf(stderr, "[GPU] OpenCL unavailable – cannot execute GPU function\n");
             return nextUnit;
         }
-
-        if (!gpuQueue) {
-            cl_int qerr;
-#if defined(CL_VERSION_2_0)
-            const cl_queue_properties qprops[] = {0};
-            gpuQueue = clCreateCommandQueueWithProperties(s_clCtx.context, s_clCtx.device, qprops, &qerr);
-#else
-#   ifdef __APPLE__
-#       pragma clang diagnostic push
-#       pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#   endif
-            gpuQueue = clCreateCommandQueue(s_clCtx.context, s_clCtx.device, 0, &qerr);
-#   ifdef __APPLE__
-#       pragma clang diagnostic pop
-#   endif
-#endif
-            if (qerr != CL_SUCCESS) {
-                fprintf(stderr, "[GPU] clCreateCommandQueue failed: %d\n", qerr);
-                return nextUnit;
-            }
-        }
-        cl_command_queue clQueue = gpuQueue;
 
         const std::string&      kernelSrc        = functionInfoRE->openClCode;
         const std::vector<int>& parallelismIdxs  = functionInfoRE->gpuParallelismArgIndices;
@@ -400,10 +401,9 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
                 if (parallelismSet.count(i) == 0)
                     gpuDataArgIndices.push_back(i);
             }
+            gpuDataArgCount = (int)gpuDataArgIndices.size();
             gpuMetaInitialized = true;
         }
-        const std::vector<int>& dataArgIndices = gpuDataArgIndices;
-        const int dataArgCount = (int)dataArgIndices.size();
 
         // -- global_work_size from calling-context scalar values at parallelism arg positions --
         gpuGlobalWorkSize.resize(parallelismIdxs.size());
@@ -411,114 +411,58 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
             gpuGlobalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
                 methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
         }
-        std::vector<size_t>& globalWorkSize = gpuGlobalWorkSize;
 
-        // -- Allocate / reuse OpenCL buffers for data args (convert double→float staging) --
-        // gpuBuffers[] are cached across calls; only reallocated when size changes.
-        cl_mem*              buffers    = gpuBuffers;
-        std::vector<float>*  staging    = gpuStaging;
-        unsigned char*       isReadOnly = gpuIsReadOnly;
+        // -- Upload float* arrays directly to GPU (no staging, no conversion) --
+        // Arrays store float natively; kernels use __global float*.
         cl_int err = CL_SUCCESS;
         bool   bufferError = false;
 
-        for (int di = 0; di < dataArgCount; di++) {
-            int argIdx = dataArgIndices[di];
-            ArrayDataContainerValue* arrVal =
-                static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
-            ArrayValue* av = arrVal->arrayValue;
+        for (int di = 0; di < gpuDataArgCount; di++) {
+            ArrayValue* av = static_cast<ArrayDataContainerValue*>(
+                methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
             size_t needed = (size_t)av->totalSize * sizeof(float);
 
-            if (av->isBinaryLoaded && av->cachedFloatData != nullptr) {
-                // Read-only weight array: zero-copy via USE_HOST_PTR.
-                // Invalidate cached buffer if size or host pointer changed.
-                const void* hostPtr = av->cachedFloatData;
-                if (buffers[di] && (gpuBufferSizes[di] != needed || gpuBufferHostPtrs[di] != hostPtr)) {
-                    clReleaseMemObject(buffers[di]);
-                    buffers[di] = nullptr;
-                }
-                isReadOnly[di] = 1;
-                if (!buffers[di]) {
-                    buffers[di] = clCreateBuffer(
-                        s_clCtx.context,
-                        CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                        needed, av->cachedFloatData, &err);
-                    if (err == CL_SUCCESS) {
-                        gpuBufferSizes[di]    = needed;
-                        gpuBufferHostPtrs[di] = hostPtr;
-                    }
-                } else {
-                    err = CL_SUCCESS; // reused: host ptr mapping unchanged
-                }
+            if (!gpuBuffers[di] || gpuBufferSizes[di] != needed) {
+                if (gpuBuffers[di]) { clReleaseMemObject(gpuBuffers[di]); gpuBuffers[di] = nullptr; }
+                gpuBuffers[di] = clCreateBuffer(
+                    s_clCtx.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                    needed, av->val, &err);
+                if (err == CL_SUCCESS) gpuBufferSizes[di] = needed;
             } else {
-                // Mutable array: convert double→float into persistent staging buffer.
-                std::vector<float>& stage = staging[di];
-                if ((int)stage.size() < av->totalSize) stage.resize(av->totalSize);
-                const double* src = av->val;
-                float* dst = stage.data();
-                for (int j = 0; j < av->totalSize; j++)
-                    dst[j] = (float)src[j];
-
-                // Invalidate cached buffer only if size changed.
-                if (buffers[di] && gpuBufferSizes[di] != needed) {
-                    clReleaseMemObject(buffers[di]);
-                    buffers[di] = nullptr;
-                }
-                isReadOnly[di] = 0;
-                if (!buffers[di]) {
-                    // First call or size change: allocate and upload in one shot.
-                    buffers[di] = clCreateBuffer(
-                        s_clCtx.context,
-                        CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                        needed, dst, &err);
-                    if (err == CL_SUCCESS)
-                        gpuBufferSizes[di] = needed;
-                } else {
-                    // Reuse: enqueue non-blocking write (kernel is queued after, so ordering is preserved).
-                    err = clEnqueueWriteBuffer(clQueue, buffers[di], CL_FALSE, 0, needed, dst, 0, nullptr, nullptr);
-                }
+                err = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, needed, av->val, 0, nullptr, nullptr);
             }
 
             if (err != CL_SUCCESS) {
-                fprintf(stderr, "[GPU] buffer setup failed (arg %d): %d\n", di, err);
+                fprintf(stderr, "[GPU] buffer setup failed (arg %d): error %d\n", di, err);
                 bufferError = true;
                 break;
             }
-            clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &buffers[di]);
+            clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
         }
 
-        // Skip dispatch when any globalWorkSize dimension is 0 (nothing to compute)
+        // Skip dispatch when any globalWorkSize dimension is 0
         bool zeroWorkSize = false;
-        for (size_t wi = 0; wi < globalWorkSize.size(); wi++) {
-            if (globalWorkSize[wi] == 0) { zeroWorkSize = true; break; }
+        for (size_t wi = 0; wi < gpuGlobalWorkSize.size(); wi++) {
+            if (gpuGlobalWorkSize[wi] == 0) { zeroWorkSize = true; break; }
         }
 
         if (!bufferError && !zeroWorkSize) {
-            // -- Enqueue kernel --
             err = clEnqueueNDRangeKernel(
-                clQueue, kernel, workDim,
-                nullptr, globalWorkSize.data(), nullptr,
+                s_clCtx.queue, kernel, workDim,
+                nullptr, gpuGlobalWorkSize.data(), nullptr,
                 0, nullptr, nullptr);
 
             if (err == CL_SUCCESS) {
-                clFinish(clQueue);
+                clFinish(s_clCtx.queue);
 
-                // -- Read back results: float→double (skip read-only weight buffers) --
-                for (int di = 0; di < dataArgCount; di++) {
-                    if (isReadOnly[di]) continue;  // weight: unchanged, no read-back needed
-                    int argIdx = dataArgIndices[di];
-                    ArrayDataContainerValue* arrVal =
-                        static_cast<ArrayDataContainerValue*>(methodCallingOriginalPlaceHolderAddrs[argIdx]);
-                    ArrayValue* av = arrVal->arrayValue;
-
-                    float* stageData = staging[di].data();
+                // -- Read back directly into float* val (no conversion) --
+                for (int di = 0; di < gpuDataArgCount; di++) {
+                    ArrayValue* av = static_cast<ArrayDataContainerValue*>(
+                        methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
                     clEnqueueReadBuffer(
-                        clQueue, buffers[di], CL_TRUE, 0,
-                        av->totalSize * sizeof(float), stageData,
+                        s_clCtx.queue, gpuBuffers[di], CL_TRUE, 0,
+                        (size_t)av->totalSize * sizeof(float), av->val,
                         0, nullptr, nullptr);
-
-                    double* dst = av->val;
-                    for (int j = 0; j < av->totalSize; j++)
-                        dst[j] = (double)stageData[j];
                 }
             } else {
                 fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
@@ -759,7 +703,7 @@ RuleEngineInputUnits* NINF::process() {
         else if(ArrayDataContainerValue* arrayDataContainerValue = dynamic_cast<ArrayDataContainerValue*>(dataContainerValue)) {
             auto arrayValue = arrayDataContainerValue->arrayValue;
             for(int i = 0; i < arrayValue->totalSize; i++) {
-                arrayValue->val[i] = -std::numeric_limits<double>::infinity();
+                arrayValue->val[i] = -std::numeric_limits<float>::infinity();
             }
         }
     }
@@ -788,7 +732,7 @@ RuleEngineInputUnits* PINF::process() {
         else if(ArrayDataContainerValue* arrayDataContainerValue = dynamic_cast<ArrayDataContainerValue*>(dataContainerValue)) {
             auto arrayValue = arrayDataContainerValue->arrayValue;
             for(int i = 0; i < arrayValue->totalSize; i++) {
-                arrayValue->val[i] = std::numeric_limits<double>::infinity();
+                arrayValue->val[i] = std::numeric_limits<float>::infinity();
             }
         }
     }

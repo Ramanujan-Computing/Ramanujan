@@ -2554,6 +2554,106 @@ public class PythonCodeRunTest {
         return ruleEngineInput;
     }
 
+    // ========== GPU KERNEL TESTS ==========
+
+    /**
+     * Verifies that a 1-D GPU kernel generates correct OpenCL source:
+     * - isGpu flag is set
+     * - data args become __global float* (not double)
+     * - range-dim arg becomes get_global_id(0)
+     * - body is translated correctly
+     */
+    @Test
+    public void testGpuKernelUsesFloatPointers() throws Exception {
+        String pythonCode =
+            "def scale_GPU_1(data, factor_buf, gid):\n" +
+            "    data[gid] = data[gid] * factor_buf[0]\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "scale_GPU_1");
+
+        assertNotNull("GPU function call should be detected", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("OpenCL kernel code should be generated", kernel);
+        assertTrue("Data args must be __global float*", kernel.contains("__global float* data"));
+        assertTrue("Data args must be __global float*", kernel.contains("__global float* factor_buf"));
+        assertFalse("Must NOT use double pointers", kernel.contains("__global double*"));
+        assertTrue("Range-dim should use get_global_id", kernel.contains("get_global_id(0)"));
+    }
+
+    /**
+     * Verifies that a 2-D GPU kernel (two range dims) generates two get_global_id calls
+     * and that all data args are __global float*.
+     */
+    @Test
+    public void testGpuKernel2DRangeDims() throws Exception {
+        String pythonCode =
+            "def matrix_add_GPU_2(a, b, c, row, col):\n" +
+            "    idx = row * 4 + col\n" +
+            "    c[idx] = a[idx] + b[idx]\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "matrix_add_GPU_2");
+
+        assertNotNull("GPU function call should be detected", fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("a should be float*", kernel.contains("__global float* a"));
+        assertTrue("b should be float*", kernel.contains("__global float* b"));
+        assertTrue("c should be float*", kernel.contains("__global float* c"));
+        assertTrue("row = get_global_id(0)", kernel.contains("get_global_id(0)"));
+        assertTrue("col = get_global_id(1)", kernel.contains("get_global_id(1)"));
+        // row and col are int range-dims, not data args
+        assertFalse("row must NOT appear as __global float*", kernel.contains("__global float* row"));
+        assertFalse("col must NOT appear as __global float*", kernel.contains("__global float* col"));
+    }
+
+    /**
+     * Verifies that local scalar variables that hold array reads are typed float
+     * while pure index variables are typed int.
+     */
+    @Test
+    public void testGpuLocalVarTypes() throws Exception {
+        String pythonCode =
+            "def copy_GPU_1(src, dst, gid):\n" +
+            "    v = src[gid]\n" +
+            "    idx = gid\n" +
+            "    dst[idx] = v\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "copy_GPU_1");
+
+        assertNotNull(fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("v (holds array read) should be declared float", kernel.contains("float v"));
+        assertTrue("idx (pure index) should be declared int", kernel.contains("int idx"));
+        assertFalse("v must NOT be declared double", kernel.contains("double v"));
+    }
+
+    /**
+     * Verifies that floating-point constants in a GPU kernel body are emitted with
+     * the "f" suffix (OpenCL float literal), not as bare doubles.
+     */
+    @Test
+    public void testGpuFloatLiteralsHaveFSuffix() throws Exception {
+        String pythonCode =
+            "def dampen_GPU_1(v, gid):\n" +
+            "    v[gid] = v[gid] * 0.99\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "dampen_GPU_1");
+
+        assertNotNull(fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("Float literal should carry 'f' suffix", kernel.contains("0.99f"));
+        assertFalse("Bare double literal must not appear", kernel.contains(" 0.99)") || kernel.contains("(0.99)"));
+        assertTrue("v should be __global float*", kernel.contains("__global float* v"));
+    }
+
     /**
      * Finds the first {@link FunctionCall} in {@code rei} whose {@code isGpu} flag is true and
      * whose ID contains the given {@code functionName}.

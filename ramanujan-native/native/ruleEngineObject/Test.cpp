@@ -109,7 +109,7 @@ public:
         const char* dumpSpec = std::getenv("RAMANUJAN_DUMP_ARRAYS");
         if (dumpSpec != nullptr) {
             // Build a map of arrayName -> (val ptr, size) from processor's arrayREs
-            std::unordered_map<std::string, std::pair<double*, int>> arrMap;
+            std::unordered_map<std::string, std::pair<float*, int>> arrMap;
             std::cerr << "[dump] Available arrays:\n";
             for (auto* unit : processor->getArrayREs()) {
                 ArrayRE* arrayRE = (ArrayRE*)unit;
@@ -140,7 +140,7 @@ public:
                     continue;
                 }
 
-                double* vals = it->second.first;
+                float* vals = it->second.first;
                 int size = it->second.second;
                 std::ofstream out(outPath);
                 for (int i = 0; i < size; i++) {

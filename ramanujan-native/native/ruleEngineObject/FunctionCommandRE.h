@@ -228,14 +228,11 @@ private:
     // Cached cl_program for this kernel source (compiled once across all threads).
     // Slow-path init synchronised via the existing program-cache mutex in the .cpp.
     std::atomic<void*>              gpuProgramCache{nullptr};
-    cl_command_queue                gpuQueue        = nullptr;
     cl_kernel                       gpuKernel       = nullptr;
-    std::vector<float>              gpuStaging[maxArgSize];
     cl_mem                          gpuBuffers[maxArgSize]      = {};
     size_t                          gpuBufferSizes[maxArgSize]  = {};
-    const void*                     gpuBufferHostPtrs[maxArgSize] = {};
-    unsigned char                   gpuIsReadOnly[maxArgSize]   = {};
     std::vector<size_t>             gpuGlobalWorkSize;
+    int                             gpuDataArgCount = 0;
 #endif
 
 public:
@@ -273,7 +270,6 @@ public:
         }
 #ifdef GPU_ENABLED
         if (gpuKernel) { clReleaseKernel(gpuKernel); gpuKernel = nullptr; }
-        if (gpuQueue)  { clFlush(gpuQueue); clFinish(gpuQueue); clReleaseCommandQueue(gpuQueue); gpuQueue = nullptr; }
         for (int _i = 0; _i < maxArgSize; _i++) {
             if (gpuBuffers[_i]) { clReleaseMemObject(gpuBuffers[_i]); gpuBuffers[_i] = nullptr; }
         }
