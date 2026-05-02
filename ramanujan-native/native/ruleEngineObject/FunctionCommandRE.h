@@ -717,12 +717,12 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
     size_t              gpuGlobalWorkSize[3] = {};  // OpenCL supports up to 3 dimensions
 
     int                 gpuDataArgCount = 0;
+    ArrayValue*         gpuAvCache[maxArgSize] = {};
 
     // process() working state (fields to avoid stack allocation on each call)
     cl_int              gpuErr          = CL_SUCCESS;
     bool                gpuBufferError  = false;
     bool                gpuZeroWorkSize = false;
-    ArrayValue*         gpuAv           = nullptr;
     size_t              gpuNeeded       = 0;
     cl_int              gpuSetErr       = CL_SUCCESS;
 

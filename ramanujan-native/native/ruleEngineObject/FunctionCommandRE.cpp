@@ -562,6 +562,10 @@ void GPUFunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineI
             gpuDataArgIndices.push_back(i);
     }
     gpuDataArgCount = (int)gpuDataArgIndices.size();
+    for (int di = 0; di < gpuDataArgCount; di++) {
+        gpuAvCache[di] = static_cast<ArrayDataContainerValue*>(
+            methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
+    }
 }
 
 RuleEngineInputUnits* GPUFunctionCommandRE::process() {
@@ -576,18 +580,16 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
     gpuBufferError = false;
 
     for (int di = 0; di < gpuDataArgCount; di++) {
-        gpuAv     = static_cast<ArrayDataContainerValue*>(
-            methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
-        gpuNeeded = (size_t)gpuAv->totalSize * sizeof(float);
+        gpuNeeded = (size_t)gpuAvCache[di]->totalSize * sizeof(float);
 
         if (!gpuBuffers[di] || gpuBufferSizes[di] != gpuNeeded) {
             if (gpuBuffers[di]) { clReleaseMemObject(gpuBuffers[di]); gpuBuffers[di] = nullptr; }
             gpuBuffers[di] = clCreateBuffer(
                 s_clCtx.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                gpuNeeded, gpuAv->val, &gpuErr);
+                gpuNeeded, gpuAvCache[di]->val, &gpuErr);
             if (gpuErr == CL_SUCCESS) gpuBufferSizes[di] = gpuNeeded;
         } else {
-            gpuErr = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, gpuNeeded, gpuAv->val, 0, nullptr, nullptr);
+            gpuErr = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, gpuNeeded, gpuAvCache[di]->val, 0, nullptr, nullptr);
         }
 
         if (gpuErr != CL_SUCCESS) {
@@ -616,17 +618,14 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
             0, nullptr, nullptr);
 
         if (gpuErr == CL_SUCCESS) {
-            clFinish(s_clCtx.queue);
-
-            // -- Read back directly into float* val (no conversion) --
+            // -- Queue all reads as non-blocking, then sync once --
             for (int di = 0; di < gpuDataArgCount; di++) {
-                gpuAv = static_cast<ArrayDataContainerValue*>(
-                    methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
                 clEnqueueReadBuffer(
-                    s_clCtx.queue, gpuBuffers[di], CL_TRUE, 0,
-                    (size_t)gpuAv->totalSize * sizeof(float), gpuAv->val,
+                    s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0,
+                    (size_t)gpuAvCache[di]->totalSize * sizeof(float), gpuAvCache[di]->val,
                     0, nullptr, nullptr);
             }
+            clFinish(s_clCtx.queue);
         } else {
             fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", gpuErr);
         }
