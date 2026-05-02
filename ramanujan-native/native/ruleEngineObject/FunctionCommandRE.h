@@ -19,7 +19,6 @@
 #include <list>
 #include <vector>
 #ifdef GPU_ENABLED
-#include <atomic>
 #ifdef __APPLE__
 #  include <OpenCL/cl.h>
 #else
@@ -707,17 +706,31 @@ public:
  */
 class GPUFunctionCommandRE : public FunctionCommandRE {
     std::vector<int>    gpuDataArgIndices;
-    bool                gpuMetaInitialized = false;
-    std::atomic<void*>  gpuProgramCache{nullptr};
+    cl_program          gpuProgram      = nullptr;
     cl_kernel           gpuKernel       = nullptr;
     cl_mem              gpuBuffers[maxArgSize]     = {};
     size_t              gpuBufferSizes[maxArgSize] = {};
-    std::vector<size_t> gpuGlobalWorkSize;
+    
+    // GPU parallelism configuration (computed once in setFields, reused in process)
+    std::vector<int>    gpuParallelismIdxs;
+    cl_uint             gpuWorkDim      = 0;
+    size_t              gpuGlobalWorkSize[3] = {};  // OpenCL supports up to 3 dimensions
+
     int                 gpuDataArgCount = 0;
+
+    // process() working state (fields to avoid stack allocation on each call)
+    cl_int              gpuErr          = CL_SUCCESS;
+    bool                gpuBufferError  = false;
+    bool                gpuZeroWorkSize = false;
+    ArrayValue*         gpuAv           = nullptr;
+    size_t              gpuNeeded       = 0;
+    cl_int              gpuSetErr       = CL_SUCCESS;
 
 public:
     GPUFunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo)
         : FunctionCommandRE(functionCommand, functionInfo) {}
+
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits *> *map) override;
 
     void destroy() override {
         FunctionCommandRE::destroy();
