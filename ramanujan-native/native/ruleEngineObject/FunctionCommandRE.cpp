@@ -344,159 +344,6 @@ void FunctionCommandRE::setFields(std::unordered_map<std::string, RuleEngineInpu
  * Returns: nextUnit after function completes (return statements are handled internally)
  */
 RuleEngineInputUnits* FunctionCommandRE::process() {
-#ifdef GPU_ENABLED
-    // ==================== GPU FAST PATH ====================
-    // If this function is flagged as a GPU kernel, skip the normal unit-chain
-    // execution entirely and dispatch through OpenCL instead.
-    if (functionInfoRE->isGpu) {
-        // The shared cl_context + cl_device_id are thread-safe in OpenCL.
-        // s_clCtx.queue is the shared static queue; gpuKernel is per-instance, lazily initialised below.
-        s_clCtx.init();
-        if (!s_clCtx.available) {
-            fprintf(stderr, "[GPU] OpenCL unavailable – cannot execute GPU function\n");
-            return nextUnit;
-        }
-
-        const std::string&      kernelSrc        = functionInfoRE->openClCode;
-        const std::vector<int>& parallelismIdxs  = functionInfoRE->gpuParallelismArgIndices;
-        // work_dim is encoded in the function name (_GPU_N) and equals the number of
-        // range-dim args – no dedicated M parameter exists any more.
-        cl_uint workDim = (cl_uint)parallelismIdxs.size();
-
-        // -- Step 1: ensure cl_program is compiled.  Hot path: per-instance atomic
-        //    cache hit, no mutex, no string-keyed lookup.  Slow path (first call):
-        //    take the global mutex and compile once across all threads.
-        cl_program prog = static_cast<cl_program>(gpuProgramCache.load(std::memory_order_acquire));
-        if (!prog) {
-            std::lock_guard<std::mutex> cacheLock(s_programCacheMutex);
-            // Re-check under the lock; another thread may have compiled it.
-            prog = static_cast<cl_program>(gpuProgramCache.load(std::memory_order_relaxed));
-            if (!prog) {
-                auto srcIt = s_programCache.find(kernelSrc);
-                if (srcIt != s_programCache.end()) {
-                    prog = srcIt->second;
-                } else {
-                    cl_int err;
-                    const char* csrc = kernelSrc.c_str();
-                    size_t srcLen    = kernelSrc.size();
-                    prog = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
-                    err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
-                    if (err != CL_SUCCESS) {
-                        size_t logLen = 0;
-                        clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
-                        std::string log(logLen, '\0');
-                        clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
-                        fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
-                        clReleaseProgram(prog);
-                        return nextUnit;
-                    }
-                    s_programCache[kernelSrc] = prog;
-                    // program is retained in cache; released at process exit.
-                }
-                gpuProgramCache.store(prog, std::memory_order_release);
-            }
-        }
-
-        // -- Step 2: get (or create) per-instance cl_kernel from the compiled program --
-        if (!gpuKernel) {
-            std::string kname = gpuExtractKernelName(kernelSrc);
-            cl_int err;
-            gpuKernel = clCreateKernel(prog, kname.c_str(), &err);
-            if (err != CL_SUCCESS) {
-                fprintf(stderr, "[GPU] clCreateKernel '%s' failed: %d\n", kname.c_str(), err);
-                return nextUnit;
-            }
-        }
-        cl_kernel kernel = gpuKernel;
-
-        // -- Identify data arg indices once per instance (immutable thereafter) --
-        if (!gpuMetaInitialized) {
-            std::set<int> parallelismSet(parallelismIdxs.begin(), parallelismIdxs.end());
-            gpuDataArgIndices.clear();
-            gpuDataArgIndices.reserve(argSize);
-            for (int i = 0; i < argSize; i++) {
-                if (parallelismSet.count(i) == 0)
-                    gpuDataArgIndices.push_back(i);
-            }
-            gpuDataArgCount = (int)gpuDataArgIndices.size();
-            gpuMetaInitialized = true;
-        }
-
-        // -- global_work_size from calling-context scalar values at parallelism arg positions --
-        gpuGlobalWorkSize.resize(parallelismIdxs.size());
-        for (int pi = 0; pi < (int)parallelismIdxs.size(); pi++) {
-            gpuGlobalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
-                methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
-        }
-
-        // -- Upload float* arrays directly to GPU (no staging, no conversion) --
-        // Arrays store float natively; kernels use __global float*.
-        cl_int err = CL_SUCCESS;
-        bool   bufferError = false;
-
-        for (int di = 0; di < gpuDataArgCount; di++) {
-            ArrayValue* av = static_cast<ArrayDataContainerValue*>(
-                methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
-            size_t needed = (size_t)av->totalSize * sizeof(float);
-
-            if (!gpuBuffers[di] || gpuBufferSizes[di] != needed) {
-                if (gpuBuffers[di]) { clReleaseMemObject(gpuBuffers[di]); gpuBuffers[di] = nullptr; }
-                gpuBuffers[di] = clCreateBuffer(
-                    s_clCtx.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                    needed, av->val, &err);
-                if (err == CL_SUCCESS) gpuBufferSizes[di] = needed;
-            } else {
-                err = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, needed, av->val, 0, nullptr, nullptr);
-            }
-
-            if (err != CL_SUCCESS) {
-                fprintf(stderr, "[GPU] buffer setup failed (arg %d): error %d\n", di, err);
-                bufferError = true;
-                break;
-            }
-            cl_int setErr = clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
-            if (setErr != CL_SUCCESS) {
-                fprintf(stderr, "[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di, setErr);
-            }
-        }
-
-        // Skip dispatch when any globalWorkSize dimension is 0
-        bool zeroWorkSize = false;
-        for (size_t wi = 0; wi < gpuGlobalWorkSize.size(); wi++) {
-            if (gpuGlobalWorkSize[wi] == 0) { zeroWorkSize = true; break; }
-        }
-        if (zeroWorkSize) fprintf(stderr, "[GPU-DBG] SKIPPING dispatch: zeroWorkSize\n");
-        if (bufferError) fprintf(stderr, "[GPU-DBG] SKIPPING dispatch: bufferError\n");
-
-        if (!bufferError && !zeroWorkSize) {
-            err = clEnqueueNDRangeKernel(
-                s_clCtx.queue, kernel, workDim,
-                nullptr, gpuGlobalWorkSize.data(), nullptr,
-                0, nullptr, nullptr);
-
-            if (err == CL_SUCCESS) {
-                clFinish(s_clCtx.queue);
-
-                // -- Read back directly into float* val (no conversion) --
-                for (int di = 0; di < gpuDataArgCount; di++) {
-                    ArrayValue* av = static_cast<ArrayDataContainerValue*>(
-                        methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
-                    clEnqueueReadBuffer(
-                        s_clCtx.queue, gpuBuffers[di], CL_TRUE, 0,
-                        (size_t)av->totalSize * sizeof(float), av->val,
-                        0, nullptr, nullptr);
-                }
-            } else {
-                fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
-            }
-        }
-
-        return nextUnit;
-
-    }
-    // ==================== END GPU FAST PATH ====================
-#endif // GPU_ENABLED
-
     // ==================== DEBUG SETUP ====================
 #ifdef DEBUG_BUILD
     // Get debug point for tracking function call execution
@@ -658,6 +505,146 @@ RuleEngineInputUnits* FunctionCommandRE::process() {
     // Function completed - return control to the next unit after the function call
     return nextUnit;
 }
+
+#ifdef GPU_ENABLED
+RuleEngineInputUnits* GPUFunctionCommandRE::process() {
+    s_clCtx.init();
+    if (!s_clCtx.available) {
+        fprintf(stderr, "[GPU] OpenCL unavailable – cannot execute GPU function\n");
+        return nextUnit;
+    }
+
+    const std::string&      kernelSrc       = functionInfoRE->openClCode;
+    const std::vector<int>& parallelismIdxs = functionInfoRE->gpuParallelismArgIndices;
+    cl_uint workDim = (cl_uint)parallelismIdxs.size();
+
+    // -- Step 1: ensure cl_program is compiled. Hot path: per-instance atomic cache hit.
+    //    Slow path (first call): take the global mutex and compile once across all threads.
+    cl_program prog = static_cast<cl_program>(gpuProgramCache.load(std::memory_order_acquire));
+    if (!prog) {
+        std::lock_guard<std::mutex> cacheLock(s_programCacheMutex);
+        prog = static_cast<cl_program>(gpuProgramCache.load(std::memory_order_relaxed));
+        if (!prog) {
+            auto srcIt = s_programCache.find(kernelSrc);
+            if (srcIt != s_programCache.end()) {
+                prog = srcIt->second;
+            } else {
+                cl_int err;
+                const char* csrc = kernelSrc.c_str();
+                size_t srcLen    = kernelSrc.size();
+                prog = clCreateProgramWithSource(s_clCtx.context, 1, &csrc, &srcLen, &err);
+                err = clBuildProgram(prog, 1, &s_clCtx.device, "-cl-std=CL1.2", nullptr, nullptr);
+                if (err != CL_SUCCESS) {
+                    size_t logLen = 0;
+                    clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &logLen);
+                    std::string log(logLen, '\0');
+                    clGetProgramBuildInfo(prog, s_clCtx.device, CL_PROGRAM_BUILD_LOG, logLen, &log[0], nullptr);
+                    fprintf(stderr, "[GPU] Kernel build error:\n%s\n", log.c_str());
+                    clReleaseProgram(prog);
+                    return nextUnit;
+                }
+                s_programCache[kernelSrc] = prog;
+            }
+            gpuProgramCache.store(prog, std::memory_order_release);
+        }
+    }
+
+    // -- Step 2: get (or create) per-instance cl_kernel from the compiled program --
+    if (!gpuKernel) {
+        std::string kname = gpuExtractKernelName(kernelSrc);
+        cl_int err;
+        gpuKernel = clCreateKernel(prog, kname.c_str(), &err);
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] clCreateKernel '%s' failed: %d\n", kname.c_str(), err);
+            return nextUnit;
+        }
+    }
+    cl_kernel kernel = gpuKernel;
+
+    // -- Identify data arg indices once per instance (immutable thereafter) --
+    if (!gpuMetaInitialized) {
+        std::set<int> parallelismSet(parallelismIdxs.begin(), parallelismIdxs.end());
+        gpuDataArgIndices.clear();
+        gpuDataArgIndices.reserve(argSize);
+        for (int i = 0; i < argSize; i++) {
+            if (parallelismSet.count(i) == 0)
+                gpuDataArgIndices.push_back(i);
+        }
+        gpuDataArgCount = (int)gpuDataArgIndices.size();
+        gpuMetaInitialized = true;
+    }
+
+    // -- global_work_size from calling-context scalar values at parallelism arg positions --
+    gpuGlobalWorkSize.resize(parallelismIdxs.size());
+    for (int pi = 0; pi < (int)parallelismIdxs.size(); pi++) {
+        gpuGlobalWorkSize[pi] = (size_t)(static_cast<DoublePtr*>(
+            methodCallingOriginalPlaceHolderAddrs[parallelismIdxs[pi]])->value);
+    }
+
+    // -- Upload float* arrays directly to GPU (no staging, no conversion) --
+    cl_int err = CL_SUCCESS;
+    bool   bufferError = false;
+
+    for (int di = 0; di < gpuDataArgCount; di++) {
+        ArrayValue* av = static_cast<ArrayDataContainerValue*>(
+            methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
+        size_t needed = (size_t)av->totalSize * sizeof(float);
+
+        if (!gpuBuffers[di] || gpuBufferSizes[di] != needed) {
+            if (gpuBuffers[di]) { clReleaseMemObject(gpuBuffers[di]); gpuBuffers[di] = nullptr; }
+            gpuBuffers[di] = clCreateBuffer(
+                s_clCtx.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                needed, av->val, &err);
+            if (err == CL_SUCCESS) gpuBufferSizes[di] = needed;
+        } else {
+            err = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, needed, av->val, 0, nullptr, nullptr);
+        }
+
+        if (err != CL_SUCCESS) {
+            fprintf(stderr, "[GPU] buffer setup failed (arg %d): error %d\n", di, err);
+            bufferError = true;
+            break;
+        }
+        cl_int setErr = clSetKernelArg(kernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
+        if (setErr != CL_SUCCESS) {
+            fprintf(stderr, "[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di, setErr);
+        }
+    }
+
+    // Skip dispatch when any globalWorkSize dimension is 0
+    bool zeroWorkSize = false;
+    for (size_t wi = 0; wi < gpuGlobalWorkSize.size(); wi++) {
+        if (gpuGlobalWorkSize[wi] == 0) { zeroWorkSize = true; break; }
+    }
+    if (zeroWorkSize) fprintf(stderr, "[GPU-DBG] SKIPPING dispatch: zeroWorkSize\n");
+    if (bufferError)  fprintf(stderr, "[GPU-DBG] SKIPPING dispatch: bufferError\n");
+
+    if (!bufferError && !zeroWorkSize) {
+        err = clEnqueueNDRangeKernel(
+            s_clCtx.queue, kernel, workDim,
+            nullptr, gpuGlobalWorkSize.data(), nullptr,
+            0, nullptr, nullptr);
+
+        if (err == CL_SUCCESS) {
+            clFinish(s_clCtx.queue);
+
+            // -- Read back directly into float* val (no conversion) --
+            for (int di = 0; di < gpuDataArgCount; di++) {
+                ArrayValue* av = static_cast<ArrayDataContainerValue*>(
+                    methodCallingOriginalPlaceHolderAddrs[gpuDataArgIndices[di]])->arrayValue;
+                clEnqueueReadBuffer(
+                    s_clCtx.queue, gpuBuffers[di], CL_TRUE, 0,
+                    (size_t)av->totalSize * sizeof(float), av->val,
+                    0, nullptr, nullptr);
+            }
+        } else {
+            fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", err);
+        }
+    }
+
+    return nextUnit;
+}
+#endif // GPU_ENABLED
 
 /**
  * Simplified field setup for built-in functions.

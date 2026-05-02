@@ -93,6 +93,24 @@ protected:
      * Protected so built-in function classes can use it for argument validation.
      */
     int arrCount = 0;
+protected:
+    // ==================== Function Execution Information ====================
+
+    static const int maxArgSize = 255;
+
+    /**
+     * Total number of arguments passed to the function.
+     * Set from functionCommandInfo->argumentsSize during initialization.
+     */
+    int argSize = 0;
+
+    /**
+     * Array of pointers to argument DataContainerValue addresses in the calling function.
+     * Each element points to the DataContainerValue* of arguments being passed to the function.
+     * Size: argSize (total arguments including both variables and arrays)
+     */
+    DataContainerValue* methodCallingOriginalPlaceHolderAddrs[maxArgSize];
+
 private:
     // ==================== Legacy Code (Commented Out) ====================
     /*
@@ -108,49 +126,16 @@ private:
 //    double *** dataContainerVariableValue;
 //    ArrayValue ** dataContainerArrayValue;
 
-    // ==================== Function Execution Information ====================
-    
-    /**
-     * Total number of arguments passed to the function.
-     * Set from functionCommandInfo->argumentsSize during initialization.
-     * Used for validation and loop bounds in argument processing.
-     */
-    int argSize = 0;
-    
     /**
      * First unit to execute in the function body.
-     * This is the entry point for function execution and represents the head
-     * of the unit chain that forms the function's body.
-     * Set during setFields() from functionInfoRE->commmandRe or retrieved from map.
      */
     RuleEngineInputUnits* firstUnit;
 
     RuleEngineInputUnits* unit = nullptr;
 
-    // ==================== Total Variable/Array Counts ====================
-    
-    /**
-     * Total number of variables declared within the function (including parameters).
-     * This includes both function parameters and local variables declared inside the function.
-     * Used for memory allocation and restoration loop bounds.
-     * Calculated during setFields() by examining functionInfoRE->allVariablesInMethod.
-     */
     int totalVarCount = 0;
-    
-    /**
-     * Total number of arrays declared within the function (including parameters).
-     * This includes both function array parameters and local arrays declared inside the function.
-     * Used for memory allocation and restoration loop bounds.
-     * Calculated during setFields() by examining functionInfoRE->allVariablesInMethod.
-     */
     int totalArrCount = 0;
-
-    /**
-     * Total number of data containers (variables + arrays) in the function.
-     * */
     int totalDataContainerCount = 0;
-
-    static const int maxArgSize = 255;
 
     DataContainerValueFunctionCommandRE** currentAsk;
 
@@ -160,88 +145,18 @@ private:
      */
     DataContainerValueFunctionCommandREMemMaintainer* memMaintainer = nullptr;
 
-    // ==================== Parameter Mapping - DataContainer Arguments ====================
-    
     /**
      * Array of pointers to parameter DataContainerValue in the called function.
-     * Each element points to the DataContainerValue* of parameters in the function definition.
-     * Size: argSize (total arguments including both variables and arrays)
-     * 
-     * Usage:
-     * - During parameter setup: saves original DataContainerValue* references from called function context
-     * - During restoration: restored to original DataContainerValue* references for proper stack management
-     * 
-     * Example: If function is def func(a, b), methodCalledOriginalPlaceHolderAddrs[0] points to 'a's DataContainerValue*
      */
     DataContainerValue* methodCalledOriginalPlaceHolderAddrs[maxArgSize];
-    
-    /**
-     * Array of pointers to argument DataContainerValue addresses in the calling function.
-     * Each element points to the DataContainerValue* of arguments being passed to the function.
-     * Size: argSize (total arguments including both variables and arrays)
-     * 
-     * Usage:
-     * - Source of DataContainerValue references during parameter setup
-     * - Target for DataContainerValue reference restoration during cleanup
-     * 
-     * Example: If called as func(x, y), methodCallingOriginalPlaceHolderAddrs[0] points to 'x's DataContainerValue*
-     */
-    DataContainerValue* methodCallingOriginalPlaceHolderAddrs[maxArgSize];
 
-    // ==================== Local Variable Management ====================
     /**
      * Array of pointers to all DataContainerValue addresses within the function.
      * Includes both parameters and local data containers declared in the function.
-     * Size: totalVarCount + totalArrCount (all data containers in function)
-     *
-     * Structure:
-     * - Index 0 to argSize-1: Function parameter data container addresses
-     * - Index argSize to total-1: Local data container addresses
-     *
-     * Usage:
-     * - Allows direct access to any data container in function scope
-     * - Used during restoration to reset data containers to saved values
      */
     DataContainerValue* methodArgDataContainerAddr[maxArgSize];
 
-    // ==================== Name Mapping for Debugging ====================
-    
-    /**
-     * Maps data container names from calling context to function parameter names.
-     * Used primarily for debugging and tracking parameter relationships.
-     * 
-     * Key: Name of data container (variable/array) in calling context
-     * Value: Name of parameter in function definition
-     * 
-     * Example Mapping:
-     * Function definition: func(paramVar, paramArray) { ... }
-     * Function call: func(callingVar, callingArray)
-     * Map entries: {"callingVar" -> "paramVar", "callingArray" -> "paramArray"}
-     * 
-     * Usage:
-     * - Debugging: Track which calling data containers map to which parameters
-     * - Error reporting: Provide meaningful variable names in stack traces
-     * - Development: Understand parameter flow in complex recursive calls
-     */
     std::unordered_map<std::string, std::string> dataContainerNameMethodMap;
-
-#ifdef GPU_ENABLED
-    // ==================== GPU Dispatch Caches (lazily initialised on first GPU call) ====================
-    // Indices into methodCallingOriginalPlaceHolderAddrs that correspond to data (buffer) args,
-    // i.e. all args that are NOT in functionInfoRE->gpuParallelismArgIndices.
-    // Computed once per instance; immutable across threads thereafter.
-    std::vector<int> gpuDataArgIndices;
-    bool gpuMetaInitialized = false;
-
-    // Cached cl_program for this kernel source (compiled once across all threads).
-    // Slow-path init synchronised via the existing program-cache mutex in the .cpp.
-    std::atomic<void*>              gpuProgramCache{nullptr};
-    cl_kernel                       gpuKernel       = nullptr;
-    cl_mem                          gpuBuffers[maxArgSize]      = {};
-    size_t                          gpuBufferSizes[maxArgSize]  = {};
-    std::vector<size_t>             gpuGlobalWorkSize;
-    int                             gpuDataArgCount = 0;
-#endif
 
 public:
     // ==================== Constructor and Destructor ====================
@@ -266,7 +181,6 @@ public:
      * and maintain proper object lifetime management.
      */
     void destroy() override {
-        // Clean up core function information objects with null checks
         if(functionCommandInfo != nullptr) {
             delete functionCommandInfo;
         }
@@ -276,12 +190,6 @@ public:
         if(functionInfoRE != nullptr) {
             delete functionInfoRE;
         }
-#ifdef GPU_ENABLED
-        if (gpuKernel) { clReleaseKernel(gpuKernel); gpuKernel = nullptr; }
-        for (int _i = 0; _i < maxArgSize; _i++) {
-            if (gpuBuffers[_i]) { clReleaseMemObject(gpuBuffers[_i]); gpuBuffers[_i] = nullptr; }
-        }
-#endif
     }
     
     // ==================== Core Interface Methods ====================
@@ -789,6 +697,40 @@ public:
     RuleEngineInputUnits* process() override;
 };
 
+#ifdef GPU_ENABLED
+// ==================== GPU Function Command ====================
+
+/**
+ * Subclass of FunctionCommandRE for functions flagged as GPU kernels.
+ * process() dispatches the OpenCL kernel, then delegates to
+ * FunctionCommandRE::process() for the standard calling-convention wrap-up.
+ */
+class GPUFunctionCommandRE : public FunctionCommandRE {
+    std::vector<int>    gpuDataArgIndices;
+    bool                gpuMetaInitialized = false;
+    std::atomic<void*>  gpuProgramCache{nullptr};
+    cl_kernel           gpuKernel       = nullptr;
+    cl_mem              gpuBuffers[maxArgSize]     = {};
+    size_t              gpuBufferSizes[maxArgSize] = {};
+    std::vector<size_t> gpuGlobalWorkSize;
+    int                 gpuDataArgCount = 0;
+
+public:
+    GPUFunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo)
+        : FunctionCommandRE(functionCommand, functionInfo) {}
+
+    void destroy() override {
+        FunctionCommandRE::destroy();
+        if (gpuKernel) { clReleaseKernel(gpuKernel); gpuKernel = nullptr; }
+        for (int _i = 0; _i < maxArgSize; _i++) {
+            if (gpuBuffers[_i]) { clReleaseMemObject(gpuBuffers[_i]); gpuBuffers[_i] = nullptr; }
+        }
+    }
+
+    RuleEngineInputUnits* process() override;
+};
+#endif // GPU_ENABLED
+
 // ==================== Factory Function for Function Command Creation ====================
 
 /**
@@ -867,9 +809,14 @@ static FunctionCommandRE* GetFunctionCommandRE(FunctionCall* functionCommand, st
         return new class POW(functionCommand);
     }
 
-    // Default case: Create regular function call for user-defined functions
-    // Retrieves function definition from the global object map
-    return new FunctionCommandRE(functionCommand, (FunctionCallRE *) map->at(functionCommand->id));
+    // Default case: user-defined functions.
+    FunctionCallRE* funcInfoRE = (FunctionCallRE *) map->at(functionCommand->id);
+#ifdef GPU_ENABLED
+    if (funcInfoRE && funcInfoRE->functionCall->isGpu) {
+        return new GPUFunctionCommandRE(functionCommand, funcInfoRE);
+    }
+#endif
+    return new FunctionCommandRE(functionCommand, funcInfoRE);
 }
 
 #endif //NATIVE_FUNCTIONCOMMANDRE_H
