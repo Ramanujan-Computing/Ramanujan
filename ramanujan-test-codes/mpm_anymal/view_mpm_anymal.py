@@ -13,6 +13,7 @@ import argparse
 import pickle
 import sys
 import os
+import time
 
 def main():
     parser = argparse.ArgumentParser(description="View saved MPM Anymal frames in Newton.")
@@ -145,6 +146,8 @@ def main():
 
     print("Playback started — close the viewer window to exit.")
     f_idx = 0
+    target_fps = 60  # Half of original 60 FPS
+    frame_time = 1.0 / target_fps
     while viewer.is_running():
         wp.copy(state.particle_q, pos_arrays[f_idx])
         wp.copy(state.body_q, body_xform_arrays[f_idx])
@@ -153,6 +156,7 @@ def main():
         viewer.log_state(state)
         viewer.end_frame()
 
+        time.sleep(frame_time)
         f_idx = (f_idx + 1) % len(frames)
 
     if hasattr(viewer, "close"):
