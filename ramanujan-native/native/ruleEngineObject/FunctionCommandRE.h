@@ -720,11 +720,12 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
     ArrayValue*         gpuAvCache[maxArgSize] = {};
 
     // process() working state (fields to avoid stack allocation on each call)
-    cl_int              gpuErr          = CL_SUCCESS;
-    bool                gpuBufferError  = false;
-    bool                gpuZeroWorkSize = false;
-    size_t              gpuNeeded       = 0;
-    cl_int              gpuSetErr       = CL_SUCCESS;
+    cl_int              gpuErr               = CL_SUCCESS;
+    bool                gpuBufferError       = false;
+    bool                gpuZeroWorkSize      = false;
+    bool                gpuBufferReallocated = false;
+    size_t              gpuNeeded            = 0;
+    cl_int              gpuSetErr            = CL_SUCCESS;
 
 public:
     GPUFunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo)

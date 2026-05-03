@@ -582,12 +582,16 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
     for (int di = 0; di < gpuDataArgCount; di++) {
         gpuNeeded = (size_t)gpuAvCache[di]->totalSize * sizeof(float);
 
+        gpuBufferReallocated = false;
         if (!gpuBuffers[di] || gpuBufferSizes[di] != gpuNeeded) {
             if (gpuBuffers[di]) { clReleaseMemObject(gpuBuffers[di]); gpuBuffers[di] = nullptr; }
             gpuBuffers[di] = clCreateBuffer(
                 s_clCtx.context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
                 gpuNeeded, gpuAvCache[di]->val, &gpuErr);
-            if (gpuErr == CL_SUCCESS) gpuBufferSizes[di] = gpuNeeded;
+            if (gpuErr == CL_SUCCESS) {
+                gpuBufferSizes[di]   = gpuNeeded;
+                gpuBufferReallocated = true;
+            }
         } else {
             gpuErr = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, gpuNeeded, gpuAvCache[di]->val, 0, nullptr, nullptr);
         }
@@ -597,9 +601,11 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
             gpuBufferError = true;
             break;
         }
-        gpuSetErr = clSetKernelArg(gpuKernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
-        if (gpuSetErr != CL_SUCCESS) {
-            fprintf(stderr, "[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di, gpuSetErr);
+        if (gpuBufferReallocated) {
+            gpuSetErr = clSetKernelArg(gpuKernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
+            if (gpuSetErr != CL_SUCCESS) {
+                fprintf(stderr, "[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di, gpuSetErr);
+            }
         }
     }
 
@@ -622,7 +628,7 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
             for (int di = 0; di < gpuDataArgCount; di++) {
                 clEnqueueReadBuffer(
                     s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0,
-                    (size_t)gpuAvCache[di]->totalSize * sizeof(float), gpuAvCache[di]->val,
+                    gpuBufferSizes[di], gpuAvCache[di]->val,
                     0, nullptr, nullptr);
             }
             clFinish(s_clCtx.queue);
