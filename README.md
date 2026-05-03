@@ -896,6 +896,82 @@ def kernel_GPU_1(a, gid):
     a[gid] = factorial(a[gid])
 ```
 
+## GPU built-in functions
+
+These special function names are recognised inside `_GPU_N` kernel bodies and
+translated to OpenCL C intrinsics.  They are **not** available on the host; use
+the corresponding Ramanujan host built-ins (`FLOOR`, `EXP`, etc.) outside GPU
+functions.
+
+### In-place scalar math (1 argument)
+
+Each call mutates its argument in place: `FUNC(x)` → `x = func(x)` in the
+generated OpenCL C.
+
+| Python call | Generated OpenCL C | Notes |
+|---|---|---|
+| `EXP(x)` | `x = exp(x);` | Natural exponential |
+| `LOG(x)` | `x = log(x);` | Natural logarithm |
+| `SQRT(x)` | `x = sqrt(x);` | Square root |
+| `FLOOR(x)` | `x = floor(x);` | Round toward −∞; result stays `float` |
+
+**`FLOOR` example** — locate the grid cell for a particle position:
+```python
+def p2g_GPU_1(positions, params, gid):
+    xp = positions[gid * 3]
+    gxp = (xp - (-1.0)) * 10.0  # map to grid coords
+    FLOOR(gxp)                   # gxp = floor(gxp) in OpenCL C
+    i0 = gxp                     # integer grid index (stored as float)
+```
+
+### Atomic float add (3 arguments)
+
+```python
+ATOMIC_ADD_F(arr, idx, delta)
+```
+
+Atomically adds `delta` (a `float`) to `arr[idx]` using a compare-and-swap
+loop.  Required whenever multiple work-items may scatter into the same array
+slot concurrently (e.g., particle-to-grid scattering in MPM).
+
+OpenCL 1.2 has no native `atomic_add` for `float`.  The translator emits a
+CAS loop on the int-reinterpreted bits using `atomic_cmpxchg`:
+
+```c
+/* Generated for: ATOMIC_ADD_F(arr, idx, delta) */
+{
+    __global volatile int* _aAddr = (__global volatile int*)(&arr[(int)(idx)]);
+    int _aOld, _aNew;
+    do {
+        _aOld = *_aAddr;
+        _aNew = as_int(as_float(_aOld) + (delta));
+    } while (atomic_cmpxchg(_aAddr, _aOld, _aNew) != _aOld);
+}
+```
+
+The `{}` block scope lets you call `ATOMIC_ADD_F` multiple times in the same
+kernel without variable-name conflicts.
+
+**Requirements:**
+- The target array must be a `__global float*` data argument (not a local variable).
+- Requires OpenCL 1.2 or later (`atomic_cmpxchg` on `__global int*` is a
+  core 1.2 feature on all platforms including Apple Metal-backed OpenCL).
+
+**`ATOMIC_ADD_F` example** — particle-to-grid mass scatter:
+```python
+def p2g_GPU_1(positions, g_mass, g_vel, params, gid):
+    # ... compute weight w and grid node index gnode ...
+    wm = w * params[0]                          # weighted mass
+    ATOMIC_ADD_F(g_mass, gnode, wm)             # safe concurrent scatter
+    ATOMIC_ADD_F(g_vel, gnode * 3,     wm * vx)
+    ATOMIC_ADD_F(g_vel, gnode * 3 + 1, wm * vy)
+    ATOMIC_ADD_F(g_vel, gnode * 3 + 2, wm * vz)
+```
+
+> **Note on P2G in MPM:** The above P2G kernel also requires `FLOOR` to locate
+> grid nodes (see above).  Both `FLOOR` and `ATOMIC_ADD_F` are needed before
+> P2G can fully run on GPU.
+
 ## Build prerequisites
 
 | Platform | Requirement |

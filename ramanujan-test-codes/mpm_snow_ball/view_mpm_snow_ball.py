@@ -9,6 +9,7 @@
 # The .pkl file is created by run_mpm_snow_ball.py --save-frames.
 
 import argparse
+import math
 import os
 import pickle
 import sys
@@ -43,16 +44,19 @@ def main():
         print(f"ERROR: failed to load {args.frames_file}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    frames         = data.get("frames", [])
-    num_particles  = data.get("num_particles", 0)
+    frames          = data.get("frames", [])
+    num_particles   = data.get("num_particles", 0)
     particle_radius = data.get("particle_radius", 0.01)
-    frame_times    = data.get("frame_times", [])
+    frame_times     = data.get("frame_times", [])
+    board_angle     = data.get("board_angle", 0.0)   # degrees; 0 = vertical wall
+    board_angle_rad = math.radians(board_angle)
 
     if not frames:
         print("ERROR: no frames in file", file=sys.stderr)
         sys.exit(1)
 
     print(f"Loaded {len(frames)} frames ({num_particles} particles) from {args.frames_file}")
+    print(f"  Board angle: {board_angle:.1f}°")
     if frame_times:
         avg = sum(frame_times) / len(frame_times)
         print(f"  Average frame time: {avg:.2f}s")
@@ -75,10 +79,9 @@ def main():
             radius=particle_radius,
         )
 
-    wall_body = builder.add_body(
-        xform=wp.transform(wp.vec3(0.0, WALL_Y, WALL_VISUAL_Z), wp.quat_identity()),
-        mass=0.0,
-    )
+    wall_quat  = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), board_angle_rad)
+    wall_xform = wp.transform(wp.vec3(0.0, WALL_Y, WALL_VISUAL_Z), wall_quat)
+    wall_body  = builder.add_body(xform=wall_xform, mass=0.0)
     builder.add_shape_box(body=wall_body, hx=WALL_HX, hy=WALL_HY, hz=WALL_HZ)
 
     model = builder.finalize()
@@ -102,7 +105,6 @@ def main():
     pos_dtype  = state.particle_q.dtype if state.particle_q is not None else wp.vec3
     body_dtype = state.body_q.dtype     if state.body_q    is not None else wp.transform
 
-    wall_xform = wp.transform(wp.vec3(0.0, WALL_Y, WALL_VISUAL_Z), wp.quat_identity())
     wall_array = wp.array([wall_xform], dtype=body_dtype)
 
     print("Pre-building frame arrays for smooth playback...")

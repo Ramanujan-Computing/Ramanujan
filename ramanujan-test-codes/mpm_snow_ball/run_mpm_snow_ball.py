@@ -40,6 +40,10 @@ import threading
 
 KERNEL_NAME = "mpm_snow_ball_kernel.py"
 
+# MPM background grid sizes — must match MPM_TOTAL / MPM_TOTAL3 in the kernel
+MPM_TOTAL  = 11200   # NX * NY * NZ = 20 * 20 * 28
+MPM_TOTAL3 = 33600   # MPM_TOTAL * 3
+
 # Physics constants
 THROW_SPEED_Y      = 3.0         # m/s initial velocity toward wall (+y)
 WALL_Y             = 0.0         # wall position along y axis
@@ -284,9 +288,16 @@ def read_csv_1d(path):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
-                         positions, velocities, grid_params):
+                         positions, velocities, grid_params,
+                         board_cos=1.0, board_sin=0.0, d_wall=0.0,
+                         g_mass_csv=None, g_vel_csv=None):
     """Run mpm_snow_ball_kernel.py for one frame.
     grid_params: (grid_nx, grid_ny, grid_nz, spacing, cx, cy, cz, num_particles)
+    board_cos/board_sin/d_wall: precomputed wall-plane params for tilted board.
+    g_mass_csv/g_vel_csv: paths to pre-zeroed grid buffer CSVs; when provided
+        they are passed as additional inputs so Ramanujan can create valid
+        OpenCL buffers for them (locally-allocated Python lists don't get
+        cl_mem handles, causing error -37 on GPU dispatch).
     Returns (new_positions, new_velocities).
     """
     grid_nx, grid_ny, grid_nz, spacing, cx, cy, cz, num_particles = grid_params
@@ -316,7 +327,10 @@ def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
         float(cx),
         float(cy),
         float(cz),
-        float(particle_mass),   # params[15]  — NEW for MPM P2G/G2P
+        float(particle_mass),   # params[15]
+        float(board_cos),       # params[16]
+        float(board_sin),       # params[17]
+        float(d_wall),          # params[18]
     ])
 
     dump_vars = {
@@ -324,8 +338,14 @@ def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
         "velocities": out_vel,
     }
 
+    csv_args = [pos_csv, vel_csv, par_csv]
+    if g_mass_csv:
+        csv_args.append(g_mass_csv)
+    if g_vel_csv:
+        csv_args.append(g_vel_csv)
+
     try:
-        rj_server.run_kernel(kernel_path, [pos_csv, vel_csv, par_csv], dump_vars)
+        rj_server.run_kernel(kernel_path, csv_args, dump_vars)
     except Exception as exc:
         log(f"ERROR: kernel execution failed at frame {frame_num}: {exc}")
         raise
@@ -338,7 +358,7 @@ def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_model_and_viewer(viewer_kind, output_path, initial_positions,
-                           num_particles, particle_radius):
+                           num_particles, particle_radius, board_angle_rad=0.0):
     import warp as wp
     import newton
 
@@ -357,11 +377,10 @@ def build_model_and_viewer(viewer_kind, output_path, initial_positions,
             radius=particle_radius,
         )
 
-    # Static wall at y = WALL_Y
-    wall_body = builder.add_body(
-        xform=wp.transform(wp.vec3(0.0, WALL_Y, WALL_VISUAL_Z), wp.quat_identity()),
-        mass=0.0,
-    )
+    # Static wall — rotated around x-axis by board_angle_rad
+    wall_quat  = wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), board_angle_rad)
+    wall_xform = wp.transform(wp.vec3(0.0, WALL_Y, WALL_VISUAL_Z), wall_quat)
+    wall_body  = builder.add_body(xform=wall_xform, mass=0.0)
     builder.add_shape_box(body=wall_body, hx=WALL_HX, hy=WALL_HY, hz=WALL_HZ)
 
     model = builder.finalize()
@@ -381,10 +400,10 @@ def build_model_and_viewer(viewer_kind, output_path, initial_positions,
     if hasattr(viewer, "show_particles"):
         viewer.show_particles = True
 
-    return model, viewer
+    return model, viewer, wall_xform
 
 
-def playback(model, viewer, frames, num_particles):
+def playback(model, viewer, frames, num_particles, wall_xform):
     import numpy as np
     import warp as wp
 
@@ -392,8 +411,6 @@ def playback(model, viewer, frames, num_particles):
     pos_dtype  = state.particle_q.dtype if state.particle_q is not None else wp.vec3
     body_dtype = state.body_q.dtype     if state.body_q    is not None else wp.transform
 
-    # Wall is static — precompute its transform once
-    wall_xform = wp.transform(wp.vec3(0.0, WALL_Y, WALL_VISUAL_Z), wp.quat_identity())
     wall_array = wp.array([wall_xform], dtype=body_dtype)
 
     log("Pre-building frame arrays for smooth playback...")
@@ -428,6 +445,9 @@ def main():
                         help="Number of physics frames to simulate.")
     parser.add_argument("--num-particles", type=int, default=256,
                         help="Target particle count (rounded to sphere inscribed in odd^3 cube).")
+    parser.add_argument("--board-angle", type=float, default=0.0,
+                        help="Wall (board) angle in degrees from vertical (0 = flat vertical wall, "
+                             "90 = horizontal ceiling). Positive values tilt the top toward +z.")
     parser.add_argument("--viewer", choices=["gl", "usd", "null"], default="gl")
     parser.add_argument("--output-path", default=None,
                         help="Required when --viewer usd")
@@ -438,11 +458,16 @@ def main():
     parser.add_argument("--homelab-url", default="http://localhost:8888",
                         help="Homelab server URL (default http://localhost:8888).")
     parser.add_argument("--save-frames", action="store_true",
-                        help="Save frames to a .pkl file and skip viewer.")
+                        help="Save frames to a .pkl file and skip viewer (pkl is always saved).")
     args = parser.parse_args()
 
     grid_nx, grid_ny, grid_nz, spacing, cx, cy, cz, num_particles, particle_radius = \
         compute_grid(args.num_particles)
+
+    board_angle_rad = math.radians(args.board_angle)
+    board_cos = math.cos(board_angle_rad)
+    board_sin = math.sin(board_angle_rad)
+    d_wall    = WALL_Y * board_cos + WALL_VISUAL_Z * board_sin
 
     log(f"JAVA_HOME:       {JAVA_HOME}")
     log(f"RAMANUJAN_WS:    {RJ_WS}")
@@ -450,6 +475,7 @@ def main():
     log(f"Spacing:         {spacing:.4f} m  →  ball diameter ≈ {spacing * (grid_nx - 1):.3f} m")
     log(f"Particle radius: {particle_radius:.4f} m  (viewer only)")
     log(f"Ball start:      y={cy:.2f} m  z={cz:.2f} m  throw={THROW_SPEED_Y} m/s → wall at y={WALL_Y}")
+    log(f"Board angle:     {args.board_angle:.1f}°  (cos={board_cos:.4f}, sin={board_sin:.4f})")
 
     if args.homelab:
         rj_server = RjHomelabClient(args.homelab_url)
@@ -467,6 +493,14 @@ def main():
     positions  = [0.0] * (num_particles * 3)
     velocities = [0.0] * (num_particles * 3)
 
+    # Pre-zeroed grid buffer CSVs — written once; never dumped back, so they
+    # stay zero-filled on disk.  Ramanujan reloads them from disk at the start
+    # of every kernel run, giving each frame a fresh zeroed g_mass / g_vel.
+    g_mass_csv = os.path.join(work_dir, "g_mass.csv")
+    g_vel_csv  = os.path.join(work_dir, "g_vel.csv")
+    write_csv_1d(g_mass_csv, [0.0] * MPM_TOTAL)
+    write_csv_1d(g_vel_csv,  [0.0] * MPM_TOTAL3)
+
     frames = []
     frame_times = []
     try:
@@ -474,7 +508,9 @@ def main():
             t0 = time.time()
             positions, velocities = run_kernel_one_frame(
                 rj_server, kernel_path, work_dir, frame_num,
-                positions, velocities, grid_params)
+                positions, velocities, grid_params,
+                board_cos, board_sin, d_wall,
+                g_mass_csv=g_mass_csv, g_vel_csv=g_vel_csv)
             frames.append((positions, velocities))
             frame_time = time.time() - t0
             frame_times.append(frame_time)
@@ -484,31 +520,35 @@ def main():
     finally:
         rj_server.shutdown()
 
+    # Always save a pkl so the trajectory can be replayed with view_mpm_snow_ball.py
+    timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+    pkl_file  = f"frames_{timestamp}.pkl"
+    data = {
+        "frames":          frames,
+        "num_particles":   num_particles,
+        "particle_radius": particle_radius,
+        "frame_times":     frame_times,
+        "grid_params":     grid_params,
+        "board_angle":     args.board_angle,
+    }
+    with open(pkl_file, "wb") as f:
+        pickle.dump(data, f)
+    log(f"Saved {len(frames)} frames → {pkl_file}")
+    log(f"  To replay: python3 view_mpm_snow_ball.py {pkl_file}")
+
     if args.save_frames:
-        timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
-        pkl_file = f"frames_{timestamp}.pkl"
-        data = {
-            "frames": frames,
-            "num_particles": num_particles,
-            "particle_radius": particle_radius,
-            "frame_times": frame_times,
-            "grid_params": grid_params,
-        }
-        with open(pkl_file, "wb") as f:
-            pickle.dump(data, f)
-        log(f"Saved {len(frames)} frames to {pkl_file}")
-        log(f"To view later: python3 view_mpm_snow_ball.py {pkl_file}")
         return
 
-    log(f"Ramanujan finished {len(frames)} frames; opening Newton viewer.")
+    log(f"Opening Newton viewer ({args.viewer})...")
 
-    model, viewer = build_model_and_viewer(
+    model, viewer, wall_xform = build_model_and_viewer(
         args.viewer, args.output_path,
         frames[0][0],
-        num_particles, particle_radius)
+        num_particles, particle_radius,
+        board_angle_rad)
 
     try:
-        playback(model, viewer, frames, num_particles)
+        playback(model, viewer, frames, num_particles, wall_xform)
     finally:
         if not args.keep_tmp:
             shutil.rmtree(work_dir, ignore_errors=True)

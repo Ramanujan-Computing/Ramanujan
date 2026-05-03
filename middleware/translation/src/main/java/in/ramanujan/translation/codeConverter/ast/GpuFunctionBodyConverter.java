@@ -293,13 +293,32 @@ public class GpuFunctionBodyConverter {
                 String calledName = (call.getFunc() instanceof NameNode) ? ((NameNode) call.getFunc()).getId() : null;
                 if (calledName != null && call.getArgs().size() == 1) {
                     String openclFunc = null;
-                    if ("EXP".equals(calledName)) openclFunc = "exp";
-                    else if ("LOG".equals(calledName)) openclFunc = "log";
-                    else if ("SQRT".equals(calledName)) openclFunc = "sqrt";
+                    if      ("EXP".equals(calledName))   openclFunc = "exp";
+                    else if ("LOG".equals(calledName))   openclFunc = "log";
+                    else if ("SQRT".equals(calledName))  openclFunc = "sqrt";
+                    else if ("FLOOR".equals(calledName)) openclFunc = "floor";
                     if (openclFunc != null) {
                         String arg = convertExpr(call.getArgs().get(0));
                         return indent + arg + " = " + openclFunc + "(" + arg + ");\n";
                     }
+                }
+                // ATOMIC_ADD_F(arr, idx, delta) — atomic float-add via CAS loop (OpenCL 1.2).
+                // No native atomic_add for float in OpenCL 1.2; use atomic_cmpxchg on the
+                // int-reinterpreted bits.  Each invocation is wrapped in its own {} block so
+                // multiple calls in the same kernel body don't produce duplicate declarations.
+                if ("ATOMIC_ADD_F".equals(calledName) && call.getArgs().size() == 3) {
+                    String arrExpr = convertExpr(call.getArgs().get(0));
+                    String idxExpr = convertExpr(call.getArgs().get(1));
+                    String valExpr = convertExpr(call.getArgs().get(2));
+                    return indent + "{\n"
+                         + indent + "    __global volatile int* _aAddr = (__global volatile int*)(&"
+                         + arrExpr + "[(int)(" + idxExpr + ")]);\n"
+                         + indent + "    int _aOld, _aNew;\n"
+                         + indent + "    do {\n"
+                         + indent + "        _aOld = *_aAddr;\n"
+                         + indent + "        _aNew = as_int(as_float(_aOld) + (" + valExpr + "));\n"
+                         + indent + "    } while (atomic_cmpxchg(_aAddr, _aOld, _aNew) != _aOld);\n"
+                         + indent + "}\n";
                 }
             }
             return indent + convertExpr(exprVal) + ";\n";

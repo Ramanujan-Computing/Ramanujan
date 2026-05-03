@@ -4,8 +4,13 @@
 #
 # Explicit MPM loop per physics frame:
 #   1. P2G        — scatter particle mass + momentum to background grid (host)
-#   2. Grid step  — normalise, apply gravity, enforce wall/floor BCs (host)
+#   2. Grid step  — normalise, apply gravity, enforce wall/floor BCs  (GPU)
 #   3. G2P        — gather velocity from grid, Euler-integrate positions (host)
+#   4. Clamp      — safety-clamp particle positions to domain bounds    (GPU)
+#
+# GPU-accelerated steps (Ramanujan OpenCL _GPU_N kernels):
+#   grid_update_GPU_3      — 3-D NDRange over MPM_NX×MPM_NY×MPM_NZ grid nodes
+#   clamp_particles_GPU_1  — 1-D NDRange over N particles
 #
 # P2G and G2P must run on host because:
 #   • P2G scatters from N particles to shared grid nodes (needs atomics, which
@@ -16,7 +21,7 @@
 # Usage (driven by run_mpm_snow_ball.py via execute_inline server):
 #   rj mpm_snow_ball_kernel.py positions.csv velocities.csv params.csv
 #
-# params  (1-D, 16 floats):
+# params  (1-D, 19 floats):
 #   [0]  dt
 #   [1]  gravity_z
 #   [2]  throw_speed_y   initial +y velocity on frame 0
@@ -33,6 +38,9 @@
 #   [13] center_y        ball centre y (m)
 #   [14] center_z        ball centre z (m)
 #   [15] p_mass          particle mass (kg)
+#   [16] board_cos       cos(board_angle_rad)  — wall plane normal y-component
+#   [17] board_sin       sin(board_angle_rad)  — wall plane normal z-component
+#   [18] d_wall          wall plane threshold  = wall_y*board_cos + wall_visual_z*board_sin
 #
 # Outputs (extracted via dump):
 #   positions   (updated in place)
@@ -58,9 +66,16 @@ MPM_OZ     = -0.1     # grid origin z  (floor at z=0 is node nk=1)
 MPM_INV_DX = 10.0     # 1 / dx  (dx = 0.1 m)
 MPM_DX     = 0.1
 
-# ── Grid arrays (allocated and zeroed each frame by construction) ─────────────
-g_mass = [0 for _ in range(MPM_TOTAL)]
-g_vel  = [0 for _ in range(MPM_TOTAL3)]
+# ── Parameter buffers for GPU kernels ────────────────────────────────────────
+# g_mass (MPM_TOTAL floats) and g_vel (MPM_TOTAL3 floats) are pre-zeroed CSV
+# inputs supplied by run_mpm_snow_ball.py so Ramanujan can create valid OpenCL
+# buffers for them (locally-allocated Python lists don't get cl_mem handles).
+
+# grid_params_buf: [0] grav_dv, [1] wall_friction, [2] ground_friction,
+#                  [3] board_cos, [4] board_sin, [5] d_wall
+grid_params_buf = [0 for _ in range(6)]
+# clamp_params: [0] wall_y (ref), [1] board_cos, [2] board_sin, [3] d_wall
+clamp_params = [0 for _ in range(4)]
 
 # ── Stencil scratch arrays (size 2, reused every particle) ───────────────────
 wi   = [0 for _ in range(2)]
@@ -87,6 +102,85 @@ center_x         = params[12]
 center_y         = params[13]
 center_z         = params[14]
 p_mass           = params[15]
+board_cos        = params[16]
+board_sin        = params[17]
+d_wall           = params[18]
+
+n = num_particles
+
+
+# ── GPU kernel: grid node update (normalise → gravity → wall/floor BCs) ──────
+# 3-D NDRange dispatched over the full MPM_NX × MPM_NY × MPM_NZ grid.
+# Constants embedded as literals: 560 = MPM_NY_NZ, 28 = MPM_NZ,
+#   -1.5 = MPM_OY, -0.1 = MPM_OZ, 0.1 = MPM_DX.
+# grid_params_buf: [0] grav_dv, [1] wall_friction, [2] ground_friction,
+#                  [3] board_cos, [4] board_sin, [5] d_wall
+def grid_update_GPU_3(g_mass, g_vel, grid_params_buf, ni, nj, nk):
+    gnode = ni * 560 + nj * 28 + nk
+    m = g_mass[gnode]
+    if m > 0:
+        gnode3  = gnode * 3
+        gnode31 = gnode3 + 1
+        gnode32 = gnode3 + 2
+        inv_m = 1.0 / m
+        gvx = g_vel[gnode3]  * inv_m
+        gvy = g_vel[gnode31] * inv_m
+        gvz = g_vel[gnode32] * inv_m
+
+        gvz = gvz + grid_params_buf[0]
+
+        node_y = -1.5 + nj * 0.1
+        node_z = -0.1 + nk * 0.1
+
+        bc = grid_params_buf[3]
+        bs = grid_params_buf[4]
+        dw = grid_params_buf[5]
+        wall_chk = node_y * bc + node_z * bs
+        if wall_chk >= dw:
+            v_n = gvy * bc + gvz * bs
+            if v_n > 0:
+                gvy = gvy - v_n * bc
+                gvz = gvz - v_n * bs
+            wf = grid_params_buf[1]
+            gvx = gvx * wf
+            gvy = gvy * wf
+            gvz = gvz * wf
+
+        if node_z <= 0:
+            if gvz < 0:
+                gvz = 0
+            gf = grid_params_buf[2]
+            gvx = gvx * gf
+            gvy = gvy * gf
+
+        g_vel[gnode3]  = gvx
+        g_vel[gnode31] = gvy
+        g_vel[gnode32] = gvz
+
+
+# ── GPU kernel: per-particle position safety clamp ───────────────────────────
+# clamp_params: [0] wall_y (ref), [1] board_cos, [2] board_sin, [3] d_wall
+def clamp_particles_GPU_1(positions, clamp_params, gid):
+    b2  = gid * 3 + 2
+    pz  = positions[b2]
+    if pz < 0:
+        pz = 0
+        positions[b2] = 0
+    b1  = gid * 3 + 1
+    py  = positions[b1]
+    bc  = clamp_params[1]
+    bs  = clamp_params[2]
+    dw  = clamp_params[3]
+    wall_chk = py * bc + pz * bs
+    if wall_chk > dw:
+        excess  = wall_chk - dw
+        new_py  = py - excess * bc
+        new_pz  = pz - excess * bs
+        positions[b1] = new_py
+        if new_pz < 0:
+            new_pz = 0
+        positions[b2] = new_pz
+
 
 # ── Frame 0: place particles on sphere lattice, assign throw velocity ─────────
 half_n = grid_nx * 0.5
@@ -140,12 +234,10 @@ if frame_num > 0.5:
         vyp = velocities[b1]
         vzp = velocities[b2]
 
-        # Particle position in grid-cell units
         gxp = (xp - MPM_OX) * MPM_INV_DX
         gyp = (yp - MPM_OY) * MPM_INV_DX
         gzp = (zp - MPM_OZ) * MPM_INV_DX
 
-        # Integer base node via FLOOR built-in (mutates by reference)
         gxf = gxp
         FLOOR(gxf)
         gyf = gyp
@@ -157,12 +249,10 @@ if frame_num > 0.5:
         j0 = gyf
         k0 = gzf
 
-        # Fractional offsets within the base cell
         fx = gxp - i0
         fy = gyp - j0
         fz = gzp - k0
 
-        # Stencil weights and node indices
         wi[0]   = 1.0 - fx
         wi[1]   = fx
         wj[0]   = 1.0 - fy
@@ -176,7 +266,6 @@ if frame_num > 0.5:
         nk_s[0] = k0
         nk_s[1] = k0 + 1
 
-        # Scatter to 8 nodes
         sii = 0
         while sii < 2:
             n_i  = ni_s[sii]
@@ -210,58 +299,18 @@ if frame_num > 0.5:
 
         pi = pi + 1
 
-    # ── 2. Grid step: normalise momentum→velocity, gravity, BCs ──────────────
+    # ── 2. Grid step: normalise momentum→velocity, gravity, BCs  (GPU) ───────
     grav_dv = gravity_z * dt
-
-    ni = 0
-    while ni < MPM_NX:
-        nj = 0
-        while nj < MPM_NY:
-            nk = 0
-            while nk < MPM_NZ:
-                gnode = ni * MPM_NY_NZ + nj * MPM_NZ + nk
-                m = g_mass[gnode]
-                if m > 0:
-                    gnode3  = gnode * 3
-                    gnode31 = gnode3 + 1
-                    gnode32 = gnode3 + 2
-                    inv_m = 1.0 / m
-                    gvx = g_vel[gnode3]  * inv_m
-                    gvy = g_vel[gnode31] * inv_m
-                    gvz = g_vel[gnode32] * inv_m
-
-                    # Gravity
-                    gvz = gvz + grav_dv
-
-                    # Wall boundary: nodes at or past wall_y
-                    # Separating condition: only suppress velocity into wall (+y).
-                    node_y = MPM_OY + nj * MPM_DX
-                    if node_y >= wall_y:
-                        if gvy > 0:
-                            gvy = 0
-                        gvx = gvx * wall_friction
-                        gvz = gvz * wall_friction
-
-                    # Floor boundary: nodes at or below z=0
-                    # Separating condition: only suppress downward velocity.
-                    node_z = MPM_OZ + nk * MPM_DX
-                    if node_z <= 0:
-                        if gvz < 0:
-                            gvz = 0
-                        gvx = gvx * ground_friction
-                        gvy = gvy * ground_friction
-
-                    g_vel[gnode3]  = gvx
-                    g_vel[gnode31] = gvy
-                    g_vel[gnode32] = gvz
-
-                nk = nk + 1
-            nj = nj + 1
-        ni = ni + 1
+    grid_params_buf[0] = grav_dv
+    grid_params_buf[1] = wall_friction
+    grid_params_buf[2] = ground_friction
+    grid_params_buf[3] = board_cos
+    grid_params_buf[4] = board_sin
+    grid_params_buf[5] = d_wall
+    grid_update_GPU_3(g_mass, g_vel, grid_params_buf, MPM_NX, MPM_NY, MPM_NZ)
 
     # ── 3. G2P: gather velocity from grid, Euler-integrate particle positions ─
-    # G2P runs on host for the same reason as P2G: FLOOR() is a host built-in
-    # and cannot be used inside _GPU_N device functions.
+    # G2P runs on host: FLOOR() is a host built-in not available in GPU kernels.
     pi = 0
     while pi < num_particles:
         b0 = pi * 3
@@ -336,7 +385,6 @@ if frame_num > 0.5:
                 sij = sij + 1
             sii = sii + 1
 
-        # Euler integrate
         positions[b0] = xp + new_vx * dt
         positions[b1] = yp + new_vy * dt
         positions[b2] = zp + new_vz * dt
@@ -346,14 +394,9 @@ if frame_num > 0.5:
 
         pi = pi + 1
 
-    # ── Safety clamp: keep particles inside the physical domain ──────────────
-    # Grid BCs should prevent escape but numerical drift can accumulate.
-    pi = 0
-    while pi < num_particles:
-        b1 = pi * 3 + 1
-        b2 = pi * 3 + 2
-        if positions[b2] < 0:
-            positions[b2] = 0
-        if positions[b1] > wall_y:
-            positions[b1] = wall_y
-        pi = pi + 1
+    # ── 4. Safety clamp: keep particles inside the physical domain  (GPU) ────
+    clamp_params[0] = wall_y
+    clamp_params[1] = board_cos
+    clamp_params[2] = board_sin
+    clamp_params[3] = d_wall
+    clamp_particles_GPU_1(positions, clamp_params, n)

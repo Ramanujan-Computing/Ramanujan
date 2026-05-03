@@ -33,12 +33,14 @@ viewer to play back the trajectory Ramanujan produced.
 * On impact: particles spread outward with near-zero restitution (snow splats,
   doesn't bounce), then fall under gravity and settle on the ground plane.
 
-Physics kernels on GPU (Ramanujan OpenCL):
+Physics pipeline per frame (Ramanujan OpenCL + host):
 
-| Kernel | Work | Description |
-|---|---|---|
-| `apply_gravity_GPU_1` | N particles | Adds `gravity × dt` to each `vz` |
-| `integrate_GPU_1` | N particles | Euler step + wall collision (y) + ground collision (z) + damping |
+| Step | Runs on | Kernel / code | Description |
+|---|---|---|---|
+| P2G | **Host** | Python loop in kernel | Scatter particle mass + momentum onto 20×20×28 MPM background grid. Host-only: concurrent scatter requires atomic float add — needs `ATOMIC_ADD_F` GPU built-in once added |
+| Grid update | **GPU** | `grid_update_GPU_3` (3-D NDRange 20×20×28) | Normalise momentum→velocity, apply gravity, enforce tilted-wall and floor boundary conditions |
+| G2P | **Host** | Python loop in kernel | Gather velocity from grid, Euler-integrate particle positions. Host-only: grid-node lookup uses `FLOOR` — needs `FLOOR` GPU built-in once available in device functions |
+| Clamp | **GPU** | `clamp_particles_GPU_1` (1-D NDRange N) | Safety-clamp particle positions inside the physical domain |
 
 Frame 0 is host-side only: places particles in a sphere, assigns initial +y velocity.
 
@@ -151,11 +153,16 @@ cube side whose inscribed sphere is closest to the requested value.
 
 ```
 positions.csv   ─┐
-velocities.csv  ─┼──►  rj mpm_snow_ball_kernel.py
-params.csv      ─┘                │
-                                  │     ┌── apply_gravity_GPU_1   (N work items)
-                                  ├──►──┤
-                                  │     └── integrate_GPU_1       (N work items)
+velocities.csv  ─┤
+params.csv      ─┼──►  rj mpm_snow_ball_kernel.py
+g_mass.csv      ─┤              │
+g_vel.csv       ─┘              │  (g_mass / g_vel: pre-zeroed by orchestrator;
+                                │   loaded fresh each frame so P2G starts clean)
+                                │
+                                ├── [host] P2G scatter
+                                ├──► grid_update_GPU_3  (20×20×28 work items)
+                                ├── [host] G2P gather + Euler integrate
+                                └──► clamp_particles_GPU_1  (N work items)
                                   ▼
                        dump positions  ──►  out_positions_<frame>.csv
                        dump velocities ──►  out_velocities_<frame>.csv
@@ -167,8 +174,19 @@ params.csv      ─┘                │
 
 ## Constraints honored
 
-* All physics runs inside Ramanujan (`_GPU_N` OpenCL kernels + host-side sphere init).
+* All physics runs inside Ramanujan (`_GPU_N` OpenCL kernels + host-side P2G/G2P).
 * GPU kernels follow the `funcName_GPU_N` translator contract.
 * No `for`, `**`, `%`, `and`/`or`, `elif`, imports, or strings inside the kernel.
 * Grid dimensions, spacing, and particle count are passed via `params.csv` so
   the same kernel binary handles any particle count without recompilation.
+* `g_mass` and `g_vel` (MPM background grid) are passed as pre-zeroed CSV
+  inputs so Ramanujan can create valid OpenCL buffers for them.
+  Locally-allocated Python lists (e.g. `g = [0 for _ in range(N)]`) do not
+  receive a `cl_mem` handle and cause error -37 on GPU dispatch.
+
+### Path to full GPU P2G and G2P
+
+| Step | Blocker | Resolution (in Ramanujan translator) |
+|---|---|---|
+| P2G on GPU | Concurrent scatter → needs atomic float add | `ATOMIC_ADD_F(arr, idx, delta)` built-in now maps to a CAS loop in the generated OpenCL C (see `GpuFunctionBodyConverter`) |
+| G2P on GPU | Grid-node lookup uses `FLOOR` | `FLOOR(x)` now maps to `x = floor(x)` inside `_GPU_N` device functions |
