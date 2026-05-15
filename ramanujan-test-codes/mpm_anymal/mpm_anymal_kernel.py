@@ -14,8 +14,10 @@
 #
 # Input arrays (loaded from same-named CSV files):
 #   positions   1D, num_particles * 3  (x,y,z per particle, flattened)
+#               When sharded: only this shard's particles (shard_size * 3)
 #   velocities  1D, num_particles * 3  (vx,vy,vz per particle, flattened)
-#   params      1D, 15 floats
+#               When sharded: only this shard's particles (shard_size * 3)
+#   params      1D, 17 floats
 #                 [0]  dt              physics step (s)
 #                 [1]  gravity         z-acceleration (m/s^2, negative)
 #                 [2]  foot_radius     collision radius (m)
@@ -23,18 +25,29 @@
 #                 [4]  gait_speed      forward velocity (m/s)
 #                 [5]  step_height     foot lift amplitude (m)
 #                 [6]  frame_num       integer-valued frame counter
-#                 [7]  num_particles   total particle count
-#                 [8]  grid_nx         grid width
-#                 [9]  grid_ny         grid depth
-#                 [10] grid_nz         grid height layers
+#                 [7]  num_particles   particle count for THIS shard
+#                 [8]  grid_nx         global grid width
+#                 [9]  grid_ny         global grid depth
+#                 [10] grid_nz         z-layers assigned to this shard
 #                 [11] spacing         inter-particle spacing (m)
 #                 [12] origin_x        grid origin x (m)
 #                 [13] origin_y        grid origin y (m)
 #                 [14] origin_z        grid origin z (m)
+#                 [15] shard_iz_start  first global z-layer for frame-0 init
+#                                      (0 when not sharding)
+#                 [16] shard_iz_end    exclusive end global z-layer for init
+#                                      (grid_nz when not sharding)
+#
+# Sharding across phones (homelab mode):
+#   The global particle bed is split into z-layer slabs, one slab per phone.
+#   Each phone receives only its slab's positions/velocities and runs the
+#   same three GPU kernels independently.  The orchestrator merges results.
+#   params[15]/[16] tell this instance which z-layers to initialise on frame 0.
+#   For physics frames the shard is fully self-contained — no cross-shard data.
 #
 # Outputs (extracted via dump):
-#   positions  (updated in place)
-#   velocities (updated in place)
+#   positions  (updated in place, shard only)
+#   velocities (updated in place, shard only)
 #   feet       12 floats: foot0_xyz, foot1_xyz, foot2_xyz, foot3_xyz
 # =============================================================================
 
@@ -60,17 +73,21 @@ spacing = params[11]
 origin_x = params[12]
 origin_y = params[13]
 origin_z = params[14]
+shard_iz_start = params[15]
+shard_iz_end = params[16]
 
 dt_buf[0] = dt
 gravity_buf[0] = gravity_z * dt
 foot_params[0] = foot_radius
 foot_params[1] = foot_strength
 
-# ── Frame 0: lay out the particle grid on host ───────────────────────────────
+# ── Frame 0: lay out this shard's particle grid on host ─────────────────────
+# shard_iz_start/shard_iz_end select the z-layer slab owned by this phone.
+# With no sharding both equal 0 / grid_nz and the full grid is initialised.
 if frame_num < 0.5:
     pi = 0
-    iz = 0
-    while iz < grid_nz:
+    iz = shard_iz_start
+    while iz < shard_iz_end:
         iy = 0
         while iy < grid_ny:
             ix = 0

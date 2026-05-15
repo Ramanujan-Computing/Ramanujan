@@ -244,6 +244,25 @@ def compute_grid(num_particles):
     return grid_nx, grid_ny, grid_nz, spacing, origin_x, origin_y, origin_z, actual, particle_radius
 
 
+def compute_shard_ranges(grid_nz, num_shards):
+    """Split global z-layers across num_shards phones.
+
+    Returns a list of (iz_start, iz_end) tuples, one per shard.
+    Extra layers (when grid_nz % num_shards != 0) are distributed to the
+    first few shards so every shard gets at least one layer.
+    """
+    num_shards = min(num_shards, grid_nz)  # can't have more shards than layers
+    base = grid_nz // num_shards
+    extra = grid_nz % num_shards
+    ranges = []
+    iz = 0
+    for s in range(num_shards):
+        layers = base + (1 if s < extra else 0)
+        ranges.append((iz, iz + layers))
+        iz += layers
+    return ranges
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  CSV pass-through helpers (no calculations, just I/O)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -286,24 +305,11 @@ def resolve_rj_command():
     return None
 
 
-def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
-                         positions, velocities, grid_params):
-    """Run mpm_anymal_kernel.py for one frame using persistent JVM server.
-    grid_params: (grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles)
-    Returns (new_positions, new_velocities, foot_positions).
-    """
-    grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles = grid_params
-
-    pos_csv = os.path.join(work_dir, "positions.csv")
-    vel_csv = os.path.join(work_dir, "velocities.csv")
-    par_csv = os.path.join(work_dir, "params.csv")
-    out_pos  = os.path.join(work_dir, f"out_positions_{frame_num}.csv")
-    out_vel  = os.path.join(work_dir, f"out_velocities_{frame_num}.csv")
-    out_feet = os.path.join(work_dir, f"out_feet_{frame_num}.csv")
-
-    write_csv_1d(pos_csv, positions)
-    write_csv_1d(vel_csv, velocities)
-    write_csv_1d(par_csv, [
+def _write_params_csv(path, frame_num, num_particles, grid_nx, grid_ny,
+                      shard_layers, spacing, ox, oy, oz,
+                      shard_iz_start, shard_iz_end):
+    """Write the 17-element params CSV for one kernel invocation."""
+    write_csv_1d(path, [
         DT,
         GRAVITY_Z,
         FOOT_RADIUS_PARAM,
@@ -314,12 +320,37 @@ def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
         float(num_particles),
         float(grid_nx),
         float(grid_ny),
-        float(grid_nz),
+        float(shard_layers),    # z-layers in this shard (== grid_nz when unsharded)
         float(spacing),
         float(ox),
         float(oy),
         float(oz),
+        float(shard_iz_start),  # params[15]: first global z-layer for frame-0 init
+        float(shard_iz_end),    # params[16]: exclusive end z-layer for frame-0 init
     ])
+
+
+def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
+                         positions, velocities, grid_params):
+    """Run mpm_anymal_kernel.py for one frame (all particles on one device).
+
+    grid_params: (grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles)
+    Returns (new_positions, new_velocities, foot_positions).
+    """
+    grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles = grid_params
+
+    pos_csv  = os.path.join(work_dir, "positions.csv")
+    vel_csv  = os.path.join(work_dir, "velocities.csv")
+    par_csv  = os.path.join(work_dir, "params.csv")
+    out_pos  = os.path.join(work_dir, f"out_positions_{frame_num}.csv")
+    out_vel  = os.path.join(work_dir, f"out_velocities_{frame_num}.csv")
+    out_feet = os.path.join(work_dir, f"out_feet_{frame_num}.csv")
+
+    write_csv_1d(pos_csv, positions)
+    write_csv_1d(vel_csv, velocities)
+    _write_params_csv(par_csv, frame_num, num_particles,
+                      grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz,
+                      shard_iz_start=0, shard_iz_end=grid_nz)
 
     dump_vars = {
         "positions": out_pos,
@@ -338,6 +369,103 @@ def run_kernel_one_frame(rj_server, kernel_path, work_dir, frame_num,
         read_csv_1d(out_vel),
         read_csv_1d(out_feet),
     )
+
+
+def run_kernel_one_frame_sharded(rj_server, kernel_path, work_dir, frame_num,
+                                  positions, velocities, grid_params, num_shards):
+    """Run mpm_anymal_kernel.py for one frame, splitting z-layers across phones.
+
+    In homelab mode each shard's kernel invocation is submitted in parallel, so
+    N phones process N particle slabs concurrently.  In local (single-JVM) mode
+    the shards run sequentially on the same machine — parallelism requires homelab.
+
+    grid_params: (grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles)
+    Returns (new_positions, new_velocities, foot_positions) with the full particle
+    arrays reconstructed by concatenating shard outputs in z-layer order.
+    """
+    grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, _total = grid_params
+    shard_ranges = compute_shard_ranges(grid_nz, num_shards)
+    actual_shards = len(shard_ranges)
+
+    results = [None] * actual_shards
+    errors  = [None] * actual_shards
+
+    def run_shard(s):
+        iz_start, iz_end = shard_ranges[s]
+        shard_layers    = iz_end - iz_start
+        shard_particles = grid_nx * grid_ny * shard_layers
+
+        # Slice only this shard's particles (ordered by z-layer in the flat array)
+        p_start = iz_start * grid_nx * grid_ny * 3
+        p_end   = iz_end   * grid_nx * grid_ny * 3
+        shard_pos = positions[p_start:p_end]
+        shard_vel = velocities[p_start:p_end]
+
+        # Each shard gets its own subdirectory so CSV filenames stay as
+        # positions.csv / velocities.csv / params.csv — the Ramanujan
+        # translator strips the directory path and maps filename → array name,
+        # so files must be named after the arrays they populate.
+        shard_dir = os.path.join(work_dir, f"shard_{s}")
+        os.makedirs(shard_dir, exist_ok=True)
+
+        pos_csv  = os.path.join(shard_dir, "positions.csv")
+        vel_csv  = os.path.join(shard_dir, "velocities.csv")
+        par_csv  = os.path.join(shard_dir, "params.csv")
+        out_pos  = os.path.join(shard_dir, f"out_positions_{frame_num}.csv")
+        out_vel  = os.path.join(shard_dir, f"out_velocities_{frame_num}.csv")
+        out_feet = os.path.join(shard_dir, f"out_feet_{frame_num}.csv")
+
+        write_csv_1d(pos_csv, shard_pos)
+        write_csv_1d(vel_csv, shard_vel)
+        _write_params_csv(par_csv, frame_num, shard_particles,
+                          grid_nx, grid_ny, shard_layers, spacing, ox, oy, oz,
+                          shard_iz_start=iz_start, shard_iz_end=iz_end)
+
+        dump_vars = {
+            "positions": out_pos,
+            "velocities": out_vel,
+            "feet": out_feet,
+        }
+
+        try:
+            rj_server.run_kernel(kernel_path, [pos_csv, vel_csv, par_csv], dump_vars)
+            results[s] = (
+                read_csv_1d(out_pos),
+                read_csv_1d(out_vel),
+                read_csv_1d(out_feet),
+            )
+        except Exception as exc:
+            errors[s] = exc
+
+    if isinstance(rj_server, RjHomelabClient):
+        # Parallel: each HTTP POST goes to a different phone in homelab
+        threads = [threading.Thread(target=run_shard, args=(s,),
+                                    name=f"shard-{s}")
+                   for s in range(actual_shards)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    else:
+        # Local single-JVM: sequential (same machine, JVM stdin is not thread-safe)
+        for s in range(actual_shards):
+            run_shard(s)
+
+    for s, err in enumerate(errors):
+        if err:
+            raise RuntimeError(f"Shard {s} failed: {err}")
+
+    # Reconstruct full arrays by concatenating shards in z-layer order
+    all_positions  = []
+    all_velocities = []
+    for s in range(actual_shards):
+        pos, vel, _ = results[s]
+        all_positions.extend(pos)
+        all_velocities.extend(vel)
+
+    # Foot kinematics are identical across all shards; use shard-0 result
+    feet = results[0][2]
+    return all_positions, all_velocities, feet
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -465,6 +593,11 @@ def main():
                         help="Number of physics frames to simulate.")
     parser.add_argument("--num-particles", type=int, default=256,
                         help="Target particle count (rounded to grid_nx² × 4).")
+    parser.add_argument("--num-shards", type=int, default=1,
+                        help="Split particle z-layers across this many phones. "
+                             "1 = no sharding (default). In homelab mode shards "
+                             "run in parallel on different devices; locally they "
+                             "run sequentially on the same JVM.")
     parser.add_argument("--viewer", choices=["gl", "usd", "null"], default="gl")
     parser.add_argument("--output-path", default=None,
                         help="Required when --viewer usd")
@@ -481,10 +614,23 @@ def main():
     grid_nx, grid_ny, grid_nz, spacing, ox, oy, oz, num_particles, particle_radius = \
         compute_grid(args.num_particles)
 
+    num_shards = args.num_shards
+    if num_shards > 1:
+        actual_shards = min(num_shards, grid_nz)
+        shard_ranges  = compute_shard_ranges(grid_nz, num_shards)
+        shard_sizes   = [grid_nx * grid_ny * (e - s) for s, e in shard_ranges]
+        if not args.homelab and num_shards > 1:
+            log("NOTE: --num-shards >1 without --homelab runs shards sequentially "
+                "on the local JVM. Use --homelab for true parallel execution across phones.")
+
     log(f"JAVA_HOME:      {JAVA_HOME}")
     log(f"RAMANUJAN_WS:   {RJ_WS}")
     log(f"Particles:      {num_particles}  ({grid_nx}×{grid_ny}×{grid_nz}, spacing={spacing:.4f} m)")
     log(f"Particle radius:{particle_radius:.4f} m  (viewer only)")
+    if num_shards > 1:
+        log(f"Shards:         {actual_shards} phones  "
+            + "  ".join(f"[{s},{e})" for s, e in shard_ranges)
+            + f"  ({shard_sizes[0]} particles/shard)")
 
     # Start local JVM or connect to existing homelab server
     if args.homelab:
@@ -508,9 +654,14 @@ def main():
     try:
         for frame_num in range(args.frames):
             t0 = time.time()
-            positions, velocities, feet = run_kernel_one_frame(
-                rj_server, kernel_path, work_dir, frame_num,
-                positions, velocities, grid_params)
+            if num_shards > 1:
+                positions, velocities, feet = run_kernel_one_frame_sharded(
+                    rj_server, kernel_path, work_dir, frame_num,
+                    positions, velocities, grid_params, num_shards)
+            else:
+                positions, velocities, feet = run_kernel_one_frame(
+                    rj_server, kernel_path, work_dir, frame_num,
+                    positions, velocities, grid_params)
             frames.append((positions, velocities, feet))
             frame_time = time.time() - t0
             frame_times.append(frame_time)
