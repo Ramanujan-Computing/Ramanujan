@@ -271,25 +271,40 @@ public class TranslateUtil {
             return;
         }
 
-        // Check for pre-existing .bin file (pre-converted offline).
+        // Check for pre-existing .bin file (pre-converted offline or written by a prior call).
         // Also resolve symlinks so that temp-dir .csv symlinks find the real .bin.
         String csvPath = csvInformation.getFileName();
+        // sidecarBinPath is the persistent .bin we write next to the CSV for reuse across calls.
+        String sidecarBinPath = null;
         if (csvPath != null && csvPath.endsWith(".csv")) {
+            java.io.File csvFile = new java.io.File(csvPath);
+
             // 1. Try next to the CSV as-is
             java.io.File binFile = new java.io.File(csvPath.substring(0, csvPath.length() - 4) + ".bin");
+            sidecarBinPath = binFile.getAbsolutePath();
             if (!binFile.exists() || binFile.length() == 0) {
                 // 2. Resolve symlink and try next to the real file
                 try {
                     java.nio.file.Path real = java.nio.file.Paths.get(csvPath).toRealPath();
-                    binFile = new java.io.File(real.toString().substring(0, real.toString().length() - 4) + ".bin");
+                    String realStr = real.toString();
+                    binFile = new java.io.File(realStr.substring(0, realStr.length() - 4) + ".bin");
+                    sidecarBinPath = binFile.getAbsolutePath();
+                    csvFile = real.toFile();
                 } catch (Exception ignored) {}
             }
             if (binFile.exists() && binFile.length() > 0) {
-                String absoluteBinPath;
-                try { absoluteBinPath = binFile.getCanonicalPath(); } catch (Exception e) { absoluteBinPath = binFile.getAbsolutePath(); }
-                System.out.println("[TranslateUtil] Found pre-converted binary: " + absoluteBinPath + " (" + (binFile.length() / 1024 / 1024) + " MB)");
-                array.setBinaryFile(absoluteBinPath);
-                return;
+                // mtime guard: only reuse the bin if it is at least as new as the CSV.
+                // This ensures that updated hidden-state CSVs (new activations written each layer)
+                // are never served stale binary data.
+                if (binFile.lastModified() >= csvFile.lastModified()) {
+                    String absoluteBinPath;
+                    try { absoluteBinPath = binFile.getCanonicalPath(); } catch (Exception e) { absoluteBinPath = binFile.getAbsolutePath(); }
+                    System.out.println("[TranslateUtil] Sidecar hit (fresh): " + absoluteBinPath + " (" + (binFile.length() / 1024 / 1024) + " MB)");
+                    array.setBinaryFile(absoluteBinPath);
+                    return;
+                } else {
+                    System.out.println("[TranslateUtil] Sidecar stale for '" + arrayName + "' (csv newer), will re-parse and overwrite");
+                }
             }
         }
 
@@ -306,7 +321,7 @@ public class TranslateUtil {
         // For large arrays (>100K values), write binary file instead of populating HashMap
         if (estimatedValues > 100000) {
             try {
-                populateLargeArrayAsBinary(data, singleRow, array, arrayName);
+                populateLargeArrayAsBinary(data, singleRow, array, arrayName, sidecarBinPath);
                 return;
             } catch (Exception e) {
                 System.err.println("[TranslateUtil] Binary write failed for '" + arrayName + "', falling back to HashMap: " + e.getMessage());
@@ -352,12 +367,29 @@ public class TranslateUtil {
      * path on the Array object. The native C++ side will load this directly,
      * bypassing JSON serialization entirely.
      */
-    private void populateLargeArrayAsBinary(String data, boolean singleRow, Array array, String arrayName) throws Exception {
+    private void populateLargeArrayAsBinary(String data, boolean singleRow, Array array, String arrayName,
+                                             String sidecarPath) throws Exception {
         long t0 = System.currentTimeMillis();
 
-        // Create temp binary file
-        java.io.File tmpFile = java.io.File.createTempFile("rj_bin_" + arrayName + "_", ".bin");
-        tmpFile.deleteOnExit();
+        // Prefer writing next to the CSV (sidecar) so subsequent calls find the bin via the
+        // existing fast-path check in populateSingleCsvArray and skip re-parsing entirely.
+        // Fall back to a temp file if the directory is not writable.
+        java.io.File tmpFile;
+        boolean usingSidecar = false;
+        if (sidecarPath != null) {
+            java.io.File sidecarFile = new java.io.File(sidecarPath);
+            java.io.File parentDir = sidecarFile.getParentFile();
+            if (parentDir != null && parentDir.canWrite()) {
+                tmpFile = sidecarFile;
+                usingSidecar = true;
+            } else {
+                tmpFile = java.io.File.createTempFile("rj_bin_" + arrayName + "_", ".bin");
+                tmpFile.deleteOnExit();
+            }
+        } else {
+            tmpFile = java.io.File.createTempFile("rj_bin_" + arrayName + "_", ".bin");
+            tmpFile.deleteOnExit();
+        }
 
         // Parse CSV and write as flat float32 (little-endian)
         int valueCount = 0;
@@ -399,7 +431,8 @@ public class TranslateUtil {
 
         long elapsed = System.currentTimeMillis() - t0;
         System.out.println("[TranslateUtil] Binary-populated array '" + arrayName + "' with " + valueCount
-                + " float32 values (" + (tmpFile.length() / 1024) + " KB) in " + elapsed + "ms -> " + tmpFile.getAbsolutePath());
+                + " float32 values (" + (tmpFile.length() / 1024) + " KB) in " + elapsed + "ms"
+                + (usingSidecar ? " [sidecar]" : " [tmp]") + " -> " + tmpFile.getAbsolutePath());
     }
 
     /**

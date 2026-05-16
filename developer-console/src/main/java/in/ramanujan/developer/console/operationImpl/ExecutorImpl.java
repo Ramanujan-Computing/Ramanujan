@@ -236,6 +236,7 @@ public class ExecutorImpl implements Operation {
             for(int iter = 1; iter < args.size(); iter++) {
                 long csvReadStart = System.currentTimeMillis();
                 String csvPath = args.get(iter);
+                java.io.File csvFile = new java.io.File(csvPath);
                 System.out.println("[createJson] CSV " + iter + "/" + (args.size()-1) + ": " + csvPath);
                 System.out.flush();
                 CsvInformation csvInformation = new CsvInformation();
@@ -244,8 +245,11 @@ public class ExecutorImpl implements Operation {
                 // Fast path: if a .bin file exists (resolving any symlinks), skip reading
                 // the full CSV text — just read the first line to get column count and
                 // compute row count from the binary file size.
+                // mtime guard: only use the bin if it is at least as new as the CSV, so that
+                // updated hidden-state CSVs are never served a stale dim-stub.
                 java.io.File binFile = resolveBinFile(csvPath);
-                if (binFile != null && binFile.exists() && binFile.length() > 0) {
+                if (binFile != null && binFile.exists() && binFile.length() > 0
+                        && binFile.lastModified() >= csvFile.lastModified()) {
                     try {
                         long numFloats = binFile.length() / 4;
                         // Read first line AND peek at second line.
