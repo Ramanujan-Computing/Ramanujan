@@ -262,9 +262,15 @@ matmul_bias_GPU_2(h_ff_buf, c_fc_proj_w, c_fc_proj_b, h_out_buf, kp_fcp, n_seq, 
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Step 10 — Residual Add 2 (GPU):  hidden += h_out_buf
+# Step 10 — Residual Add 2 (host):  hidden += h_out_buf
+# Must run on host so Array.getValues() is populated for the dump command.
+# GPU writes update ArrayValue.val but NOT the Java Map — dump reads the Map.
 # ════════════════════════════════════════════════════════════════════════════
-residual_add_GPU_2(hidden, h_out_buf, n_seq, 768)
+_i = 0
+_total = n_seq * 768
+while _i < _total:
+    hidden[_i] = hidden[_i] + h_out_buf[_i]
+    _i = _i + 1
 
 # hidden is now the output of this transformer block.
 # The orchestrator will dump it with: dump hidden <path>

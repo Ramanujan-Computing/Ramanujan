@@ -24,6 +24,7 @@ import datetime
 import math
 import os
 import platform
+import select
 import shutil
 import subprocess
 import sys
@@ -166,46 +167,73 @@ class RjServer:
         for line in self.proc.stderr:
             sys.stderr.write("[JVM] " + line)
 
+    def _readline_deadline(self, deadline: float) -> str:
+        """readline() that actually respects a wall-clock deadline via select."""
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return None  # caller treats None as timeout
+            ready, _, _ = select.select([self.proc.stdout], [], [], min(remaining, 1.0))
+            if ready:
+                line = self.proc.stdout.readline()
+                return line  # empty string means EOF
+            # select timed out but deadline not yet reached — loop
+
     def run_kernel(self, kernel_py: str, csv_args: list,
-                   dump_vars: dict, timeout: int = 600):
+                   dump_vars: dict, timeout: int = 60):
         args_str = " ".join([kernel_py] + csv_args)
         print(args_str)
         self.proc.stdin.write(f"run {args_str}\n")
         self.proc.stdin.flush()
 
         deadline = time.time() + timeout
-        while time.time() < deadline:
-            line = self.proc.stdout.readline()
+        while True:
+            line = self._readline_deadline(deadline)
+            if line is None:
+                raise RuntimeError(f"KERNEL_TIMEOUT after {timeout}s")
             if not line:
-                log(f"ERROR: JVM closed during {os.path.basename(kernel_py)}")
-                sys.exit(1)
+                raise RuntimeError(f"JVM closed during {os.path.basename(kernel_py)}")
             line = line.rstrip()
             if line == "KERNEL_DONE":
                 break
             if line.startswith("KERNEL_ERROR"):
-                log(f"ERROR: {line}")
-                sys.exit(1)
-        else:
-            log(f"TIMEOUT: kernel {os.path.basename(kernel_py)} after {timeout}s")
-            sys.exit(1)
+                raise RuntimeError(f"KERNEL_ERROR: {line}")
 
         for name, path in dump_vars.items():
             self.proc.stdin.write(f"dump {name} {path}\n")
             self.proc.stdin.flush()
             ddl = time.time() + 60
-            while time.time() < ddl:
-                dline = self.proc.stdout.readline()
+            while True:
+                dline = self._readline_deadline(ddl)
+                if dline is None:
+                    raise RuntimeError(f"TIMEOUT during dump {name}")
                 if not dline:
-                    log(f"ERROR: JVM closed during dump {name}")
-                    sys.exit(1)
+                    raise RuntimeError(f"JVM closed during dump {name}")
                 if dline.rstrip().startswith("Dumped"):
                     break
 
+    def kill(self):
+        if self.proc:
+            try:
+                self.proc.kill()
+                self.proc.wait(timeout=5)
+            except Exception:
+                pass
+            self.proc = None
+
+    def restart(self):
+        log("Killing stuck JVM and restarting …")
+        self.kill()
+        self.start()
+
     def shutdown(self):
         if self.proc:
-            self.proc.stdin.write("quit\n")
-            self.proc.stdin.flush()
-            self.proc.wait(timeout=10)
+            try:
+                self.proc.stdin.write("quit\n")
+                self.proc.stdin.flush()
+                self.proc.wait(timeout=10)
+            except Exception:
+                self.kill()
             log("JVM server shut down")
 
 
@@ -257,9 +285,17 @@ def run_layer(
     out_hidden_csv = os.path.join(work_dir, f"out_hidden_l{layer_idx}.csv")
     dump_vars = {"hidden": out_hidden_csv}
 
-    rj_server.run_kernel(kernel_path, csv_args, dump_vars)
+    for attempt in range(3):
+        try:
+            rj_server.run_kernel(kernel_path, csv_args, dump_vars)
+            return read_flat_csv(out_hidden_csv)
+        except RuntimeError as e:
+            log(f"  layer {layer_idx} attempt {attempt+1} failed: {e}")
+            if attempt == 2:
+                raise
+            rj_server.restart()
 
-    return read_flat_csv(out_hidden_csv)
+    raise RuntimeError("unreachable")
 
 
 # ---------------------------------------------------------------------------
