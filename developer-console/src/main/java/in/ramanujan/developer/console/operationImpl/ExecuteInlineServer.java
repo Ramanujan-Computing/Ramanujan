@@ -45,6 +45,14 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
  */
 public class ExecuteInlineServer extends ExecuteInline {
 
+    // Compiled DAG cache — reused across calls for the same kernel file.
+    // The server is single-threaded (stdin loop), so no synchronisation needed.
+    private String               cachedKernelPath  = null;
+    private DagElement           cachedFirstDag    = null;
+    private List<DagElement>     cachedDagList     = null;
+    private Map<String, Variable> cachedVariableMap = null;
+    private Map<String, Array>    cachedArrayMap    = null;
+
     @Override
     public void execute(List<String> args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -94,51 +102,83 @@ public class ExecuteInlineServer extends ExecuteInline {
     private void runKernel(List<String> args) throws IOException, CompilationException {
         long t0 = System.currentTimeMillis();
 
-        Map<String, Variable> variableMap = new HashMap<>();
-        Map<String, Array> arrayMap = new HashMap<>();
-
         System.err.println("[Server] run: " + args.get(0) + " +" + (args.size() - 1) + " CSVs");
 
         CodeRunRequest req = createJson(args);
         System.err.println("[Server] createJson: " + (System.currentTimeMillis() - t0) + "ms");
-        String code = req.getCode();
+        String kernelPath = args.get(0);
         List<CsvInformation> csvList = req.getCsvInformationList() != null
                 ? req.getCsvInformationList() : new ArrayList<>();
 
-        Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
-        ActualDebugCodeCreator debugCreator = new ActualDebugCodeCreator("", 0);
+        Map<String, Variable> variableMap;
+        Map<String, Array>    arrayMap;
+        DagElement            firstDag;
+        List<DagElement>      dagList;
 
-        String extractedCode;
-        String functionCode = "";
-        int linesForFunctions;
+        boolean cacheHit = kernelPath.equals(cachedKernelPath) && cachedFirstDag != null;
+        if (cacheHit) {
+            variableMap = cachedVariableMap;
+            arrayMap    = cachedArrayMap;
+            firstDag    = cachedFirstDag;
+            dagList     = cachedDagList;
 
-        if (TranslateUtil.isPythonCode(code)) {
-            extractedCode = code;
-            linesForFunctions = 0;
-        } else {
-            ExtractedCodeAndFunctionCode extracted =
-                    translateUtil.extractCodeWithoutAbstractCodeDeclaration(
-                            code, functionCallsRuleEngineInput, debugCreator);
-            for (Map.Entry<String, RuleEngineInput> e : functionCallsRuleEngineInput.entrySet()) {
-                for (Variable v : e.getValue().getVariables()) variableMap.put(v.getId(), v);
-                for (Array a : e.getValue().getArrays())        arrayMap.put(a.getId(), a);
+            // Clear mutable state so re-population starts clean
+            for (Array a : arrayMap.values()) {
+                if (a.getValues() != null) a.getValues().clear();
+                a.setBinaryFile(null);
             }
-            extractedCode = extracted.getExtractedCode();
-            functionCode  = extracted.getFunctionCode();
-            linesForFunctions = debugCreator.getLine();
+            for (Variable v : variableMap.values()) {
+                v.setValue(null);
+            }
+
+            long repopStart = System.currentTimeMillis();
+            translateUtil.repopulateCsvArrayValues(arrayMap, csvList);
+            System.err.println("[Server] compiled in (cached) " + (System.currentTimeMillis() - t0)
+                    + "ms  repopulate=" + (System.currentTimeMillis() - repopStart) + "ms");
+        } else {
+            variableMap = new HashMap<>();
+            arrayMap    = new HashMap<>();
+
+            String code = req.getCode();
+            Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
+            ActualDebugCodeCreator debugCreator = new ActualDebugCodeCreator("", 0);
+
+            String extractedCode;
+            int linesForFunctions;
+
+            if (TranslateUtil.isPythonCode(code)) {
+                extractedCode = code;
+                linesForFunctions = 0;
+            } else {
+                ExtractedCodeAndFunctionCode extracted =
+                        translateUtil.extractCodeWithoutAbstractCodeDeclaration(
+                                code, functionCallsRuleEngineInput, debugCreator);
+                for (Map.Entry<String, RuleEngineInput> e : functionCallsRuleEngineInput.entrySet()) {
+                    for (Variable v : e.getValue().getVariables()) variableMap.put(v.getId(), v);
+                    for (Array a : e.getValue().getArrays())        arrayMap.put(a.getId(), a);
+                }
+                extractedCode = extracted.getExtractedCode();
+                linesForFunctions = debugCreator.getLine();
+            }
+
+            CodeSnippetElement firstSnippet = translateUtil.getCodeSnippets(
+                    extractedCode, new HashMap<>(), new HashMap<>(), new HashMap<>());
+
+            dagList = new ArrayList<>();
+            Map<String, String> dagCodeMap = new HashMap<>();
+            firstDag = translateUtil.populateAllDagElements(
+                    firstSnippet, csvList, functionCallsRuleEngineInput,
+                    variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
+
+            System.err.println("[Server] compiled in " + (System.currentTimeMillis() - t0)
+                    + "ms  DAG=" + (dagList.size() + 1));
+
+            cachedKernelPath  = kernelPath;
+            cachedFirstDag    = firstDag;
+            cachedDagList     = dagList;
+            cachedVariableMap = variableMap;
+            cachedArrayMap    = arrayMap;
         }
-
-        CodeSnippetElement firstSnippet = translateUtil.getCodeSnippets(
-                extractedCode, new HashMap<>(), new HashMap<>(), new HashMap<>());
-
-        List<DagElement> dagList = new ArrayList<>();
-        Map<String, String> dagCodeMap = new HashMap<>();
-        DagElement firstDag = translateUtil.populateAllDagElements(
-                firstSnippet, csvList, functionCallsRuleEngineInput,
-                variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
-
-        System.err.println("[Server] compiled in " + (System.currentTimeMillis() - t0)
-                + "ms  DAG=" + (dagList.size() + 1));
 
         long execStart = System.currentTimeMillis();
         boolean sequential = "true".equalsIgnoreCase(System.getenv("RAMANUJAN_SEQUENTIAL"));

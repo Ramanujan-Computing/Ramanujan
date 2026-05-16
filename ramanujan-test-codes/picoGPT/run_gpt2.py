@@ -347,41 +347,47 @@ def generate(
     if not os.path.exists(kernel_path):
         raise FileNotFoundError(f"Kernel not found: {kernel_path}")
 
-    # ── Start Ramanujan JVM server ──────────────────────────────────────────
-    rj_server = RjServer(java_home=java_home, rj_ws=rj_ws)
-    work_dir  = tempfile.mkdtemp(prefix="gpt2_rj_")
+    # ── Shared working directory (persists across tokens, cleaned up at end) ──
+    work_dir = tempfile.mkdtemp(prefix="gpt2_rj_")
     log(f"Working directory: {work_dir}")
 
+    generated: list = []   # output integer token indexes
+
     try:
-        rj_server.start()
-
-        generated: list = []   # output integer token indexes
-
         for step in range(n_tokens):
             n_seq   = len(input_ids) + len(generated)
             all_ids = input_ids + generated
 
             log(f"\n── Token {step + 1}/{n_tokens}  (n_seq={n_seq}) ──")
 
-            # 1. Embedding lookup (NumPy; double-precision vocab indexing)
-            t0     = time.time()
-            hidden = embed(all_ids, wte, wpe)   # (n_seq, 768)
-            hidden_flat = hidden.flatten().tolist()
-            log(f"  embed: {time.time()-t0:.3f}s")
+            # Fresh JVM per token: prevents TranslateUtil stub-string accumulation
+            # from causing GC storms across the 12 × N_TOKENS kernel invocations.
+            rj_server = RjServer(java_home=java_home, rj_ws=rj_ws)
+            try:
+                rj_server.start()
 
-            # 2. Twelve transformer blocks via Ramanujan (GPU matmuls)
-            for layer_idx in range(N_LAYER):
-                t0 = time.time()
-                hidden_flat = run_layer(
-                    rj_server, kernel_path, work_dir,
-                    weights_dir, layer_idx, n_seq, hidden_flat,
-                )
-                log(f"  layer {layer_idx:2d}: {time.time()-t0:.3f}s")
+                # 1. Embedding lookup (NumPy; double-precision vocab indexing)
+                t0     = time.time()
+                hidden = embed(all_ids, wte, wpe)   # (n_seq, 768)
+                hidden_flat = hidden.flatten().tolist()
+                log(f"  embed: {time.time()-t0:.3f}s")
 
-            # 3. Final layer norm + greedy argmax (NumPy; double-precision)
-            t0         = time.time()
-            next_token = gpt2_head(hidden_flat, n_seq, wte, ln_f_g, ln_f_b)
-            log(f"  head:  {time.time()-t0:.3f}s  →  token_id={next_token}")
+                # 2. Twelve transformer blocks via Ramanujan (GPU matmuls)
+                for layer_idx in range(N_LAYER):
+                    t0 = time.time()
+                    hidden_flat = run_layer(
+                        rj_server, kernel_path, work_dir,
+                        weights_dir, layer_idx, n_seq, hidden_flat,
+                    )
+                    log(f"  layer {layer_idx:2d}: {time.time()-t0:.3f}s")
+
+                # 3. Final layer norm + greedy argmax (NumPy; double-precision)
+                t0         = time.time()
+                next_token = gpt2_head(hidden_flat, n_seq, wte, ln_f_g, ln_f_b)
+                log(f"  head:  {time.time()-t0:.3f}s  →  token_id={next_token}")
+
+            finally:
+                rj_server.shutdown()
 
             generated.append(next_token)
 
@@ -392,7 +398,6 @@ def generate(
         return output_text
 
     finally:
-        rj_server.shutdown()
         shutil.rmtree(work_dir, ignore_errors=True)
 
 

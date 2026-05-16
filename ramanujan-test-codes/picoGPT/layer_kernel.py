@@ -75,6 +75,21 @@ def matmul_bias_GPU_2(A, W, bias, C, kparams, row, col):
     C[c_idx] = s + bias[col]
 
 
+# ── GPU Kernel: GELU activation (in-place on h_ff_buf) ──────────────────────
+# GELU(x) = 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715·x³)))
+# Dispatched as a 2-D NDRange: row ∈ [0, n_seq)  col ∈ [0, 3072)
+def gelu_GPU_2(h_ff_buf, row, col):
+    gid = row * 3072 + col
+    val = h_ff_buf[gid]
+    cube = val * val * val
+    u = 0.7978845608 * (val + 0.044715 * cube)
+    two_u = 2.0 * u
+    EXP(two_u)
+    denom = two_u + 1.0
+    tanh_u = 1.0 - 2.0 / denom
+    h_ff_buf[gid] = 0.5 * val * (1.0 + tanh_u)
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Step 1 — Layer Norm 1 (host)
 # Normalises each row of hidden with mean/variance computed over n_embd=768.
@@ -266,35 +281,15 @@ matmul_bias_GPU_2(h_ln2, c_fc_w, c_fc_b, h_ff_buf, kp_fc, n_seq, 3072)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Step 8 — GELU Activation (host, in-place on h_ff_buf)
-#
-# GELU(x) = 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715·x³)))
-# where tanh(u) = 1 − 2/(exp(2u)+1)   (computed via built-in EXP)
-# √(2/π) ≈ 0.7978845608
+# Step 8 — GELU Activation (GPU, in-place on h_ff_buf)
 # ════════════════════════════════════════════════════════════════════════════
-pos = 0
-while pos < n_seq:
-    j = 0
-    while j < 3072:
-        ff_idx = pos * 3072 + j
-        val  = h_ff_buf[ff_idx]
-        cube = val * val * val
-        u    = 0.7978845608 * (val + 0.044715 * cube)
-        two_u = 2.0 * u
-        EXP(two_u)                                  # two_u  ← exp(2u)
-        denom  = two_u + 1.0
-        tanh_u = 1.0 - 2.0 / denom
-        h_ff_buf[ff_idx] = 0.5 * val * (1.0 + tanh_u)
-        j = j + 1
-    pos = pos + 1
+gelu_GPU_2(h_ff_buf, n_seq, 3072)
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # Step 9 — FFN Down-Projection (GPU)
 # h_out_buf[row*768+col] = Σ_k h_ff_buf[row*3072+k] * c_fc_proj_w[k*768+col]
 #                          + c_fc_proj_b[col]
-# (h_ff_buf has been modified in-place by GELU on the host; the runtime
-#  re-stages host → GPU memory before dispatching this kernel.)
 # ════════════════════════════════════════════════════════════════════════════
 matmul_bias_GPU_2(h_ff_buf, c_fc_proj_w, c_fc_proj_b, h_out_buf, kp_fcp, n_seq, 768)
 

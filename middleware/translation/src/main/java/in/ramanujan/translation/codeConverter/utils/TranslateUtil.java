@@ -403,6 +403,34 @@ public class TranslateUtil {
     }
 
     /**
+     * Re-populates array values from fresh CSV data using an existing arrayMap.
+     * Called on cache-hit paths where interpretPython is skipped — only the
+     * per-call CSV values (e.g. hidden states) need to be refreshed.
+     */
+    public void repopulateCsvArrayValues(Map<String, Array> arrayMap, List<CsvInformation> csvList) {
+        Map<String, Array> arrayByName = new HashMap<>();
+        for (Map.Entry<String, Array> entry : arrayMap.entrySet()) {
+            String id = entry.getKey();
+            if (id != null && id.contains("_name_")) {
+                arrayByName.put(id.split("_name_")[1], entry.getValue());
+            }
+        }
+        int nThreads = Math.min(csvList.size(), Runtime.getRuntime().availableProcessors());
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, nThreads));
+        java.util.concurrent.CountDownLatch latch =
+                new java.util.concurrent.CountDownLatch(csvList.size());
+        for (CsvInformation csv : csvList) {
+            pool.submit(() -> {
+                try { populateSingleCsvArray(csv, arrayByName); }
+                finally { latch.countDown(); }
+            });
+        }
+        try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        pool.shutdown();
+    }
+
+    /**
      * Detects whether the given code is Python or Ramanujan language.
      * This is a shared static method used by both TranslateUtil and TranslateService.
      * 
