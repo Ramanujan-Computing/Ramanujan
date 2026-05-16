@@ -420,7 +420,10 @@ public class TranslateUtil {
         // However, threadStart(t) { ... } and threadParallelismCycle(t, n) { ... }
         // are Ramanujan threading constructs that CAN appear in Python scripts.
         // Strip those blocks before checking for stray braces.
-        String codeWithoutThreadBlocks = trimmedCode;
+        // Strip Python line comments (#...) before checking for braces, so that
+        // notation like Σ_{k} in a comment does not fool the brace detector.
+        String codeWithoutComments = trimmedCode.replaceAll("(?m)#[^\n]*", "");
+        String codeWithoutThreadBlocks = codeWithoutComments;
         // Remove threadStart(...) { ... } and threadParallelismCycle(...) { ... } blocks
         // Also remove threadTriggerOnSomeThreadCompletion(...) { ... } blocks
         codeWithoutThreadBlocks = codeWithoutThreadBlocks.replaceAll(
