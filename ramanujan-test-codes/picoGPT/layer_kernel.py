@@ -20,10 +20,7 @@
 #   c_fc_b        flat 1D  3072                  FFN up-projection bias
 #   c_fc_proj_w   flat 1D  3072 * 768            FFN down-projection weight
 #   c_fc_proj_b   flat 1D  768                   FFN down-projection bias
-#   qkv_buf       flat 1D  n_seq * 2304  zeros   GPU write: QKV output
-#   h_attn_buf    flat 1D  n_seq * 768   zeros   GPU write: O-proj output
-#   h_ff_buf      flat 1D  n_seq * 3072  zeros   GPU write: FFN-1 output
-#   h_out_buf     flat 1D  n_seq * 768   zeros   GPU write: FFN-2 output
+#   (qkv_buf, h_attn_buf, h_ff_buf, h_out_buf are now local arrays, not CSV inputs)
 #
 # Output (via dump):
 #   hidden   (updated in-place; contains the block output)
@@ -39,7 +36,14 @@ n_seq = params[0]
 h_ln1    = [0 for _ in range(76800)]    # 100 * 768  — LN-1 output
 h_ln2    = [0 for _ in range(76800)]    # 100 * 768  — LN-2 output
 attn_out = [0 for _ in range(76800)]    # 100 * 768  — attention weighted sum
-scores   = [0 for _ in range(100)]      # per-query attention scores (max n_seq)
+scores_2d = [0 for _ in range(120000)]  # 12 * 100 * 100 scratch for causal_attn GPU kernel
+
+# GPU output buffers — declared locally so the JVM never serialises their
+# zero-init data to JSON (saves ~290K zero entries = ~4.3 MB per layer call).
+qkv_buf    = [0 for _ in range(230400)]   # 100 * 2304 — QKV projection output
+h_attn_buf = [0 for _ in range(76800)]    # 100 * 768  — O-proj output
+h_ff_buf   = [0 for _ in range(307200)]   # 100 * 3072 — FFN up-proj output
+h_out_buf  = [0 for _ in range(76800)]    # 100 * 768  — FFN down-proj output
 
 # kparams arrays carry [K, N] for each matmul variant
 kp_qkv  = [0 for _ in range(2)]    # QKV:   K=768,  N=2304
@@ -90,45 +94,114 @@ def gelu_GPU_2(h_ff_buf, row, col):
     h_ff_buf[gid] = 0.5 * val * (1.0 + tanh_u)
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# Step 1 — Layer Norm 1 (host)
-# Normalises each row of hidden with mean/variance computed over n_embd=768.
-# Writes result into h_ln1.
-# ════════════════════════════════════════════════════════════════════════════
-pos = 0
-while pos < n_seq:
-    # --- mean ---
+# ── GPU Kernel: Layer Normalisation ─────────────────────────────────────────
+# Each work item (pos) normalises one token row of n_embd=768.
+# Dispatched as a 1-D NDRange: pos ∈ [0, n_seq)
+def layernorm_GPU_1(hidden, gamma, beta, out, pos):
+    base = pos * 768
     mean = 0.0
     k = 0
+    hk = 0
     while k < 768:
-        idx = pos * 768 + k
-        mean = mean + hidden[idx]
+        hk = base + k
+        mean = mean + hidden[hk]
         k = k + 1
-    mean = mean / 768
-
-    # --- variance ---
+    mean = mean / 768.0
     var = 0.0
     k = 0
     while k < 768:
-        idx = pos * 768 + k
-        diff = hidden[idx] - mean
+        hk = base + k
+        diff = hidden[hk] - mean
         var = var + diff * diff
         k = k + 1
-    var = var / 768
-
-    # --- inverse std ---
-    std = var + 0.00001
-    SQRT(std)
-
-    # --- normalise, scale, shift ---
+    var = var / 768.0
+    std_val = var + 0.00001
+    SQRT(std_val)
     k = 0
     while k < 768:
-        idx = pos * 768 + k
-        norm_val = (hidden[idx] - mean) / std
-        h_ln1[idx] = norm_val * ln1_g[k] + ln1_b[k]
+        idx = base + k
+        norm_val = (hidden[idx] - mean) / std_val
+        out[idx] = norm_val * gamma[k] + beta[k]
         k = k + 1
 
-    pos = pos + 1
+
+# ── GPU Kernel: Causal Multi-Head Self-Attention ─────────────────────────────
+# Each work item (i, h) handles one (query_position, head) pair end-to-end:
+#   1. Compute QK scores and apply causal mask
+#   2. Softmax over the sequence dimension
+#   3. Weighted value accumulation → attn_out
+# scores_2d layout: [h * 10000 + i * 100 + j]  (MAX_SEQ=100, n_head=12)
+# Each (i,h) pair writes to a disjoint slice — no race conditions.
+# Dispatched as a 2-D NDRange: i ∈ [0, n_seq)  h ∈ [0, 12)
+def causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, params, i, h):
+    n_seq = params[0]
+    h_off = h * 64
+    score_base = h * 10000 + i * 100
+    j = 0
+    si = 0
+    dk = 0
+    while j < n_seq:
+        sc = 0.0
+        dk = 0
+        while dk < 64:
+            q_idx = i * 2304 + h_off + dk
+            k_idx = j * 2304 + 768 + h_off + dk
+            sc = sc + qkv_buf[q_idx] * qkv_buf[k_idx]
+            dk = dk + 1
+        sc = sc / 8.0
+        if j > i:
+            sc = -10000000000.0
+        si = score_base + j
+        scores_2d[si] = sc
+        j = j + 1
+    max_sc = scores_2d[score_base]
+    j = 1
+    while j < n_seq:
+        si = score_base + j
+        s = scores_2d[si]
+        if s > max_sc:
+            max_sc = s
+        j = j + 1
+    sum_e = 0.0
+    j = 0
+    while j < n_seq:
+        si = score_base + j
+        sc_j = scores_2d[si] - max_sc
+        EXP(sc_j)
+        scores_2d[si] = sc_j
+        sum_e = sum_e + sc_j
+        j = j + 1
+    j = 0
+    while j < n_seq:
+        si = score_base + j
+        scores_2d[si] = scores_2d[si] / sum_e
+        j = j + 1
+    dk = 0
+    while dk < 64:
+        ov = 0.0
+        j = 0
+        while j < n_seq:
+            si = score_base + j
+            v_idx = j * 2304 + 1536 + h_off + dk
+            ov = ov + scores_2d[si] * qkv_buf[v_idx]
+            j = j + 1
+        ao_idx = i * 768 + h_off + dk
+        attn_out[ao_idx] = ov
+        dk = dk + 1
+
+
+# ── GPU Kernel: Residual Add ─────────────────────────────────────────────────
+# hidden[idx] += buf[idx]  for every element in n_seq * 768.
+# Dispatched as a 2-D NDRange: row ∈ [0, n_seq)  col ∈ [0, 768)
+def residual_add_GPU_2(hidden, buf, row, col):
+    idx = row * 768 + col
+    hidden[idx] = hidden[idx] + buf[idx]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Step 1 — Layer Norm 1 (GPU)
+# ════════════════════════════════════════════════════════════════════════════
+layernorm_GPU_1(hidden, ln1_g, ln1_b, h_ln1, n_seq)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -140,79 +213,10 @@ matmul_bias_GPU_2(h_ln1, c_attn_w, c_attn_b, qkv_buf, kp_qkv, n_seq, 2304)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Step 3 — Multi-Head Causal Self-Attention (host)
-#
-# Layout inside qkv_buf for token i:
-#   Q[i, h, k] = qkv_buf[i*2304 + h*64 + k]          (heads 0..11, dim 0..63)
-#   K[i, h, k] = qkv_buf[i*2304 + 768  + h*64 + k]
-#   V[i, h, k] = qkv_buf[i*2304 + 1536 + h*64 + k]
-#
-# For each head:
-#   scores[j] = (Q[i,h] · K[j,h]) / sqrt(64) = ... / 8.0
-#   causal mask: scores[j] = -1e10 when j > i
-#   attn_weights = softmax(scores)
-#   attn_out[i, h] = Σ_j attn_weights[j] * V[j, h]
+# Step 3 — Multi-Head Causal Self-Attention (GPU)
+# scores_2d[h*10000 + i*100 + j] holds per-(i,h) softmax weights.
 # ════════════════════════════════════════════════════════════════════════════
-h = 0
-while h < 12:
-    h_off = h * 64          # byte offset into each token's 768-dim embedding
-
-    i = 0
-    while i < n_seq:
-
-        # --- compute attention scores for query position i, head h ---
-        j = 0
-        while j < n_seq:
-            sc = 0.0
-            dk = 0
-            while dk < 64:
-                q_idx = i * 2304 + h_off + dk
-                k_idx = j * 2304 + 768 + h_off + dk
-                sc = sc + qkv_buf[q_idx] * qkv_buf[k_idx]
-                dk = dk + 1
-            sc = sc / 8.0
-            if j > i:
-                sc = -10000000000.0     # causal mask (positions beyond query)
-            scores[j] = sc
-            j = j + 1
-
-        # --- softmax over scores[0 .. n_seq-1] ---
-        max_sc = scores[0]
-        j = 1
-        while j < n_seq:
-            if scores[j] > max_sc:
-                max_sc = scores[j]
-            j = j + 1
-
-        sum_e = 0.0
-        j = 0
-        while j < n_seq:
-            sc_j = scores[j] - max_sc
-            EXP(sc_j)
-            scores[j] = sc_j
-            sum_e = sum_e + sc_j
-            j = j + 1
-
-        j = 0
-        while j < n_seq:
-            scores[j] = scores[j] / sum_e
-            j = j + 1
-
-        # --- weighted sum of values → attn_out[i, h] ---
-        dk = 0
-        while dk < 64:
-            ov = 0.0
-            j = 0
-            while j < n_seq:
-                v_idx = j * 2304 + 1536 + h_off + dk
-                ov = ov + scores[j] * qkv_buf[v_idx]
-                j = j + 1
-            ao_idx = i * 768 + h_off + dk
-            attn_out[ao_idx] = ov
-            dk = dk + 1
-
-        i = i + 1
-    h = h + 1
+causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, params, n_seq, 12)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -224,52 +228,15 @@ matmul_bias_GPU_2(attn_out, c_proj_w, c_proj_b, h_attn_buf, kp_proj, n_seq, 768)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Step 5 — Residual Add 1 (host):  hidden += h_attn_buf
+# Step 5 — Residual Add 1 (GPU):  hidden += h_attn_buf
 # ════════════════════════════════════════════════════════════════════════════
-pos = 0
-while pos < n_seq:
-    k = 0
-    while k < 768:
-        idx = pos * 768 + k
-        hidden[idx] = hidden[idx] + h_attn_buf[idx]
-        k = k + 1
-    pos = pos + 1
+residual_add_GPU_2(hidden, h_attn_buf, n_seq, 768)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Step 6 — Layer Norm 2 (host)
-# Same structure as LN-1; writes result into h_ln2.
+# Step 6 — Layer Norm 2 (GPU)
 # ════════════════════════════════════════════════════════════════════════════
-pos = 0
-while pos < n_seq:
-    mean = 0.0
-    k = 0
-    while k < 768:
-        idx = pos * 768 + k
-        mean = mean + hidden[idx]
-        k = k + 1
-    mean = mean / 768
-
-    var = 0.0
-    k = 0
-    while k < 768:
-        idx = pos * 768 + k
-        diff = hidden[idx] - mean
-        var = var + diff * diff
-        k = k + 1
-    var = var / 768
-
-    std = var + 0.00001
-    SQRT(std)
-
-    k = 0
-    while k < 768:
-        idx = pos * 768 + k
-        norm_val = (hidden[idx] - mean) / std
-        h_ln2[idx] = norm_val * ln2_g[k] + ln2_b[k]
-        k = k + 1
-
-    pos = pos + 1
+layernorm_GPU_1(hidden, ln2_g, ln2_b, h_ln2, n_seq)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -295,16 +262,9 @@ matmul_bias_GPU_2(h_ff_buf, c_fc_proj_w, c_fc_proj_b, h_out_buf, kp_fcp, n_seq, 
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Step 10 — Residual Add 2 (host):  hidden += h_out_buf
+# Step 10 — Residual Add 2 (GPU):  hidden += h_out_buf
 # ════════════════════════════════════════════════════════════════════════════
-pos = 0
-while pos < n_seq:
-    k = 0
-    while k < 768:
-        idx = pos * 768 + k
-        hidden[idx] = hidden[idx] + h_out_buf[idx]
-        k = k + 1
-    pos = pos + 1
+residual_add_GPU_2(hidden, h_out_buf, n_seq, 768)
 
 # hidden is now the output of this transformer block.
 # The orchestrator will dump it with: dump hidden <path>

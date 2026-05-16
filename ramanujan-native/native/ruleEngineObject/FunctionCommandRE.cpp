@@ -582,6 +582,17 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
     for (int di = 0; di < gpuDataArgCount; di++) {
         gpuNeeded = (size_t)gpuAvCache[di]->totalSize * sizeof(float);
 
+        // Fast path: buffer already on GPU from an earlier kernel in this execution.
+        // gpuBuffer is set on the ArrayValue by whichever kernel first uploaded it.
+        // All kernels that share the same ArrayValue* automatically see it.
+        if (gpuAvCache[di]->gpuBuffer != nullptr && gpuAvCache[di]->gpuBufferBytes == gpuNeeded) {
+            gpuBuffers[di]     = (cl_mem)gpuAvCache[di]->gpuBuffer;
+            gpuBufferSizes[di] = gpuNeeded;
+            clSetKernelArg(gpuKernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
+            continue;
+        }
+
+        // Normal path: allocate buffer or re-upload host data.
         gpuBufferReallocated = false;
         if (!gpuBuffers[di] || gpuBufferSizes[di] != gpuNeeded) {
             if (gpuBuffers[di]) { clReleaseMemObject(gpuBuffers[di]); gpuBuffers[di] = nullptr; }
@@ -592,7 +603,9 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
                 gpuBufferSizes[di]   = gpuNeeded;
                 gpuBufferReallocated = true;
             }
-        } else {
+        } else if (!gpuAvCache[di]->isBinaryLoaded) {
+            // Activation/scratch array: host may have updated it, re-upload.
+            // Binary-loaded weight arrays never change after first load — skip write.
             gpuErr = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0, gpuNeeded, gpuAvCache[di]->val, 0, nullptr, nullptr);
         }
 
@@ -607,6 +620,9 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
                 fprintf(stderr, "[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di, gpuSetErr);
             }
         }
+        // Publish this buffer so subsequent kernels accessing the same ArrayValue can reuse it.
+        gpuAvCache[di]->gpuBuffer      = gpuBuffers[di];
+        gpuAvCache[di]->gpuBufferBytes = gpuNeeded;
     }
 
     // Skip dispatch when any globalWorkSize dimension is 0
@@ -625,7 +641,9 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
 
         if (gpuErr == CL_SUCCESS) {
             // -- Queue all reads as non-blocking, then sync once --
+            // Binary-loaded weight arrays are read-only and never modified by any kernel — skip.
             for (int di = 0; di < gpuDataArgCount; di++) {
+                if (gpuAvCache[di]->isBinaryLoaded) continue;
                 clEnqueueReadBuffer(
                     s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0,
                     gpuBufferSizes[di], gpuAvCache[di]->val,

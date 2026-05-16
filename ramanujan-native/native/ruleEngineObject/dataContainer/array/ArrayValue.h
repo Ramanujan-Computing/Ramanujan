@@ -37,6 +37,12 @@ public:
     bool   isBinaryLoaded  = false;
     bool   isCachedVal     = false;
     float* cachedFloatData = nullptr;  // non-null after first load; never freed (static lifetime)
+
+    // GPU buffer residency (set/read by GPUFunctionCommandRE; void* avoids pulling in OpenCL headers here)
+    // When non-null: gpuBuffer holds a valid cl_mem for this array's current data.
+    // Any GPU kernel that needs this array as input can reuse it without re-uploading.
+    void*  gpuBuffer      = nullptr;
+    size_t gpuBufferBytes = 0;
     
     // Optimized default constructor - no allocations
     ArrayValue() : array(nullptr), dimensions(nullptr), dimensionSize(0), 

@@ -232,15 +232,11 @@ def run_layer(
     # Sym-link layer weight CSVs under generic names
     setup_layer_links(work_dir, weights_dir, layer_idx)
 
-    # Pre-zeroed GPU output buffers (must be CSV inputs so Ramanujan creates
-    # valid OpenCL cl_mem handles for GPU write operations)
-    write_zeros_csv(os.path.join(work_dir, "qkv_buf.csv"),    n_seq * 2304)
-    write_zeros_csv(os.path.join(work_dir, "h_attn_buf.csv"), n_seq * 768)
-    write_zeros_csv(os.path.join(work_dir, "h_ff_buf.csv"),   n_seq * 3072)
-    write_zeros_csv(os.path.join(work_dir, "h_out_buf.csv"),  n_seq * 768)
-
     # Build ordered CSV argument list — order must match the kernel's expected
-    # array names (derived from filename stems by the Ramanujan runtime)
+    # array names (derived from filename stems by the Ramanujan runtime).
+    # qkv_buf / h_attn_buf / h_ff_buf / h_out_buf are now declared as local
+    # arrays inside layer_kernel.py — no longer passed as zero CSVs, which
+    # previously caused ~290K zero entries to be serialised through JNI per call.
     csv_args = [
         os.path.join(work_dir, "hidden.csv"),
         os.path.join(work_dir, "params.csv"),
@@ -256,10 +252,6 @@ def run_layer(
         os.path.join(work_dir, "c_fc_b.csv"),
         os.path.join(work_dir, "c_fc_proj_w.csv"),
         os.path.join(work_dir, "c_fc_proj_b.csv"),
-        os.path.join(work_dir, "qkv_buf.csv"),
-        os.path.join(work_dir, "h_attn_buf.csv"),
-        os.path.join(work_dir, "h_ff_buf.csv"),
-        os.path.join(work_dir, "h_out_buf.csv"),
     ]
 
     out_hidden_csv = os.path.join(work_dir, f"out_hidden_l{layer_idx}.csv")
