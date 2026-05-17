@@ -7,9 +7,11 @@ Architecture:
   • 12 × transformer blocks ─── Ramanujan        (GPU matmuls + host attention/norm)
   • Final layer norm + logits── Python / NumPy  (large vocab, exact doubles)
 
-The Ramanujan layer_kernel.py is invoked once per transformer block per
-generated token.  Layer weights are sym-linked into a temporary directory
-so the kernel always sees generic names (c_attn_w, ln1_g, …).
+All 12 transformer blocks are executed in a SINGLE JVM kernel call via
+transformer_stack.py, eliminating 11 of the 12 pipe round-trips (~89ms each).
+All 168 weight arrays (12 layers × 14 tensors) are passed as CSV args; the
+Ramanujan runtime auto-names them from their filename stems (l0_ln1_g, …).
+The legacy layer_kernel.py / run_layer() path is kept for debugging.
 
 Usage:
     python run_gpt2.py "Alan Turing theorized" --n-tokens 40 --weights-dir weights
@@ -49,7 +51,8 @@ N_FF    = 3072     # 4 * N_EMBD
 N_VOCAB = 50257
 N_CTX   = 1024
 
-KERNEL_NAME = "layer_kernel.py"
+KERNEL_NAME       = "layer_kernel.py"
+STACK_KERNEL_NAME = "transformer_stack.py"
 
 # ---------------------------------------------------------------------------
 # Logging helper
@@ -299,6 +302,59 @@ def run_layer(
 
 
 # ---------------------------------------------------------------------------
+# Batched 12-layer Ramanujan call — eliminates 11 pipe round-trips per token
+# ---------------------------------------------------------------------------
+def run_stack(
+    rj_server: RjServer,
+    stack_kernel_path: str,
+    work_dir: str,
+    weights_dir: str,
+    n_seq: int,
+    hidden_flat: list,
+) -> list:
+    """
+    Run transformer_stack.py for all 12 layers in a single JVM kernel call.
+    Passes hidden.csv + params.csv + 12×14 weight CSVs directly (no symlinks).
+    Returns the updated hidden state as a flat Python list.
+    """
+    write_flat_csv(os.path.join(work_dir, "hidden.csv"), hidden_flat)
+    write_flat_csv(os.path.join(work_dir, "params.csv"), [float(n_seq)])
+
+    weight_names = [
+        "ln1_g", "ln1_b",
+        "c_attn_w", "c_attn_b",
+        "c_proj_w", "c_proj_b",
+        "ln2_g", "ln2_b",
+        "c_fc_w", "c_fc_b",
+        "c_fc_proj_w", "c_fc_proj_b",
+    ]
+
+    csv_args = [
+        os.path.join(work_dir, "hidden.csv"),
+        os.path.join(work_dir, "params.csv"),
+    ]
+    for layer_idx in range(N_LAYER):
+        p = os.path.join(weights_dir, f"l{layer_idx}")
+        for name in weight_names:
+            csv_args.append(f"{p}_{name}.csv")
+
+    out_hidden_csv = os.path.join(work_dir, "out_hidden_stack.csv")
+    dump_vars = {"hidden": out_hidden_csv}
+
+    for attempt in range(3):
+        try:
+            rj_server.run_kernel(stack_kernel_path, csv_args, dump_vars)
+            return read_flat_csv(out_hidden_csv)
+        except RuntimeError as e:
+            log(f"  transformer_stack attempt {attempt+1} failed: {e}")
+            if attempt == 2:
+                raise
+            rj_server.restart()
+
+    raise RuntimeError("unreachable")
+
+
+# ---------------------------------------------------------------------------
 # Pure-NumPy GPT-2 helpers (embedding lookup, layer norm, logits)
 # These handle the large-vocab operations (n_vocab=50257) that require
 # exact double-precision indexing, not available in Ramanujan GPU kernels.
@@ -370,10 +426,13 @@ def generate(
         f"to generate exceeds max context {N_CTX}"
     )
 
-    # ── Locate kernel ───────────────────────────────────────────────────────
+    # ── Locate kernels ──────────────────────────────────────────────────────
     kernel_path = os.path.join(os.path.dirname(__file__), KERNEL_NAME)
     if not os.path.exists(kernel_path):
         raise FileNotFoundError(f"Kernel not found: {kernel_path}")
+    stack_kernel_path = os.path.join(os.path.dirname(__file__), STACK_KERNEL_NAME)
+    if not os.path.exists(stack_kernel_path):
+        raise FileNotFoundError(f"Stack kernel not found: {stack_kernel_path}")
 
     # ── Shared working directory (persists across tokens, cleaned up at end) ──
     work_dir = tempfile.mkdtemp(prefix="gpt2_rj_")
@@ -400,14 +459,13 @@ def generate(
                 hidden_flat = hidden.flatten().tolist()
                 log(f"  embed: {time.time()-t0:.3f}s")
 
-                # 2. Twelve transformer blocks via Ramanujan (GPU matmuls)
-                for layer_idx in range(N_LAYER):
-                    t0 = time.time()
-                    hidden_flat = run_layer(
-                        rj_server, kernel_path, work_dir,
-                        weights_dir, layer_idx, n_seq, hidden_flat,
-                    )
-                    log(f"  layer {layer_idx:2d}: {time.time()-t0:.3f}s")
+                # 2. All 12 transformer blocks in one JVM kernel call
+                t0 = time.time()
+                hidden_flat = run_stack(
+                    rj_server, stack_kernel_path, work_dir,
+                    weights_dir, n_seq, hidden_flat,
+                )
+                log(f"  stack (12 layers): {time.time()-t0:.3f}s")
 
                 # 3. Final layer norm + greedy argmax (NumPy; double-precision)
                 t0         = time.time()
