@@ -31,19 +31,18 @@
 n_seq = params[0]
 
 # ── Local working arrays (read by GPU kernels, written by host) ──────────────
-# Size = MAX_SEQ * dimension (MAX_SEQ=100 supports prompts + 40 generated tokens)
+# Size = MAX_SEQ * dimension (MAX_SEQ=1024 supports full GPT-2 context window)
+# Memory overhead is minimal.
+h_ln1    = [0 for _ in range(786432)]    # 1024 * 768  — LN-1 output
+h_ln2    = [0 for _ in range(786432)]    # 1024 * 768  — LN-2 output
+attn_out = [0 for _ in range(786432)]    # 1024 * 768  — attention weighted sum
+scores_2d = [0 for _ in range(12582912)] # 12 * 1024 * 1024 scratch for causal_attn GPU kernel
 
-h_ln1    = [0 for _ in range(76800)]    # 100 * 768  — LN-1 output
-h_ln2    = [0 for _ in range(76800)]    # 100 * 768  — LN-2 output
-attn_out = [0 for _ in range(76800)]    # 100 * 768  — attention weighted sum
-scores_2d = [0 for _ in range(120000)]  # 12 * 100 * 100 scratch for causal_attn GPU kernel
-
-# GPU output buffers — declared locally so the JVM never serialises their
-# zero-init data to JSON (saves ~290K zero entries = ~4.3 MB per layer call).
-qkv_buf    = [0 for _ in range(230400)]   # 100 * 2304 — QKV projection output
-h_attn_buf = [0 for _ in range(76800)]    # 100 * 768  — O-proj output
-h_ff_buf   = [0 for _ in range(307200)]   # 100 * 3072 — FFN up-proj output
-h_out_buf  = [0 for _ in range(76800)]    # 100 * 768  — FFN down-proj output
+# Shared scratch buffers for the 4 dense layers to avoid 0-init CSV round-trips
+qkv_buf    = [0 for _ in range(2359296)]   # 1024 * 2304 — QKV projection output
+h_attn_buf = [0 for _ in range(786432)]    # 1024 * 768  — O-proj output
+h_ff_buf   = [0 for _ in range(3145728)]   # 1024 * 3072 — FFN up-proj output
+h_out_buf  = [0 for _ in range(786432)]    # 1024 * 768  — FFN down-proj output
 
 # kparams arrays carry [K, N] for each matmul variant
 kp_qkv  = [0 for _ in range(2)]    # QKV:   K=768,  N=2304
@@ -130,13 +129,13 @@ def layernorm_GPU_1(hidden, gamma, beta, out, pos):
 #   1. Compute QK scores and apply causal mask
 #   2. Softmax over the sequence dimension
 #   3. Weighted value accumulation → attn_out
-# scores_2d layout: [h * 10000 + i * 100 + j]  (MAX_SEQ=100, n_head=12)
-# Each (i,h) pair writes to a disjoint slice — no race conditions.
-# Dispatched as a 2-D NDRange: i ∈ [0, n_seq)  h ∈ [0, 12)
+# scores_2d layout: [h * 1048576 + i * 1024 + j]  (MAX_SEQ=1024, n_head=12)
+#
+# Returns nothing. attn_out is updated in place.
 def causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, params, i, h):
     n_seq = params[0]
     h_off = h * 64
-    score_base = h * 10000 + i * 100
+    score_base = h * 1048576 + i * 1024
     j = 0
     si = 0
     dk = 0
@@ -214,7 +213,7 @@ matmul_bias_GPU_2(h_ln1, c_attn_w, c_attn_b, qkv_buf, kp_qkv, n_seq, 2304)
 
 # ════════════════════════════════════════════════════════════════════════════
 # Step 3 — Multi-Head Causal Self-Attention (GPU)
-# scores_2d[h*10000 + i*100 + j] holds per-(i,h) softmax weights.
+# scores_2d[h*1048576 + i*1024 + j] holds per-(i,h) softmax weights.
 # ════════════════════════════════════════════════════════════════════════════
 causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, params, n_seq, 12)
 

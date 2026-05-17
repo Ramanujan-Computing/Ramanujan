@@ -231,3 +231,7 @@ if frame_num > 0.5:
     apply_gravity_GPU_1(velocities, gravity_buf, n)
     apply_feet_GPU_1(positions, velocities, feet, foot_params, n)
     integrate_GPU_1(positions, velocities, dt_buf, n)
+    # Flush GPU queue: the orchestrator reads positions/velocities via dump,
+    # so we must sync them back to the host before the kernel exits.
+    GPU_SYNC(positions)
+    GPU_SYNC(velocities)

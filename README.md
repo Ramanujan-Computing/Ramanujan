@@ -988,6 +988,63 @@ def p2g_GPU_1(positions, g_mass, g_vel, params, gid):
 - If OpenCL initialisation fails at runtime a diagnostic is printed to `stderr` and execution returns immediately.
 - The `GPU_ENABLED` macro must be set at compile time (via `-DENABLE_GPU=ON`). Builds without it contain **no OpenCL code** and have no OpenCL runtime dependency.
 
+## Explicit GPU synchronisation — `GPU_SYNC`
+
+By default, GPU kernels dispatched with `_GPU_N` functions are **non-blocking**: the OpenCL
+command is queued but the CPU continues immediately.  This allows many kernel launches to
+be batched together without the CPU stalling after every one — which is the key to high GPU
+throughput.
+
+However, **any time the host (CPU) side needs to read back a value that a GPU kernel has
+written**, you must explicitly drain the GPU queue for that array first.  The built-in
+`GPU_SYNC` does exactly that.
+
+```python
+GPU_SYNC(array)
+```
+
+`GPU_SYNC(array)` issues a **blocking** `clEnqueueReadBuffer` for the given array, flushing
+all previously enqueued GPU work and copying the updated data back to the host buffer.  It
+is a no-op for arrays that are not GPU-backed (e.g., host-only arrays).
+
+### When to use `GPU_SYNC`
+
+| Situation | Action |
+|---|---|
+| Reading an array element in a Python host `while` loop after a GPU kernel has written it | Call `GPU_SYNC(array)` once before the loop |
+| Passing a GPU-written array to a host function or `exec` call | Call `GPU_SYNC(array)` before the call |
+| `dump array /path` after GPU kernel(s) wrote it | Call `GPU_SYNC(array)` before `dump` |
+| Using a GPU-written array only as input to the next GPU kernel (no host read) | **No `GPU_SYNC` needed** — GPU→GPU is handled automatically |
+
+### Example — batched transformer stack
+
+```python
+# 120+ GPU kernels dispatched with no CPU stalls …
+layernorm_GPU_1(hidden, ln_g, ln_b, h_ln, n_seq)
+matmul_bias_GPU_2(h_ln, c_attn_w, c_attn_b, qkv, kp, n_seq, 2304)
+# … more kernels …
+matmul_bias_GPU_2(h_ff, c_fc_proj_w, c_fc_proj_b, h_out_buf, kp, n_seq, 768)
+
+# CPU needs to read `hidden` and `h_out_buf` in the next loop → sync first
+GPU_SYNC(hidden)
+GPU_SYNC(h_out_buf)
+_i = 0
+while _i < n_seq * 768:
+    hidden[_i] = hidden[_i] + h_out_buf[_i]
+    _i = _i + 1
+```
+
+Without the `GPU_SYNC` calls, `hidden` and `h_out_buf` would still hold **stale** values from
+before the last GPU kernels ran, producing silently wrong results.
+
+### `GPU_SYNC` vs the previous implicit sync model
+
+Before `GPU_SYNC` was introduced, every `_GPU_N` call automatically issued a blocking
+`clEnqueueReadBuffer` + `clFinish` after the kernel, preventing any batching.  The overhead
+measured ~11% of total inference time on macOS (visible as `IOKit → IOGPU → clFinish` in
+profiler traces).  With the explicit model, the GPU queue is drained **only** at the
+necessary points, and all other kernel dispatches remain asynchronous.
+
 # Future of the language and platform:
 Ramanujan now supports a subset of Python syntax through AST-based conversion (see Python Support section above). The platform is actively evolving to support more Python features progressively.
 

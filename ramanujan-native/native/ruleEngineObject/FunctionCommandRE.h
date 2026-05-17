@@ -265,6 +265,7 @@ enum BuiltInFunctions {
     FLOOR, // Floor function (round down)
     CEIL,  // Ceiling function (round up)
     EXP,   // Exponential function (e^x)
+    GPU_SYNC, // GPU explicit sync
 };
 
 /**
@@ -696,6 +697,44 @@ public:
     RuleEngineInputUnits* process() override;
 };
 
+/**
+ * GPU Synchronization Function.
+ * Reads the GPU buffer back to the host CPU synchronously.
+ *
+ * Usage:
+ * - GPU_SYNC(array) - Explicitly reads the modified array from GPU to CPU.
+ *
+ * GPU_SYNC overrides setFields() itself so it can hold a direct pointer to
+ * the ArrayRE argument, bypassing the BuiltInFunctionsImpl scalar-math
+ * DataContainerValue machinery which is not needed here.
+ */
+class GPU_SYNC : public BuiltInFunctionsImpl {
+    ArrayRE* targetArray = nullptr;   // resolved in setFields, used in process
+public:
+    /**
+     * Constructor for GPU synchronization function.
+     * @param pCall1 Function call information with array variable
+     */
+    GPU_SYNC(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+    /**
+     * Resolve the array argument directly from the global map.
+     * We do NOT call BuiltInFunctionsImpl::setFields here — that path is for
+     * scalar math built-ins that operate on DataContainerValue pointers.
+     */
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits*>* map) override {
+        if (functionCommandInfo->argumentsSize >= 1) {
+            targetArray = dynamic_cast<ArrayRE*>(map->at(functionCommandInfo->arguments[0]));
+        }
+    }
+
+    /**
+     * Executes GPU synchronization.
+     * Reads back the array data via OpenCL.
+     */
+    RuleEngineInputUnits* process() override;
+};
+
 #ifdef GPU_ENABLED
 // ==================== GPU Function Command ====================
 
@@ -821,6 +860,8 @@ static FunctionCommandRE* GetFunctionCommandRE(FunctionCall* functionCommand, st
         return new class SQRT(functionCommand);
     } else if(id == "POW") {
         return new class POW(functionCommand);
+    } else if(id == "GPU_SYNC") {
+        return new class GPU_SYNC(functionCommand);
     }
 
     // Default case: user-defined functions.

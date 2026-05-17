@@ -25,15 +25,16 @@
 n_seq = params[0]
 
 # Shared scratch arrays (reused across all 12 layers)
-h_ln1     = [0 for _ in range(76800)]    # 100 * 768
-h_ln2     = [0 for _ in range(76800)]    # 100 * 768
-attn_out  = [0 for _ in range(76800)]    # 100 * 768
-scores_2d = [0 for _ in range(120000)]   # 12 * 100 * 100
+# Sized for N_CTX=1024 (GPT-2 max context) so any n_seq <= 1024 works.
+h_ln1     = [0 for _ in range(786432)]    # 1024 * 768
+h_ln2     = [0 for _ in range(786432)]    # 1024 * 768
+attn_out  = [0 for _ in range(786432)]    # 1024 * 768
+scores_2d = [0 for _ in range(12582912)]  # 12 * 1024 * 1024
 
-qkv_buf    = [0 for _ in range(230400)]  # 100 * 2304
-h_attn_buf = [0 for _ in range(76800)]   # 100 * 768
-h_ff_buf   = [0 for _ in range(307200)]  # 100 * 3072
-h_out_buf  = [0 for _ in range(76800)]   # 100 * 768
+qkv_buf    = [0 for _ in range(2359296)]  # 1024 * 2304
+h_attn_buf = [0 for _ in range(786432)]   # 1024 * 768
+h_ff_buf   = [0 for _ in range(3145728)]  # 1024 * 3072
+h_out_buf  = [0 for _ in range(786432)]   # 1024 * 768
 
 kp_qkv  = [0 for _ in range(2)]
 kp_proj = [0 for _ in range(2)]
@@ -110,7 +111,7 @@ def layernorm_GPU_1(hidden, gamma, beta, out, pos):
 def causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, params, i, h):
     n_seq = params[0]
     h_off = h * 64
-    score_base = h * 10000 + i * 100
+    score_base = h * 1048576 + i * 1024   # h * (1024*1024) + i * 1024
     j = 0
     si = 0
     dk = 0
@@ -322,6 +323,8 @@ matmul_bias_GPU_2(h_ln2, l11_c_fc_w, l11_c_fc_b, h_ff_buf, kp_fc, n_seq, 3072)
 gelu_GPU_2(h_ff_buf, n_seq, 3072)
 matmul_bias_GPU_2(h_ff_buf, l11_c_fc_proj_w, l11_c_fc_proj_b, h_out_buf, kp_fcp, n_seq, 768)
 # Host loop: populates Java Map so dump can read the final hidden state.
+GPU_SYNC(hidden)
+GPU_SYNC(h_out_buf)
 _i = 0
 _total = n_seq * 768
 while _i < _total:

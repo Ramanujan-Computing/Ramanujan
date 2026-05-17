@@ -639,18 +639,7 @@ RuleEngineInputUnits* GPUFunctionCommandRE::process() {
             nullptr, gpuGlobalWorkSize, nullptr,
             0, nullptr, nullptr);
 
-        if (gpuErr == CL_SUCCESS) {
-            // -- Queue all reads as non-blocking, then sync once --
-            // Binary-loaded weight arrays are read-only and never modified by any kernel — skip.
-            for (int di = 0; di < gpuDataArgCount; di++) {
-                if (gpuAvCache[di]->isBinaryLoaded) continue;
-                clEnqueueReadBuffer(
-                    s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0,
-                    gpuBufferSizes[di], gpuAvCache[di]->val,
-                    0, nullptr, nullptr);
-            }
-            clFinish(s_clCtx.queue);
-        } else {
+        if (gpuErr != CL_SUCCESS) {
             fprintf(stderr, "[GPU] clEnqueueNDRangeKernel failed: %d\n", gpuErr);
         }
     }
@@ -1104,5 +1093,19 @@ RuleEngineInputUnits* POW::process() {
         DoublePtr* doublePtr2 = static_cast<DoublePtr*>(methodArgDataContainerAddr[1]);
         doublePtr1->value = std::pow(doublePtr1->value, doublePtr2->value);
     }
+    return nextUnit;
+}
+
+RuleEngineInputUnits* GPU_SYNC::process() {
+#ifdef GPU_ENABLED
+    if (targetArray != nullptr) {
+        // ArrayRE::arrayValue is ArrayDataContainerValue; its .arrayValue field is the ArrayValue*
+        ArrayValue* arrayValue = targetArray->arrayValue.arrayValue;
+        if (arrayValue != nullptr && arrayValue->gpuBuffer != nullptr) {
+            clEnqueueReadBuffer(s_clCtx.queue, (cl_mem)arrayValue->gpuBuffer, CL_TRUE, 0,
+                                arrayValue->gpuBufferBytes, arrayValue->val, 0, nullptr, nullptr);
+        }
+    }
+#endif
     return nextUnit;
 }
