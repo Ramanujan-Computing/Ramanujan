@@ -43,6 +43,7 @@ qkv_buf    = [0 for _ in range(2359296)]  # 1024 * 2304
 h_attn_buf = [0 for _ in range(786432)]   # 1024 * 768
 h_ff_buf   = [0 for _ in range(3145728)]  # 1024 * 3072
 h_out_buf  = [0 for _ in range(786432)]   # 1024 * 768
+h_state    = [0 for _ in range(786432)]   # 1024 * 768
 
 # ── Head scratch arrays ───────────────────────────────────────────────────────
 logits           = [0 for _ in range(50257)]  # vocab logits for the last position
@@ -191,6 +192,12 @@ def residual_add_GPU_2(hidden, buf, row, col):
     hidden[idx] = hidden[idx] + buf[idx]
 
 
+# Copy: dst[row,col] = src[row,col]
+def copy_GPU_2(src, dst, row, col):
+    idx = row * 768 + col
+    dst[idx] = src[idx]
+
+
 # Logits for the last sequence position: logits[j] = dot(h_ln1[last_row], wte[j])
 # Dispatched with 50257 work items (one per vocab token).
 def logits_last_GPU_1(h_ln1, wte, logits, cur_n_seq_arr, j):
@@ -262,153 +269,155 @@ _step = 0
 while _step < n_tokens:
     cur_n_seq = n_seq + _step
 
+    copy_GPU_2(hidden, h_state, cur_n_seq, 768)
+
     # ── Layer 0 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l0_ln1_g, l0_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l0_ln1_g, l0_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l0_c_attn_w, l0_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l0_c_proj_w, l0_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l0_ln2_g, l0_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l0_ln2_g, l0_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l0_c_fc_w, l0_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l0_c_fc_proj_w, l0_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 1 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l1_ln1_g, l1_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l1_ln1_g, l1_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l1_c_attn_w, l1_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l1_c_proj_w, l1_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l1_ln2_g, l1_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l1_ln2_g, l1_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l1_c_fc_w, l1_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l1_c_fc_proj_w, l1_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 2 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l2_ln1_g, l2_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l2_ln1_g, l2_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l2_c_attn_w, l2_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l2_c_proj_w, l2_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l2_ln2_g, l2_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l2_ln2_g, l2_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l2_c_fc_w, l2_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l2_c_fc_proj_w, l2_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 3 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l3_ln1_g, l3_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l3_ln1_g, l3_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l3_c_attn_w, l3_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l3_c_proj_w, l3_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l3_ln2_g, l3_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l3_ln2_g, l3_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l3_c_fc_w, l3_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l3_c_fc_proj_w, l3_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 4 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l4_ln1_g, l4_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l4_ln1_g, l4_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l4_c_attn_w, l4_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l4_c_proj_w, l4_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l4_ln2_g, l4_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l4_ln2_g, l4_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l4_c_fc_w, l4_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l4_c_fc_proj_w, l4_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 5 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l5_ln1_g, l5_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l5_ln1_g, l5_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l5_c_attn_w, l5_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l5_c_proj_w, l5_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l5_ln2_g, l5_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l5_ln2_g, l5_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l5_c_fc_w, l5_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l5_c_fc_proj_w, l5_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 6 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l6_ln1_g, l6_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l6_ln1_g, l6_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l6_c_attn_w, l6_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l6_c_proj_w, l6_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l6_ln2_g, l6_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l6_ln2_g, l6_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l6_c_fc_w, l6_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l6_c_fc_proj_w, l6_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 7 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l7_ln1_g, l7_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l7_ln1_g, l7_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l7_c_attn_w, l7_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l7_c_proj_w, l7_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l7_ln2_g, l7_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l7_ln2_g, l7_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l7_c_fc_w, l7_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l7_c_fc_proj_w, l7_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 8 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l8_ln1_g, l8_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l8_ln1_g, l8_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l8_c_attn_w, l8_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l8_c_proj_w, l8_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l8_ln2_g, l8_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l8_ln2_g, l8_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l8_c_fc_w, l8_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l8_c_fc_proj_w, l8_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 9 ──────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l9_ln1_g, l9_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l9_ln1_g, l9_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l9_c_attn_w, l9_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l9_c_proj_w, l9_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l9_ln2_g, l9_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l9_ln2_g, l9_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l9_c_fc_w, l9_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l9_c_fc_proj_w, l9_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 10 ─────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l10_ln1_g, l10_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l10_ln1_g, l10_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l10_c_attn_w, l10_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l10_c_proj_w, l10_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l10_ln2_g, l10_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l10_ln2_g, l10_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l10_c_fc_w, l10_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l10_c_fc_proj_w, l10_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Layer 11 ─────────────────────────────────────────────────────────────
-    layernorm_GPU_1(hidden, l11_ln1_g, l11_ln1_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, l11_ln1_g, l11_ln1_b, h_ln1, cur_n_seq)
     matmul_bias_GPU_2(h_ln1, l11_c_attn_w, l11_c_attn_b, qkv_buf, kp_qkv, cur_n_seq, 2304)
     causal_attn_GPU_2(qkv_buf, scores_2d, attn_out, cur_n_seq_arr, cur_n_seq, 12)
     matmul_bias_GPU_2(attn_out, l11_c_proj_w, l11_c_proj_b, h_attn_buf, kp_proj, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_attn_buf, cur_n_seq, 768)
-    layernorm_GPU_1(hidden, l11_ln2_g, l11_ln2_b, h_ln2, cur_n_seq)
+    residual_add_GPU_2(h_state, h_attn_buf, cur_n_seq, 768)
+    layernorm_GPU_1(h_state, l11_ln2_g, l11_ln2_b, h_ln2, cur_n_seq)
     matmul_bias_GPU_2(h_ln2, l11_c_fc_w, l11_c_fc_b, h_ff_buf, kp_fc, cur_n_seq, 3072)
     gelu_GPU_2(h_ff_buf, cur_n_seq, 3072)
     matmul_bias_GPU_2(h_ff_buf, l11_c_fc_proj_w, l11_c_fc_proj_b, h_out_buf, kp_fcp, cur_n_seq, 768)
-    residual_add_GPU_2(hidden, h_out_buf, cur_n_seq, 768)
+    residual_add_GPU_2(h_state, h_out_buf, cur_n_seq, 768)
 
     # ── Head: ln_f → logits → argmax → store → embed next token ─────────────
     # Reuse h_ln1 as scratch for the final layer norm (ln_f).
-    layernorm_GPU_1(hidden, ln_f_g, ln_f_b, h_ln1, cur_n_seq)
+    layernorm_GPU_1(h_state, ln_f_g, ln_f_b, h_ln1, cur_n_seq)
     logits_last_GPU_1(h_ln1, wte, logits, cur_n_seq_arr, 50257)
     argmax_GPU_1(logits, argmax_arr, 1)
     store_token_GPU_1(argmax_arr, generated_tokens, step_arr, 1)
