@@ -66,7 +66,7 @@ class RjServer:
             ready, _, _ = select.select([self.proc.stdout], [], [], min(remaining, 1.0))
             if ready: return self.proc.stdout.readline()
 
-    def run_kernel(self, kernel_py: str, csv_args: list, dump_vars: dict, timeout: int = 300):
+    def run_kernel(self, kernel_py: str, csv_args: list, dump_vars: dict, timeout: int = 600):
         args_str = " ".join([kernel_py] + csv_args)
         print(args_str)
         self.proc.stdin.write(f"run {args_str}\n")
@@ -90,17 +90,27 @@ class RjServer:
                 dline = self._readline_deadline(ddl)
                 if dline is None: raise RuntimeError(f"TIMEOUT during dump {name}")
                 if not dline: raise RuntimeError(f"JVM closed during dump {name}")
-                if dline.rstrip().startswith("Dumped"): break
+                dline_str = dline.rstrip()
+                print(f"[JVM dump] {dline_str}")
+                if dline_str.startswith("Dumped"): break
+                if dline_str.startswith("Array not found") or dline_str.startswith("Error"):
+                    raise RuntimeError(f"JVM error during dump: {dline_str}")
 
     def shutdown(self):
-        if self.proc:
-            try:
-                self.proc.stdin.write("quit\n")
-                self.proc.stdin.flush()
-                self.proc.wait(timeout=10)
-            except Exception:
-                self.proc.kill()
-            log("JVM server shut down")
+            kparams = [
+                float(K),               # 0: K
+                1.0,                    # 1: group_size (deprecated)
+                float(K // 4),          # 2: K_pack
+                1.0,                    # 3: ignored
+            ]
+            if self.proc:
+                try:
+                    self.proc.stdin.write("quit\n")
+                    self.proc.stdin.flush()
+                    self.proc.wait(timeout=10)
+                except Exception:
+                    self.proc.kill()
+                log("JVM server shut down")
 
 def write_flat_csv(path: str, values):
     with open(path, "w") as f:
@@ -117,8 +127,13 @@ def generate(prompt, n_tokens, weights_dir, java_home, rj_ws):
     tokenizer = AutoTokenizer.from_pretrained(
         "microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True
     )
-    input_ids = tokenizer.encode(prompt, add_special_tokens=True)
-    log(f"Prompt: {repr(prompt)}")
+    
+    messages = [{"role": "user", "content": prompt}]
+    formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    input_ids = tokenizer.encode(formatted_prompt, add_special_tokens=False)
+    
+    log(f"Original Prompt: {repr(prompt)}")
+    log(f"Formatted Prompt: {repr(formatted_prompt)}")
     log(f"Input token ids ({len(input_ids)}): {input_ids}")
     
     n_seq = len(input_ids)
@@ -184,6 +199,7 @@ def generate(prompt, n_tokens, weights_dir, java_home, rj_ws):
         out_ids = [int(t) for t in gen_tokens[:n_tokens]]
         
         log(f"Generated ids: {out_ids}")
+        log(f"h_ln1[0:5] = {gen_tokens[10:15]}")
         text = tokenizer.decode(out_ids)
         log(f"Output text:\n{text}")
         
