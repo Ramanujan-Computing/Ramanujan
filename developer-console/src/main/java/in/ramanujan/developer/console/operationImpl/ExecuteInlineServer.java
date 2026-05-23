@@ -193,11 +193,15 @@ public class ExecuteInlineServer extends ExecuteInline {
         Map<String, Object> varStore = new HashMap<>();
         for (Variable v : variableMap.values()) varStore.put(v.getName(), v.getValue());
 
+
         Map<String, Map<String, Object>> arrStore = new HashMap<>();
         for (Array a : arrayMap.values()) {
             String id = a.getId();
             if (id.contains("func") || !id.contains("_name_")) continue;
             String name = id.split("_name_")[1];
+            // Only populate generated_tokens to save time!
+            if (!name.equals("generated_tokens") && !name.equals("hidden") && !name.equals("debug_out")) continue;
+            
             Map<String, Object> vals = a.getValues();
             if (vals == null) continue;
             for (Map.Entry<String, Object> e : vals.entrySet()) {
@@ -205,6 +209,7 @@ public class ExecuteInlineServer extends ExecuteInline {
                 m.put(e.getKey(), e.getValue());
             }
         }
+
         ExecutorImpl.setStores(varStore, arrStore);
         // Hint GC to release large stub strings and old computation objects from this kernel.
         // Without this, hundreds of MB of zero-grid strings accumulate causing GC storms.
@@ -297,6 +302,12 @@ public class ExecuteInlineServer extends ExecuteInline {
             } else {
                 System.out.print(csv.toString());
             }
+            return;
+        }
+
+        System.out.println("Unknown command: " + line);
+    }
+}
             return;
         }
 

@@ -195,10 +195,10 @@ add_executable(native ${SOURCE_FILES})
 target_link_libraries(native PRIVATE jsoncpp_static)
 
 ## Production shared-library target (no DEBUG_BUILD – used by the JVM via JNI)
-#add_library(native_lib SHARED ${SOURCE_FILES})
-#target_link_libraries(native_lib PRIVATE jsoncpp_static)
-#set_target_properties(native_lib PROPERTIES OUTPUT_NAME "native")
-#
+add_library(native_lib SHARED ${SOURCE_FILES})
+target_link_libraries(native_lib PRIVATE jsoncpp_static)
+set_target_properties(native_lib PROPERTIES OUTPUT_NAME "native")
+
 ## Debug build target
 #add_library(native_debug SHARED ${SOURCE_FILES})
 #target_link_libraries(native_debug PRIVATE jsoncpp_static)
@@ -215,8 +215,11 @@ if(GPU_ENABLED)
         # Link against libdl so dlopen/dlsym/dlerror resolve.
         target_include_directories(native PRIVATE ${openclheaders_SOURCE_DIR})
         target_link_libraries(native PRIVATE dl log)
+        target_include_directories(native_lib PRIVATE ${openclheaders_SOURCE_DIR})
+        target_link_libraries(native_lib PRIVATE dl log)
     else()
         target_link_libraries(native PRIVATE OpenCL::OpenCL)
+        target_link_libraries(native_lib PRIVATE OpenCL::OpenCL)
     endif()
 endif()
 

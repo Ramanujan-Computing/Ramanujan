@@ -14,7 +14,7 @@ import sys
 import argparse
 import numpy as np
 
-MODEL_SIZE = "124M"
+MODEL_SIZE = "1558M"
 BASE_URL   = "https://openaipublic.blob.core.windows.net/gpt-2/models"
 FILES = [
     "checkpoint",
@@ -192,7 +192,7 @@ def main(models_dir: str, weights_dir: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download GPT-2 124M weights")
-    parser.add_argument("--models-dir",  default="models",  help="where to store raw TF checkpoint")
-    parser.add_argument("--weights-dir", default="weights", help="where to write CSV/NPY files")
+    parser.add_argument("--models-dir",  default="models1558",  help="where to store raw TF checkpoint")
+    parser.add_argument("--weights-dir", default="weights1558", help="where to write CSV/NPY files")
     args = parser.parse_args()
     main(args.models_dir, args.weights_dir)
