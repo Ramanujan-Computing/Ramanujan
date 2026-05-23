@@ -93,19 +93,19 @@ kp_fcp  = [0 for _ in range(3)]
 
 kp_qkv[0]  = 3072.0
 kp_qkv[1]  = 9216.0
-kp_qkv[2]  = 768.0
+kp_qkv[2]  = 512.0
 
 kp_proj[0] = 3072.0
 kp_proj[1] = 3072.0
-kp_proj[2] = 768.0
+kp_proj[2] = 512.0
 
 kp_fc[0]   = 3072.0
 kp_fc[1]   = 16384.0
-kp_fc[2]   = 768.0
+kp_fc[2]   = 512.0
 
-kp_fcp[0]  = 8192.0
+kp_fcp[0]  = 16384.0
 kp_fcp[1]  = 3072.0
-kp_fcp[2]  = 2048.0
+kp_fcp[2]  = 1366.0
 
 def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
     K = kparams[0]
@@ -123,6 +123,8 @@ def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
     w1 = 0.0
     w2 = 0.0
     w3 = 0.0
+    w4 = 0.0
+    w5 = 0.0
 
     W_scales_idx0 = col
     scale = W_scales[W_scales_idx0]
@@ -134,7 +136,12 @@ def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
         W_packed_idx0 = w_base + k_pack
         packed = W_packed[W_packed_idx0]
 
-        # Extract 4 weights (4 bits each)
+        w5 = packed / 1048576.0
+        FLOOR(w5)
+        packed = packed - w5 * 1048576.0
+        w4 = packed / 65536.0
+        FLOOR(w4)
+        packed = packed - w4 * 65536.0
         w3 = packed / 4096.0
         FLOOR(w3)
         packed = packed - w3 * 4096.0
@@ -146,13 +153,14 @@ def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
         packed = packed - w1 * 16.0
         w0 = packed
 
-        # Map 0..15 back to -8..7
         w0 = (w0 - 8.0) * scale
         w1 = (w1 - 8.0) * scale
         w2 = (w2 - 8.0) * scale
         w3 = (w3 - 8.0) * scale
+        w4 = (w4 - 8.0) * scale
+        w5 = (w5 - 8.0) * scale
 
-        a_idx = row * K + k_pack * 4
+        a_idx = row * K + k_pack * 6
         s = s + A[a_idx] * w0
         a_idx = a_idx + 1
         s = s + A[a_idx] * w1
@@ -160,6 +168,10 @@ def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
         s = s + A[a_idx] * w2
         a_idx = a_idx + 1
         s = s + A[a_idx] * w3
+        a_idx = a_idx + 1
+        s = s + A[a_idx] * w4
+        a_idx = a_idx + 1
+        s = s + A[a_idx] * w5
 
         k_pack = k_pack + 1
 
@@ -207,6 +219,8 @@ def matmul_4bit_decode_GPU_1(A, W_packed, W_scales, C, kparams, cur_n_seq_arr, c
     w1 = 0.0
     w2 = 0.0
     w3 = 0.0
+    w4 = 0.0
+    w5 = 0.0
 
     W_scales_idx0 = col
     scale = W_scales[W_scales_idx0]
@@ -218,7 +232,12 @@ def matmul_4bit_decode_GPU_1(A, W_packed, W_scales, C, kparams, cur_n_seq_arr, c
         W_packed_idx0 = w_base + k_pack
         packed = W_packed[W_packed_idx0]
 
-        # Extract 4 weights (4 bits each)
+        w5 = packed / 1048576.0
+        FLOOR(w5)
+        packed = packed - w5 * 1048576.0
+        w4 = packed / 65536.0
+        FLOOR(w4)
+        packed = packed - w4 * 65536.0
         w3 = packed / 4096.0
         FLOOR(w3)
         packed = packed - w3 * 4096.0
@@ -230,13 +249,14 @@ def matmul_4bit_decode_GPU_1(A, W_packed, W_scales, C, kparams, cur_n_seq_arr, c
         packed = packed - w1 * 16.0
         w0 = packed
 
-        # Map 0..15 back to -8..7
         w0 = (w0 - 8.0) * scale
         w1 = (w1 - 8.0) * scale
         w2 = (w2 - 8.0) * scale
         w3 = (w3 - 8.0) * scale
+        w4 = (w4 - 8.0) * scale
+        w5 = (w5 - 8.0) * scale
 
-        a_idx = row_int * K_int + k_pack * 4
+        a_idx = row_int * K_int + k_pack * 6
         s = s + A[a_idx] * w0
         a_idx = a_idx + 1
         s = s + A[a_idx] * w1
@@ -244,6 +264,10 @@ def matmul_4bit_decode_GPU_1(A, W_packed, W_scales, C, kparams, cur_n_seq_arr, c
         s = s + A[a_idx] * w2
         a_idx = a_idx + 1
         s = s + A[a_idx] * w3
+        a_idx = a_idx + 1
+        s = s + A[a_idx] * w4
+        a_idx = a_idx + 1
+        s = s + A[a_idx] * w5
 
         k_pack = k_pack + 1
 

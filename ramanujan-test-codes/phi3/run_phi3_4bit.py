@@ -114,7 +114,8 @@ class RjServer:
 
 def write_flat_csv(path: str, values):
     with open(path, "w") as f:
-        f.write(",".join(map(lambda x: f"{x:.6g}", values)) + "\n")
+        # Use simple string formatting to avoid scientific notation and precision loss
+        f.write(",".join(map(lambda x: str(x) if isinstance(x, int) else f"{x:.8g}", values)) + "\n")
 
 def read_flat_csv(path: str) -> list:
     with open(path) as f:

@@ -67,7 +67,7 @@ def write_csv(path, arr):
     with open(path, 'w') as f:
         for i in range(0, len(flat), 100000):
             chunk = flat[i:i+100000]
-            f.write(','.join(map(lambda x: f"{x:.6g}", chunk)))
+            f.write(','.join(map(lambda x: str(x) if isinstance(x, (int, np.integer)) else f"{x:.8g}", chunk)))
             # Trailing comma between chunks but no final comma — pass `,` only if more chunks remain.
             if i + 100000 < len(flat):
                 f.write(',')
