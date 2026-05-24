@@ -275,6 +275,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         server.createContext("/task/complete",     this::handleTaskComplete);
         server.createContext("/orchestrator/run",  this::handleOrchestratorRun);
         server.createContext("/orchestrator/dump", this::handleOrchestratorDump);
+        server.createContext("/binary/fetch",      this::handleBinaryFetch);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         System.err.println("[Homelab] HTTP server listening on :" + port);
@@ -353,6 +354,48 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             err.put("status", "ERROR");
             err.put("message", e.getMessage() != null ? e.getMessage() : e.toString());
             sendJson(ex, 500, MAPPER.writeValueAsString(err));
+        }
+    }
+
+    /** Serves raw binary files from the server's filesystem to the worker. */
+    private void handleBinaryFetch(HttpExchange ex) throws IOException {
+        try {
+            String query = ex.getRequestURI().getRawQuery();
+            String path = null;
+            if (query != null) {
+                String[] pairs = query.split("&");
+                for (String pair : pairs) {
+                    int idx = pair.indexOf("=");
+                    if (idx > 0 && java.net.URLDecoder.decode(pair.substring(0, idx), "UTF-8").equals("path")) {
+                        path = java.net.URLDecoder.decode(pair.substring(idx + 1), "UTF-8");
+                        break;
+                    }
+                }
+            }
+
+            if (path == null || path.isEmpty()) {
+                sendJson(ex, 400, "{\"status\":\"ERROR\",\"message\":\"Missing path parameter\"}");
+                return;
+            }
+
+            File file = new File(path);
+            if (!file.exists() || !file.isFile()) {
+                sendJson(ex, 404, "{\"status\":\"ERROR\",\"message\":\"File not found: " + path + "\"}");
+                return;
+            }
+
+            ex.getResponseHeaders().set("Content-Type", "application/octet-stream");
+            ex.sendResponseHeaders(200, file.length());
+            try (InputStream is = new FileInputStream(file);
+                 OutputStream os = ex.getResponseBody()) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    os.write(buf, 0, n);
+                }
+            }
+        } catch (Exception e) {
+            sendJson(ex, 500, "{\"status\":\"ERROR\",\"message\":\"" + e.getMessage() + "\"}");
         }
     }
 

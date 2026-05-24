@@ -17,13 +17,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.FunctionCall;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeProcessor;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -142,46 +147,107 @@ public class WorkerService extends Service {
 
                 RuleEngineInput rei = MAPPER.convertValue(reiObj, RuleEngineInput.class);
 
-                List<String> gpuKernels = new ArrayList<>();
-                if (rei.getFunctionCalls() != null) {
-                    for (FunctionCall fc : rei.getFunctionCalls()) {
-                        if (Boolean.TRUE.equals(fc.getIsGpu()) && fc.getId() != null) {
-                            gpuKernels.add(fc.getId());
+                List<File> tempFiles = new ArrayList<>();
+                try {
+                    if (rei.getArrays() != null) {
+                        List<Array> binaryArrays = new ArrayList<>();
+                        for (Array a : rei.getArrays()) {
+                            if (a.getBinaryFile() != null && !a.getBinaryFile().isEmpty()) {
+                                binaryArrays.add(a);
+                            }
+                        }
+
+                        if (!binaryArrays.isEmpty()) {
+                            int numThreads = Math.min(32, binaryArrays.size());
+                            ExecutorService downloadPool = Executors.newFixedThreadPool(numThreads);
+                            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(binaryArrays.size());
+                            List<File> synchedTempFiles = java.util.Collections.synchronizedList(tempFiles);
+                            final String sUrl = serverUrl;
+                            final List<Exception> downloadExceptions = java.util.Collections.synchronizedList(new ArrayList<>());
+
+                            for (Array a : binaryArrays) {
+                                final Array array = a;
+                                downloadPool.submit(() -> {
+                                    try {
+                                        String serverPath = array.getBinaryFile();
+                                        File localFile = new File(getCacheDir(), "local_rj_bin_" + UUID.randomUUID().toString() + ".bin");
+                                        String downloadUrl = sUrl + "/binary/fetch?path=" + URLEncoder.encode(serverPath, "UTF-8");
+                                        System.err.println("[Worker] Fetching binary parallel for array " + array.getName() + " from server path: " + serverPath);
+                                        downloadFile(downloadUrl, localFile);
+                                        synchedTempFiles.add(localFile);
+                                        array.setBinaryFile(localFile.getAbsolutePath());
+                                    } catch (Exception e) {
+                                        System.err.println("[Worker] Parallel download error for " + array.getName() + ": " + e.getMessage());
+                                        downloadExceptions.add(e);
+                                    } finally {
+                                        latch.countDown();
+                                    }
+                                });
+                            }
+
+                            try {
+                                latch.await();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                throw e;
+                            } finally {
+                                downloadPool.shutdownNow();
+                            }
+
+                            if (!downloadExceptions.isEmpty()) {
+                                throw new IOException("Failed to download one or more weight arrays parallelly. First error: " + downloadExceptions.get(0).getMessage());
+                            }
+                        }
+                    }
+
+                    List<String> gpuKernels = new ArrayList<>();
+                    if (rei.getFunctionCalls() != null) {
+                        for (FunctionCall fc : rei.getFunctionCalls()) {
+                            if (Boolean.TRUE.equals(fc.getIsGpu()) && fc.getId() != null) {
+                                gpuKernels.add(fc.getId());
+                            }
+                        }
+                    }
+                    if (!gpuKernels.isEmpty()) {
+                        System.err.println("[Worker] [GPU] " + gpuKernels.size()
+                                + " GPU kernel(s): " + gpuKernels);
+                    }
+
+                    Map<String, Object> results = new HashMap<>();
+                    long start = System.currentTimeMillis();
+                    try {
+                        String reiJson = MAPPER.writeValueAsString(rei);
+                        NativeProcessor np = new NativeProcessor();
+                        if (firstCommandId != null && !firstCommandId.isEmpty()) {
+                            np.process(reiJson, firstCommandId);
+                            if (np.jniObject != null) results = np.jniObject;
+                        }
+                    } catch (Exception e) {
+                        System.err.println("[Worker] execution error for " + uuid + ": " + e.getMessage());
+                    }
+                    long elapsed = System.currentTimeMillis() - start;
+
+                    if (!gpuKernels.isEmpty()) {
+                        System.err.println("[Worker] [GPU] run latency: " + elapsed
+                                + " ms (kernels: " + gpuKernels + ")");
+                    } else {
+                        System.err.println("[Worker] task " + uuid + " done in " + elapsed + "ms"
+                                + "  result keys=" + results.keySet());
+                    }
+
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("uuid",   uuid);
+                    payload.put("hostId", hostId);
+                    payload.put("data",   results);
+                    postJson(serverUrl + "/task/complete", MAPPER.writeValueAsString(payload));
+
+                } finally {
+                    for (File f : tempFiles) {
+                        if (f.exists()) {
+                            f.delete();
                         }
                     }
                 }
-                if (!gpuKernels.isEmpty()) {
-                    System.err.println("[Worker] [GPU] " + gpuKernels.size()
-                            + " GPU kernel(s): " + gpuKernels);
-                }
-
-                Map<String, Object> results = new HashMap<>();
-                long start = System.currentTimeMillis();
-                try {
-                    String reiJson = MAPPER.writeValueAsString(rei);
-                    NativeProcessor np = new NativeProcessor();
-                    if (firstCommandId != null && !firstCommandId.isEmpty()) {
-                        np.process(reiJson, firstCommandId);
-                        if (np.jniObject != null) results = np.jniObject;
-                    }
-                } catch (Exception e) {
-                    System.err.println("[Worker] execution error for " + uuid + ": " + e.getMessage());
-                }
-                long elapsed = System.currentTimeMillis() - start;
-
-                if (!gpuKernels.isEmpty()) {
-                    System.err.println("[Worker] [GPU] run latency: " + elapsed
-                            + " ms (kernels: " + gpuKernels + ")");
-                } else {
-                    System.err.println("[Worker] task " + uuid + " done in " + elapsed + "ms"
-                            + "  result keys=" + results.keySet());
-                }
-
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("uuid",   uuid);
-                payload.put("hostId", hostId);
-                payload.put("data",   results);
-                postJson(serverUrl + "/task/complete", MAPPER.writeValueAsString(payload));
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -263,5 +329,24 @@ public class WorkerService extends Service {
         is.close();
 
         return MAPPER.readValue(baos.toByteArray(), Map.class);
+    }
+
+    private void downloadFile(String urlStr, File destFile) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(300_000); // 5 minutes timeout for large binary weights
+        int code = conn.getResponseCode();
+        if (code >= 400) {
+            throw new IOException("Server returned HTTP error code: " + code);
+        }
+        try (InputStream is = conn.getInputStream();
+             OutputStream os = new FileOutputStream(destFile)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = is.read(buf)) != -1) {
+                os.write(buf, 0, n);
+            }
+        }
     }
 }

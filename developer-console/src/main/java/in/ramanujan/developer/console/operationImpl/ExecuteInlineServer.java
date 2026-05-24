@@ -308,9 +308,3 @@ public class ExecuteInlineServer extends ExecuteInline {
         System.out.println("Unknown command: " + line);
     }
 }
-            return;
-        }
-
-        System.out.println("Unknown command: " + line);
-    }
-}

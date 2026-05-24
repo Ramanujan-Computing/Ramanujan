@@ -5,6 +5,13 @@
 #include "ArrayValue.h"
 #include "../DataContainerValueFunctionCommandRE.h"
 
+#ifdef __ANDROID__
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 
 // Global cache: binaryFilePath -> {float* data, int count}
 static std::mutex                                              s_binaryMutex;
@@ -46,6 +53,36 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
         }
         if (!fdata) {
             // First time: read from disk, insert into cache
+            int fd = -1;
+#ifdef __ANDROID__
+            fd = open(key.c_str(), O_RDONLY);
+            if (fd >= 0) {
+                struct stat st;
+                fstat(fd, &st);
+                size_t fileSize = st.st_size;
+                fcount = (int)(fileSize / sizeof(float));
+                if (fcount > totalSize) fcount = totalSize;
+                
+                size_t mapSize = totalSize * sizeof(float);
+                if (mapSize == 0) mapSize = sizeof(float); // Avoid 0 size mmap
+                
+                // Use mmap to avoid OOM for large weight files
+                void* mapped = mmap(nullptr, mapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+                if (mapped == MAP_FAILED) {
+                    std::cerr << "[ArrayValue] mmap failed for: " << key << std::endl;
+                    // Fallback to allocation
+                    if (ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float)) == 0 && fdata != nullptr) {
+                        memset(fdata, 0, totalSize * sizeof(float));
+                        read(fd, fdata, fcount * sizeof(float));
+                    } else {
+                        fdata = nullptr;
+                    }
+                } else {
+                    fdata = static_cast<float*>(mapped);
+                }
+                close(fd);
+            }
+#else
             std::ifstream file(key, std::ios::binary | std::ios::ate);
             if (file.is_open()) {
                 size_t fileSize = file.tellg();
@@ -53,19 +90,24 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
                 fcount = (int)(fileSize / sizeof(float));
                 if (fcount > totalSize) fcount = totalSize;
                 
-                ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float));
-                memset(fdata, 0, totalSize * sizeof(float));
-                
-                file.read(reinterpret_cast<char*>(fdata), fcount * sizeof(float));
-                file.close();
-                {
-                    std::lock_guard<std::mutex> lk(s_binaryMutex);
-                    s_binaryCache[key] = {fdata, fcount};
+                if (ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float)) == 0 && fdata != nullptr) {
+                    memset(fdata, 0, totalSize * sizeof(float));
+                    file.read(reinterpret_cast<char*>(fdata), fcount * sizeof(float));
+                } else {
+                    fdata = nullptr;
                 }
-            } else {
-                std::cerr << "[ArrayValue] Failed to open binary file: " << key << std::endl;
-                ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float));
-                memset(fdata, 0, totalSize * sizeof(float));
+                file.close();
+            }
+#endif
+            if (!fdata) {
+                std::cerr << "[ArrayValue] Failed to open/allocate for binary file: " << key << std::endl;
+                if (ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float)) == 0 && fdata != nullptr) {
+                    memset(fdata, 0, totalSize * sizeof(float));
+                }
+            }
+            if (fdata) {
+                std::lock_guard<std::mutex> lk(s_binaryMutex);
+                s_binaryCache[key] = {fdata, fcount};
             }
         }
         // val[] is now a direct pointer to the static cache (ZERO COPY)

@@ -88,7 +88,7 @@ for ABI in arm64-v8a x86_64; do  #armeabi-v7a x86 x86_64; do
     -DJSONCPP_LIBRARY_DIRS=$JSONCPP_LIBRARY_DIRS \
     -DJSONCPP_LIBRARIES=$JSONCPP_LIBRARIES
 
-  cmake --build build/$ABI --target native
+  cmake --build build/$ABI --target native_lib
 
   # ── Auto-copy .so into the Android Gradle jniLibs tree ──────────────────
   DEST=../../androidapp/app/src/main/jniLibs/$ABI
