@@ -705,8 +705,16 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
         clReleaseMemObject(gpuBuffers[di]);
         gpuBuffers[di] = nullptr;
       }
+      
+      cl_mem_flags flags = CL_MEM_READ_WRITE;
+      if (gpuAvCache[di]->isBinaryLoaded) {
+          flags |= CL_MEM_USE_HOST_PTR; // ZERO-COPY for weights
+      } else {
+          flags |= CL_MEM_COPY_HOST_PTR;
+      }
+      
       gpuBuffers[di] = clCreateBuffer(s_clCtx.context,
-                                      CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                      flags,
                                       gpuNeeded, gpuAvCache[di]->val, &gpuErr);
       if (gpuErr == CL_SUCCESS) {
         gpuBufferSizes[di] = gpuNeeded;

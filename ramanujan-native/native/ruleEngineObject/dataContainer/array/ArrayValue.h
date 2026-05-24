@@ -13,6 +13,17 @@
 #include "../DataContainerValue.h"
 #include "../AbstractDataContainer.h"
 
+// Cross-platform aligned memory allocation
+#ifdef _WIN32
+    #include <malloc.h>
+    #define ALIGNED_ALLOC(ptr, alignment, size) *(ptr) = _aligned_malloc((size), (alignment))
+    #define ALIGNED_FREE(ptr) _aligned_free(ptr)
+#else
+    #include <stdlib.h>
+    #define ALIGNED_ALLOC(ptr, alignment, size) posix_memalign((void**)(ptr), (alignment), (size))
+    #define ALIGNED_FREE(ptr) free(ptr)
+#endif
+
 // Forward declarations
 class AbstractDataContainer;
 class DataContainerValueFunctionCommandRE;
@@ -127,10 +138,14 @@ public:
         this->dimensionSize = toBeCopied.dimensionSize;
         this->dimensions = toBeCopied.dimensions;
         this->sizeAtIndex = toBeCopied.sizeAtIndex;
-        if (!shallowCopy)
-            this->val = new float[toBeCopied.totalSize]();
-        else
+        if (!shallowCopy) {
+            ALIGNED_ALLOC(&this->val, 4096, toBeCopied.totalSize * sizeof(float));
+            memset(this->val, 0, toBeCopied.totalSize * sizeof(float));
+            memcpy(this->val, toBeCopied.val, toBeCopied.totalSize * sizeof(float));
+        } else {
             this->val = toBeCopied.val;
+            this->isCachedVal = true;
+        }
         this->totalSize = toBeCopied.totalSize;
     }
 
@@ -139,19 +154,22 @@ public:
         this->dimensionSize = toBeCopied->dimensionSize;
         this->dimensions = toBeCopied->dimensions;
         this->sizeAtIndex = toBeCopied->sizeAtIndex;
-        if (!shallowCopy)
-            this->val = new float[toBeCopied->totalSize]();
-        else
+        if (!shallowCopy) {
+            ALIGNED_ALLOC(&this->val, 4096, toBeCopied->totalSize * sizeof(float));
+            memset(this->val, 0, toBeCopied->totalSize * sizeof(float));
+            memcpy(this->val, toBeCopied->val, toBeCopied->totalSize * sizeof(float));
+        } else {
             this->val = toBeCopied->val;
+            this->isCachedVal = true;
+        }
         this->totalSize = toBeCopied->totalSize;
-
     }
 
     void destroy() {
         if(dimensions != nullptr)
             delete[] dimensions;
-        if(val != nullptr)
-            delete[] val;
+        if(val != nullptr && !isCachedVal)
+            ALIGNED_FREE(val);
     }
 
     void add(int* index, double value);

@@ -29,7 +29,6 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     }
 
     totalSize = getTotalSize(dimensions, 0, dimensionSize);
-    val = new float[totalSize]();
 
     // Fast path: load from binary float32 file directly into val[]
     if (!array->binaryFile.empty()) {
@@ -53,7 +52,10 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
                 file.seekg(0, std::ios::beg);
                 fcount = (int)(fileSize / sizeof(float));
                 if (fcount > totalSize) fcount = totalSize;
-                fdata = new float[fcount];  // static lifetime – never deleted
+                
+                ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float));
+                memset(fdata, 0, totalSize * sizeof(float));
+                
                 file.read(reinterpret_cast<char*>(fdata), fcount * sizeof(float));
                 file.close();
                 {
@@ -62,15 +64,19 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
                 }
             } else {
                 std::cerr << "[ArrayValue] Failed to open binary file: " << key << std::endl;
+                ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float));
+                memset(fdata, 0, totalSize * sizeof(float));
             }
         }
-        if (fdata) {
-            // val[] is now float* — direct copy, no conversion needed
-            memcpy(val, fdata, fcount * sizeof(float));
-            isBinaryLoaded  = true;
-            cachedFloatData = fdata;
-        }
+        // val[] is now a direct pointer to the static cache (ZERO COPY)
+        val = fdata;
+        isBinaryLoaded  = true;
+        isCachedVal = true;
+        cachedFloatData = fdata;
     } else {
+        ALIGNED_ALLOC(&val, 4096, totalSize * sizeof(float));
+        memset(val, 0, totalSize * sizeof(float));
+        
         // Slow path: parse string-keyed map
         for(auto & it : array->values) {
             std::string key = it.first;
