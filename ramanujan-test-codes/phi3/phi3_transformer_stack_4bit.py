@@ -726,7 +726,7 @@ def logits_reduce_GPU_1(logits_partial, logits, j):
         k = k + 1
     logits[j] = s
 
-def argmax(logits, argmax_arr):
+def argmax_GPU_1(logits, argmax_arr, gid):
     max_v = logits[0]
     max_i = 0.0
     j = 1
@@ -738,9 +738,16 @@ def argmax(logits, argmax_arr):
         j = j + 1
     argmax_arr[0] = max_i
 
-def store_token(argmax_arr, generated_tokens, step_arr):
-    stepArrIndex = step_arr[0]
-    generated_tokens[stepArrIndex] = argmax_arr[0]
+def store_token_GPU_1(argmax_arr, generated_tokens, step_arr, gid):
+    step_f = step_arr[0] + 0.1
+    step_int = 0
+    while step_f >= 1024.0:
+        step_int = step_int + 1024
+        step_f = step_f - 1024.0
+    while step_f >= 1.0:
+        step_int = step_int + 1
+        step_f = step_f - 1.0
+    generated_tokens[step_int] = argmax_arr[0]
 
 def embed_next_GPU_1(hidden, wte_1, wte_2, argmax_arr, cur_n_seq_arr, col):
     idx = 0
@@ -775,7 +782,7 @@ def embed_next_GPU_1(hidden, wte_1, wte_2, argmax_arr, cur_n_seq_arr, col):
         wte_idx0 = (t_int - 16000) * 3072 + col
         hidden[idx] = wte_2[wte_idx0]
 
-def inc_counters(step_arr, cur_n_seq_arr):
+def inc_counters_GPU_1(step_arr, cur_n_seq_arr, gid):
     step_arr[0] = step_arr[0] + 1.0
     cur_n_seq_arr[0] = cur_n_seq_arr[0] + 1.0
 
@@ -1202,17 +1209,15 @@ residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
 rmsnorm_GPU_1(h_state, ln_f_g, h_ln1, n_seq)
 logits_compute_GPU_2(h_ln1, lm_head_1, lm_head_2, logits_partial, cur_n_seq_arr, 32064, 3072)
 logits_reduce_GPU_1(logits_partial, logits, 32064)
-GPU_SYNC(logits)
-argmax(logits, argmax_arr)
-store_token(argmax_arr, generated_tokens, step_arr)
+argmax_GPU_1(logits, argmax_arr, 1)
+store_token_GPU_1(argmax_arr, generated_tokens, step_arr, 1)
 embed_next_GPU_1(h_state, wte_1, wte_2, argmax_arr, cur_n_seq_arr, 3072)
-inc_counters(step_arr, cur_n_seq_arr)
+inc_counters_GPU_1(step_arr, cur_n_seq_arr, 1)
 
 # ══════════════ DECODE LOOP ══════════════
 _step = 1.0
 while _step < n_tokens:
     # ── Layer 0 ──
-    GPU_LOAD(cur_n_seq_arr)
     rmsnorm_decode_GPU_1(h_state, l0_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l0_qkv_packed, l0_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l0_k_cache, l0_v_cache, cur_n_seq_arr, 32)
@@ -1695,12 +1700,10 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, ln_f_g, h_ln1, cur_n_seq_arr, 3072)
     logits_compute_GPU_2(h_ln1, lm_head_1, lm_head_2, logits_partial, cur_n_seq_arr, 32064, 3072)
     logits_reduce_GPU_1(logits_partial, logits, 32064)
-    GPU_SYNC(logits)
-    argmax(logits, argmax_arr)
-    store_token(argmax_arr, generated_tokens, step_arr)
-    GPU_LOAD(argmax_arr)
+    argmax_GPU_1(logits, argmax_arr, 1)
+    store_token_GPU_1(argmax_arr, generated_tokens, step_arr, 1)
     embed_next_GPU_1(h_state, wte_1, wte_2, argmax_arr, cur_n_seq_arr, 3072)
-    inc_counters(step_arr, cur_n_seq_arr)
+    inc_counters_GPU_1(step_arr, cur_n_seq_arr, 1)
 
     _step = _step + 1.0
 
