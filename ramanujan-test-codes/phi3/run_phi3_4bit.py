@@ -112,6 +112,54 @@ class RjServer:
                     self.proc.kill()
                 log("JVM server shut down")
 
+class RjHomelabClient:
+    """Connects to an already-running homelab server via HTTP (no local JVM)."""
+
+    def __init__(self, homelab_url):
+        self.homelab_url = homelab_url.rstrip("/")
+
+    def start(self, timeout=10):
+        import urllib.request
+        try:
+            urllib.request.urlopen(f"{self.homelab_url}/pings/heartbeat", timeout=timeout)
+            log(f"Connected to homelab server at {self.homelab_url}")
+        except Exception as e:
+            log(f"ERROR: Cannot reach homelab server at {self.homelab_url}: {e}")
+            sys.exit(1)
+
+    def run_kernel(self, kernel_py, csv_args, dump_vars, timeout=600):
+        import json
+        import urllib.request
+
+        run_body = json.dumps({"args": [kernel_py] + csv_args}).encode()
+        run_req = urllib.request.Request(
+            f"{self.homelab_url}/orchestrator/run",
+            data=run_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(run_req, timeout=timeout)
+        except Exception as e:
+            raise RuntimeError(f"Homelab /orchestrator/run failed: {e}")
+
+        for name, path in dump_vars.items():
+            dump_body = json.dumps({"name": name, "path": path}).encode()
+            dump_req = urllib.request.Request(
+                f"{self.homelab_url}/orchestrator/dump",
+                data=dump_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                urllib.request.urlopen(dump_req, timeout=30)
+            except Exception as e:
+                raise RuntimeError(f"Homelab /orchestrator/dump {name} failed: {e}")
+
+    def shutdown(self):
+        pass  # remote server keeps running
+
+
 def write_flat_csv(path: str, values):
     with open(path, "w") as f:
         # Use simple string formatting to avoid scientific notation and precision loss
@@ -123,7 +171,8 @@ def read_flat_csv(path: str) -> list:
     if not text: return []
     return [float(t) for t in text.split(",") if t]
 
-def generate(prompt, n_tokens, weights_dir, java_home, rj_ws):
+def generate(prompt, n_tokens, weights_dir, java_home, rj_ws,
+             homelab=False, homelab_url="http://localhost:8888"):
     weights_dir = os.path.abspath(weights_dir)
     tokenizer = AutoTokenizer.from_pretrained(
         "microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True
@@ -144,7 +193,10 @@ def generate(prompt, n_tokens, weights_dir, java_home, rj_ws):
     log(f"Working directory: {work_dir}")
     
     try:
-        rj_server = RjServer(java_home=java_home, rj_ws=rj_ws)
+        if homelab:
+            rj_server = RjHomelabClient(homelab_url)
+        else:
+            rj_server = RjServer(java_home=java_home, rj_ws=rj_ws)
         rj_server.start()
         
         # Load embedding table directly in python to seed the hidden state
@@ -216,6 +268,11 @@ if __name__ == "__main__":
     parser.add_argument("--weights-dir", default="phi3_weights_csv")
     parser.add_argument("--java-home", default=os.environ.get("JAVA_HOME", "/Users/pranav/Library/Java/JavaVirtualMachines/corretto-1.8.0_402/Contents/Home"))
     parser.add_argument("--rj-ws", default=os.environ.get("RAMANUJAN_WS", "/tmp"))
+    parser.add_argument("--homelab", action="store_true",
+                        help="Connect to an existing homelab server instead of starting a local JVM.")
+    parser.add_argument("--homelab-url", default="http://localhost:8888",
+                        help="Homelab server URL (default http://localhost:8888). Only used with --homelab.")
     args = parser.parse_args()
-    
-    generate(args.prompt, args.n_tokens, args.weights_dir, args.java_home, args.rj_ws)
+
+    generate(args.prompt, args.n_tokens, args.weights_dir, args.java_home, args.rj_ws,
+             homelab=args.homelab, homelab_url=args.homelab_url)
