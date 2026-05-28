@@ -199,8 +199,11 @@ public class ExecuteInlineServer extends ExecuteInline {
             String id = a.getId();
             if (id.contains("func") || !id.contains("_name_")) continue;
             String name = id.split("_name_")[1];
-            // Only populate generated_tokens to save time!
-            if (!name.equals("generated_tokens") && !name.equals("hidden") && !name.equals("debug_out")) continue;
+            // Only populate known dump targets to save time.
+            if (!name.equals("generated_tokens") && !name.equals("hidden")
+                    && !name.equals("debug_out")
+                    && !name.equals("k_cache") && !name.equals("v_cache")
+                    && !name.equals("argmax_arr")) continue;
             
             Map<String, Object> vals = a.getValues();
             if (vals == null) continue;

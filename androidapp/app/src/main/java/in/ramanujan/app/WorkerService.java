@@ -170,11 +170,22 @@ public class WorkerService extends Service {
                                 downloadPool.submit(() -> {
                                     try {
                                         String serverPath = array.getBinaryFile();
-                                        File localFile = new File(getCacheDir(), "local_rj_bin_" + UUID.randomUUID().toString() + ".bin");
-                                        String downloadUrl = sUrl + "/binary/fetch?path=" + URLEncoder.encode(serverPath, "UTF-8");
-                                        System.err.println("[Worker] Fetching binary parallel for array " + array.getName() + " from server path: " + serverPath);
-                                        downloadFile(downloadUrl, localFile);
-                                        synchedTempFiles.add(localFile);
+                                        // Hash the serverPath to use as filename
+                                        java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+                                        byte[] hashBytes = md.digest(serverPath.getBytes("UTF-8"));
+                                        StringBuilder sb = new StringBuilder();
+                                        for (byte b : hashBytes) sb.append(String.format("%02x", b));
+                                        String hashStr = sb.toString();
+                                        
+                                        File localFile = new File(getCacheDir(), "local_rj_bin_" + hashStr + ".bin");
+                                        
+                                        if (localFile.exists() && localFile.length() > 0) {
+                                            System.err.println("[Worker] Skipping download, binary already cached for array " + array.getName() + ": " + localFile.getAbsolutePath());
+                                        } else {
+                                            String downloadUrl = sUrl + "/binary/fetch?path=" + URLEncoder.encode(serverPath, "UTF-8");
+                                            System.err.println("[Worker] Fetching binary parallel for array " + array.getName() + " from server path: " + serverPath);
+                                            downloadFile(downloadUrl, localFile);
+                                        }
                                         array.setBinaryFile(localFile.getAbsolutePath());
                                     } catch (Exception e) {
                                         System.err.println("[Worker] Parallel download error for " + array.getName() + ": " + e.getMessage());
@@ -242,11 +253,7 @@ public class WorkerService extends Service {
                     postJson(serverUrl + "/task/complete", MAPPER.writeValueAsString(payload));
 
                 } finally {
-                    for (File f : tempFiles) {
-                        if (f.exists()) {
-                            f.delete();
-                        }
-                    }
+                    // Do nothing, binary files are now cached persistently on device
                 }
 
             } catch (InterruptedException e) {
