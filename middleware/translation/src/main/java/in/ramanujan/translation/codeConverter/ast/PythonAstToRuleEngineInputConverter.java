@@ -2386,7 +2386,10 @@ public class PythonAstToRuleEngineInputConverter {
             return convertListToCommand((ListNode) expr, variableScope);
         }
         
-        throw new CompilationException(null, null, "Unsupported expression type: " + expr.getClass().getSimpleName());
+        throw new CompilationException(
+            expr.getLineno() > 0 ? expr.getLineno() : null,
+            expr.getColOffset(),
+            "Unsupported expression type: " + expr.getClass().getSimpleName() + "\nAST: " + expr.toString());
     }
     
     /**

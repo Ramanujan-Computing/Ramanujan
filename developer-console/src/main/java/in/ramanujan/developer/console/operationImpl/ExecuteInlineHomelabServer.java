@@ -555,6 +555,63 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             }
             return;
         }
+        if (line.startsWith("dump_diff ")) {
+            String[] p = line.split(" ");
+            if (p.length < 4) {
+                System.out.println("Usage: dump_diff <arrayName> <startIdx> <endIdxInclusive> [outputFile]");
+                return;
+            }
+            String name = p[1];
+            long startIdx, endIdx;
+            try {
+                startIdx = Long.parseLong(p[2]);
+                endIdx   = Long.parseLong(p[3]);
+            } catch (NumberFormatException nfe) {
+                System.out.println("dump_diff: startIdx/endIdx must be integers");
+                return;
+            }
+            String outFile = p.length >= 5 ? p[4] : null;
+            Map<String, Object> arr = ExecutorImpl.arrayStore.get(name);
+            if (arr == null) {
+                System.out.println("Array not found: " + name);
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            int count = 0;
+            for (Map.Entry<String, Object> e : arr.entrySet()) {
+                String key = e.getKey();
+                long flat;
+                int us = key.indexOf('_');
+                try {
+                    if (us < 0) {
+                        flat = Long.parseLong(key);
+                    } else {
+                        sb.append(key).append(',').append(e.getValue()).append('\n');
+                        count++;
+                        continue;
+                    }
+                } catch (NumberFormatException nfe) {
+                    continue;
+                }
+                if (flat >= startIdx && flat <= endIdx) {
+                    sb.append(key).append(',').append(e.getValue()).append('\n');
+                    count++;
+                }
+            }
+            if (outFile != null) {
+                try {
+                    java.nio.file.Files.write(java.nio.file.Paths.get(outFile),
+                            sb.toString().getBytes(StandardCharsets.UTF_8));
+                    System.out.println("Dumped diff " + name + " (" + count + ") to " + outFile);
+                } catch (Exception ex) {
+                    System.out.println("Error writing file: " + ex.getMessage());
+                }
+            } else {
+                System.out.print(sb.toString());
+                System.out.println("Dumped diff " + name + " (" + count + ")");
+            }
+            return;
+        }
         if (line.startsWith("dump ")) {
             // reuse ExecutorImpl dump via ExecuteInlineServer's inherited handler if available;
             // for now forward to a simple inline impl

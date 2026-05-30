@@ -264,6 +264,72 @@ public class ExecuteInlineServer extends ExecuteInline {
             return;
         }
 
+        if (line.startsWith("dump_diff ")) {
+            // dump_diff <arrayName> <startIdx> <endIdxInclusive> [outputFile]
+            // Emits only entries whose flat index falls in [startIdx, endIdxInclusive],
+            // one "key,value" per line. The orchestrator chooses the range based on
+            // which rows the shard touched, so no JVM snapshot is needed.
+            String[] p = line.split(" ");
+            if (p.length < 4) {
+                System.out.println("Usage: dump_diff <arrayName> <startIdx> <endIdxInclusive> [outputFile]");
+                return;
+            }
+            String arrName = p[1];
+            long startIdx, endIdx;
+            try {
+                startIdx = Long.parseLong(p[2]);
+                endIdx   = Long.parseLong(p[3]);
+            } catch (NumberFormatException nfe) {
+                System.out.println("dump_diff: startIdx/endIdx must be integers");
+                return;
+            }
+            String outFile = p.length >= 5 ? p[4] : null;
+            Map<String, Object> arr = ExecutorImpl.arrayStore.get(arrName);
+            if (arr == null) {
+                System.out.println("Array not found: " + arrName);
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            int count = 0;
+            for (Map.Entry<String, Object> e : arr.entrySet()) {
+                String key = e.getKey();
+                long flat;
+                try {
+                    int us = key.indexOf('_');
+                    if (us < 0) {
+                        flat = Long.parseLong(key);
+                    } else {
+                        // 2D key "row_col" → flatten via row * (maxCol+1) + col is unknown here;
+                        // instead, treat the key itself as opaque and let the orchestrator
+                        // reverse-map it. For the range filter we use a fallback: only filter
+                        // 1D-style keys; for 2D keys, emit unconditionally (rare in our use).
+                        sb.append(key).append(',').append(e.getValue()).append('\n');
+                        count++;
+                        continue;
+                    }
+                } catch (NumberFormatException nfe) {
+                    continue;
+                }
+                if (flat >= startIdx && flat <= endIdx) {
+                    sb.append(key).append(',').append(e.getValue()).append('\n');
+                    count++;
+                }
+            }
+            if (outFile != null) {
+                try {
+                    Files.write(Paths.get(outFile),
+                            sb.toString().getBytes(StandardCharsets.UTF_8));
+                    System.out.println("Dumped diff " + arrName + " (" + count + ") to " + outFile);
+                } catch (Exception ex) {
+                    System.out.println("Error writing file: " + ex.getMessage());
+                }
+            } else {
+                System.out.print(sb.toString());
+                System.out.println("Dumped diff " + arrName + " (" + count + ")");
+            }
+            return;
+        }
+
         if (line.startsWith("dump ")) {
             String[] p = line.split(" ");
             String arrName = p.length >= 2 ? p[1] : null;

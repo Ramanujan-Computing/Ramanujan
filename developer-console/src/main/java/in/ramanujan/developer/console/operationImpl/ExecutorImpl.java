@@ -140,6 +140,62 @@ public class ExecutorImpl implements Operation {
                 } else {
                     System.out.println("Usage: var <variableName>");
                 }
+            } else if (line.startsWith("dump_diff ")) {
+                // dump_diff <arrayName> <startIdx> <endIdxInclusive> [outputFile]
+                String[] parts = line.split(" ");
+                if (parts.length < 4) {
+                    System.out.println("Usage: dump_diff <arrayName> <startIdx> <endIdxInclusive> [outputFile]");
+                    continue;
+                }
+                String arrName = parts[1];
+                long startIdx, endIdx;
+                try {
+                    startIdx = Long.parseLong(parts[2]);
+                    endIdx   = Long.parseLong(parts[3]);
+                } catch (NumberFormatException nfe) {
+                    System.out.println("dump_diff: startIdx/endIdx must be integers");
+                    continue;
+                }
+                String outFile = parts.length >= 5 ? parts[4] : null;
+                Map<String, Object> arr = arrayStore.get(arrName);
+                if (arr == null) {
+                    System.out.println("Array not found: " + arrName);
+                    continue;
+                }
+                StringBuilder sb = new StringBuilder();
+                int count = 0;
+                for (Map.Entry<String, Object> e : arr.entrySet()) {
+                    String key = e.getKey();
+                    long flat;
+                    int us = key.indexOf('_');
+                    try {
+                        if (us < 0) {
+                            flat = Long.parseLong(key);
+                        } else {
+                            sb.append(key).append(',').append(e.getValue()).append('\n');
+                            count++;
+                            continue;
+                        }
+                    } catch (NumberFormatException nfe) {
+                        continue;
+                    }
+                    if (flat >= startIdx && flat <= endIdx) {
+                        sb.append(key).append(',').append(e.getValue()).append('\n');
+                        count++;
+                    }
+                }
+                if (outFile != null) {
+                    try {
+                        java.nio.file.Files.write(java.nio.file.Paths.get(outFile),
+                                sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        System.out.println("Dumped diff " + arrName + " (" + count + ") to " + outFile);
+                    } catch (Exception ex) {
+                        System.out.println("Error writing file: " + ex.getMessage());
+                    }
+                } else {
+                    System.out.print(sb.toString());
+                    System.out.println("Dumped diff " + arrName + " (" + count + ")");
+                }
             } else if (line.startsWith("dump ")) {
                 // dump <arrayName> [outputFile] — outputs entire array as CSV
                 String[] parts = line.split(" ");
