@@ -53,6 +53,17 @@ public class ExecuteInlineServer extends ExecuteInline {
     private Map<String, Variable> cachedVariableMap = null;
     private Map<String, Array>    cachedArrayMap    = null;
 
+    // Default set of array names always populated into the dump store.
+    // Existing orchestrators that send no --dump flags rely on this list.
+    // New orchestrators can extend it per-call via: run <kernel> <csvs> --dump name1 name2 ...
+    // Note: endsWith patterns ("_k_cache", "_v_cache") are handled separately below
+    // because a plain Set cannot store suffix patterns.
+    private static final Set<String> DEFAULT_DUMP_TARGETS = new HashSet<>(Arrays.asList(
+            "generated_tokens", "hidden", "debug_out",
+            "k_cache", "v_cache", "argmax_arr",
+            "h_state", "step_arr", "cur_n_seq_arr"
+    ));
+
     @Override
     public void execute(List<String> args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -73,14 +84,20 @@ public class ExecuteInlineServer extends ExecuteInline {
             }
 
             if (line.startsWith("run ")) {
-                // Parse: run <kernel.py> <csv1> <csv2> ...
+                // Parse: run <kernel.py> <csv1> ... [--dump name1 name2 ...]
+                // Everything after --dump is a set of array names the client wants populated.
                 String[] parts = line.split("\\s+");
-                List<String> kernelArgs = new ArrayList<>(parts.length - 1);
+                List<String> kernelArgs = new ArrayList<>();
+                // Seed with defaults so existing orchestrators (no --dump) keep working.
+                Set<String> dumpTargets = new HashSet<>(DEFAULT_DUMP_TARGETS);
+                boolean inDump = false;
                 for (int i = 1; i < parts.length; i++) {
-                    kernelArgs.add(parts[i]);
+                    if (parts[i].equals("--dump")) { inDump = true; continue; }
+                    if (inDump) dumpTargets.add(parts[i]);
+                    else        kernelArgs.add(parts[i]);
                 }
                 try {
-                    runKernel(kernelArgs);
+                    runKernel(kernelArgs, dumpTargets);
                     System.out.println("KERNEL_DONE");
                 } catch (Exception e) {
                     System.out.println("KERNEL_ERROR: " + e.getMessage());
@@ -99,7 +116,7 @@ public class ExecuteInlineServer extends ExecuteInline {
     // Core kernel execution (mirrors ExecuteInline.execute but no console loop)
     // -------------------------------------------------------------------------
 
-    private void runKernel(List<String> args) throws IOException, CompilationException {
+    private void runKernel(List<String> args, Set<String> dumpTargets) throws IOException, CompilationException {
         long t0 = System.currentTimeMillis();
 
         System.err.println("[Server] run: " + args.get(0) + " +" + (args.size() - 1) + " CSVs");
@@ -195,20 +212,17 @@ public class ExecuteInlineServer extends ExecuteInline {
 
 
         Map<String, Map<String, Object>> arrStore = new HashMap<>();
+        // Populate only arrays in dumpTargets (always non-empty: seeded from DEFAULT_DUMP_TARGETS
+        // plus any extra names the client added via --dump).
+        // endsWith patterns for per-layer KV caches are checked separately.
         for (Array a : arrayMap.values()) {
             String id = a.getId();
             if (id.contains("func") || !id.contains("_name_")) continue;
             String name = id.split("_name_")[1];
-            // Only populate known dump targets to save time.
-            // Accept: generated_tokens, hidden, debug_out, argmax_arr,
-            //         k_cache, v_cache (bare), and per-layer l{N}_k_cache / l{N}_v_cache.
-            boolean isKnown = name.equals("generated_tokens") || name.equals("hidden")
-                    || name.equals("debug_out")
-                    || name.equals("k_cache") || name.equals("v_cache")
-                    || name.equals("argmax_arr")
-                    || name.endsWith("_k_cache") || name.endsWith("_v_cache");
-            if (!isKnown) continue;
-            
+            if (!dumpTargets.contains(name)
+                    && !name.endsWith("_k_cache")
+                    && !name.endsWith("_v_cache")) continue;
+
             Map<String, Object> vals = a.getValues();
             if (vals == null) continue;
             for (Map.Entry<String, Object> e : vals.entrySet()) {
