@@ -97,12 +97,12 @@ class RjServer:
                     raise RuntimeError(f"JVM error during dump: {dline_str}")
 
     def shutdown(self):
-            kparams = [
-                float(K),               # 0: K
-                1.0,                    # 1: group_size (deprecated)
-                float(K // 4),          # 2: K_pack
-                1.0,                    # 3: ignored
-            ]
+            # kparams = [
+            #     float(K),               # 0: K
+            #     1.0,                    # 1: group_size (deprecated)
+            #     float(K // 4),          # 2: K_pack
+            #     1.0,                    # 3: ignored
+            # ]
             if self.proc:
                 try:
                     self.proc.stdin.write("quit\n")

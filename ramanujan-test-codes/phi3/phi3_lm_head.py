@@ -11,7 +11,9 @@ cur_n_seq_arr[0] = cur_n_seq
 logits           = [0 for _ in range(32064)]
 logits_partial   = [0 for _ in range(98500608)]  
 h_ln1     = [0 for _ in range(3145728)]   
-argmax_arr = [0 for _ in range(1)]
+
+# argmax_arr is now passed as a CSV-backed argument (not locally declared)
+# so that its values are always present in the Java Array.values map for dump.
 
 def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
     K = kparams[0]
@@ -707,6 +709,7 @@ if is_decode == 0.0:
         row_int = row_int + 1
         r_f = r_f - 1.0
 
+    GPU_SYNC(h_ln1)   # h_ln1 was written on GPU by rmsnorm_GPU_1; sync before CPU logits loop
     i = 0
     while i < 32064:
         wte_idx0 = 0
@@ -727,7 +730,16 @@ if is_decode == 0.0:
         logits[i] = s
         i = i + 1
         
-    argmax_GPU_1(logits, argmax_arr, 32064)
+    argmax_v = logits[0]
+    argmax_i = 0.0
+    argmax_j = 1
+    while argmax_j < 32064:
+        argmax_vj = logits[argmax_j]
+        if argmax_vj > argmax_v:
+            argmax_v = argmax_vj
+            argmax_i = argmax_j * 1.0
+        argmax_j = argmax_j + 1
+    argmax_arr[0] = argmax_i
 else:
     # DECODE
     rmsnorm_decode_GPU_1(hidden, ln_f_g, h_ln1, cur_n_seq_arr, 3072)
@@ -741,6 +753,7 @@ else:
         row_int = row_int + 1
         r_f = r_f - 1.0
 
+    GPU_SYNC(h_ln1)   # h_ln1 was written on GPU by rmsnorm_decode_GPU_1; sync before CPU logits loop
     i = 0
     while i < 32064:
         w_val = 0.0
@@ -760,5 +773,14 @@ else:
         logits[i] = s
         i = i + 1
 
-    argmax_GPU_1(logits, argmax_arr, 32064)
+    argmax_v = logits[0]
+    argmax_i = 0.0
+    argmax_j = 1
+    while argmax_j < 32064:
+        argmax_vj = logits[argmax_j]
+        if argmax_vj > argmax_v:
+            argmax_v = argmax_vj
+            argmax_i = argmax_j * 1.0
+        argmax_j = argmax_j + 1
+    argmax_arr[0] = argmax_i
 
