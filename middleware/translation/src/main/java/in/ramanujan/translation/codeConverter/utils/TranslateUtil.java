@@ -42,6 +42,8 @@ public class TranslateUtil {
         populationQueue.add(new PairCodeSnippetElementWithParent(codeSnippetElement, null));
         DagElement lastElement = null;
         Map<String, DagElement> codeSnippetElementDagElementMap = new HashMap<>();
+        boolean isFirstDagElementBeingCreated = true;
+        RuleEngineInput pythonMainRuleEngineInput = null;
         while(populationQueue.size() > 0) {
             PairCodeSnippetElementWithParent pairCodeSnippetElementWithParent = populationQueue.poll();
             DagElement dagElement = codeSnippetElementDagElementMap.get(pairCodeSnippetElementWithParent
@@ -51,16 +53,45 @@ public class TranslateUtil {
 
                 final ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", linesForCommonFunctions);
                 String code = pairCodeSnippetElementWithParent.getCodeSnippetElement().getCode();
-                
+
+                // For the first code snippet, if it is Python, prepend 2D array declarations for each CSV
+                // (declaration only — no per-element assignments; values are bulk-populated after interpretation)
+                if (isFirstDagElementBeingCreated && isPythonCode(code) && csvInformationList != null && !csvInformationList.isEmpty()) {
+                    System.out.println("[TranslateUtil] Generating CSV declarations for " + csvInformationList.size() + " files");
+                    System.out.flush();
+                    long declStart = System.currentTimeMillis();
+                    String csvDeclCode = generateCsvDeclPythonCode(csvInformationList);
+                    System.out.println("[TranslateUtil] CSV declarations generated in " + (System.currentTimeMillis() - declStart) + "ms (" + csvDeclCode.length() + " chars)");
+                    System.out.flush();
+                    if (!csvDeclCode.isEmpty()) {
+                        code = csvDeclCode + code;
+                    }
+                }
+
                 // Detect if code is Python or Ramanujan and call appropriate method
                 List<Command> commands = null;
                 if (isPythonCode(code)) {
                     Map<Integer, RuleEngineInputUnits> functionFrameVariableMap = new HashMap<>();
                     Integer[] frameVariableCounterId = {0};
+                    System.out.println("[TranslateUtil] Starting interpretPython (code length=" + code.length() + " chars)");
+                    System.out.flush();
+                    long interpStart = System.currentTimeMillis();
                     commands = codeConverter.interpretPython(
                             code, ruleEngineInput,
                             new ArrayList<>(),
                             actualDebugCodeCreator, functionFrameVariableMap, frameVariableCounterId);
+                    System.out.println("[TranslateUtil] interpretPython completed in " + (System.currentTimeMillis() - interpStart) + "ms, commands=" + (commands == null ? "null" : commands.size()));
+                    System.out.println("[TranslateUtil]   Variables: " + ruleEngineInput.getVariables().size() + ", Arrays: " + ruleEngineInput.getArrays().size());
+                    System.out.flush();
+                    // Bulk-populate CSV array values directly (bypasses interpreter for millions of assignments)
+                    if (isFirstDagElementBeingCreated && csvInformationList != null && !csvInformationList.isEmpty()) {
+                        System.out.println("[TranslateUtil] Starting directPopulateCsvArrayValues for " + csvInformationList.size() + " CSVs");
+                        System.out.flush();
+                        long popStart = System.currentTimeMillis();
+                        directPopulateCsvArrayValues(ruleEngineInput, csvInformationList);
+                        System.out.println("[TranslateUtil] directPopulateCsvArrayValues completed in " + (System.currentTimeMillis() - popStart) + "ms");
+                        System.out.flush();
+                    }
                 } else {
                     codeConverter.interpret(
                             code, ruleEngineInput,
@@ -85,6 +116,20 @@ public class TranslateUtil {
                     ruleEngineInput.addAllPartsOfGivenRuleEngineInput(ruleEngineInputFunction);
                 }
 
+                // For Python code: propagate function definitions and global state (variables,
+                // arrays, function bodies) from the first DAG element into every child DAG element
+                // (threadStart / threadParallelismCycle bodies). This is needed because Python
+                // function defs are added to the first element's RuleEngineInput by
+                // PythonAstToRuleEngineInputConverter, but child elements get fresh, empty
+                // RuleEngineInputs and would otherwise be unable to resolve any function calls.
+                if (isPythonCode(code)) {
+                    if (isFirstDagElementBeingCreated) {
+                        pythonMainRuleEngineInput = ruleEngineInput;
+                    } else if (pythonMainRuleEngineInput != null) {
+                        ruleEngineInput.addAllPartsOfGivenRuleEngineInput(pythonMainRuleEngineInput);
+                    }
+                }
+
             }
             DagElement parentDagElement = pairCodeSnippetElementWithParent.getDagElement();
             if(parentDagElement != null) {
@@ -106,12 +151,316 @@ public class TranslateUtil {
             lastElement = dagElement;
 
 
+            isFirstDagElementBeingCreated = false;
         }
         return  DagUtils.getFirstElementOfDag(lastElement, dagElementListToBePopulated);
     }
 
     public CodeConverter getNewCodeConverter(List<CsvInformation> csvInformationList) {
         return new CodeConverter(codeConverterLogicFactory, null, csvInformationList);
+    }
+
+    /**
+     * Extracts a clean Python identifier from a CSV filename.
+     * Strips directory path, .csv extension, and replaces invalid chars with underscores.
+     */
+    private static String csvFileNameToArrayName(String fileName) {
+        if (fileName == null || fileName.trim().isEmpty()) return null;
+        // Strip directory path — use only the basename
+        int lastSlash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+        if (lastSlash >= 0) {
+            fileName = fileName.substring(lastSlash + 1);
+        }
+        if (fileName.endsWith(".csv")) {
+            fileName = fileName.substring(0, fileName.length() - 4);
+        }
+        String name = fileName.replaceAll("[^a-zA-Z0-9_]", "_");
+        return name.isEmpty() ? null : name;
+    }
+
+    /**
+     * Generates ONLY the 2D array declaration for each CSV (no per-element assignments).
+     * The actual values are bulk-populated via directPopulateCsvArrayValues() after interpretation.
+     */
+    private String generateCsvDeclPythonCode(List<CsvInformation> csvInformationList) {
+        StringBuilder sb = new StringBuilder();
+        for (CsvInformation csvInformation : csvInformationList) {
+            String data = csvInformation.getData();
+            if (data == null || data.trim().isEmpty()) continue;
+
+            String arrayName = csvFileNameToArrayName(csvInformation.getFileName());
+            if (arrayName == null) continue;
+
+            // Count rows and columns
+            int firstNewline = data.indexOf('\n');
+            String firstRow = (firstNewline >= 0) ? data.substring(0, firstNewline) : data;
+            int numCols = 1;
+            for (int i = 0; i < firstRow.length(); i++) {
+                if (firstRow.charAt(i) == ',') numCols++;
+            }
+            int numRows = 1;
+            for (int i = 0; i < data.length(); i++) {
+                if (data.charAt(i) == '\n') numRows++;
+            }
+            // Trim trailing empty row
+            if (data.endsWith("\n")) numRows--;
+
+            if (numRows == 1) {
+                sb.append(arrayName)
+                  .append(" = [0 for _ in range(").append(numCols).append(")]\n");
+            } else {
+                sb.append(arrayName)
+                  .append(" = [[0 for _ in range(").append(numCols).append(")]")
+                  .append(" for _ in range(").append(numRows).append(")]\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Directly populates Array objects' values maps from CSV data, bypassing the interpreter.
+     * This is O(n) with just string parsing and map puts — no AST, no interpreter overhead.
+     * For a 50M-element CSV, this saves ~50M interpreted Python assignment statements.
+     * Multiple CSVs are processed in parallel using threads.
+     */
+    private void directPopulateCsvArrayValues(RuleEngineInput ruleEngineInput, List<CsvInformation> csvInformationList) {
+        // Build a lookup: arrayName -> Array object (using the _name_ convention)
+        Map<String, Array> arrayByName = new HashMap<>();
+        for (Array array : ruleEngineInput.getArrays()) {
+            String id = array.getId();
+            if (id != null && id.contains("_name_")) {
+                String name = id.split("_name_")[1];
+                arrayByName.put(name, array);
+            }
+        }
+
+        // Process CSVs in parallel
+        int nThreads = Math.min(csvInformationList.size(), Runtime.getRuntime().availableProcessors());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, nThreads));
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(csvInformationList.size());
+
+        for (CsvInformation csvInformation : csvInformationList) {
+            final CsvInformation csv = csvInformation;
+            pool.submit(() -> {
+                try {
+                    populateSingleCsvArray(csv, arrayByName);
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        pool.shutdown();
+    }
+
+    /**
+     * Parses a single CSV and populates the corresponding Array's values map.
+     */
+    private void populateSingleCsvArray(CsvInformation csvInformation, Map<String, Array> arrayByName) {
+        String arrayName = csvFileNameToArrayName(csvInformation.getFileName());
+        if (arrayName == null) return;
+
+        Array array = arrayByName.get(arrayName);
+        if (array == null) {
+            System.err.println("[TranslateUtil] WARNING: No Array object found for CSV '" + arrayName + "', skipping");
+            return;
+        }
+
+        // Check for pre-existing .bin file (pre-converted offline or written by a prior call).
+        // Also resolve symlinks so that temp-dir .csv symlinks find the real .bin.
+        String csvPath = csvInformation.getFileName();
+        // sidecarBinPath is the persistent .bin we write next to the CSV for reuse across calls.
+        String sidecarBinPath = null;
+        if (csvPath != null && csvPath.endsWith(".csv")) {
+            java.io.File csvFile = new java.io.File(csvPath);
+
+            // 1. Try next to the CSV as-is
+            java.io.File binFile = new java.io.File(csvPath.substring(0, csvPath.length() - 4) + ".bin");
+            sidecarBinPath = binFile.getAbsolutePath();
+            if (!binFile.exists() || binFile.length() == 0) {
+                // 2. Resolve symlink and try next to the real file
+                try {
+                    java.nio.file.Path real = java.nio.file.Paths.get(csvPath).toRealPath();
+                    String realStr = real.toString();
+                    binFile = new java.io.File(realStr.substring(0, realStr.length() - 4) + ".bin");
+                    sidecarBinPath = binFile.getAbsolutePath();
+                    csvFile = real.toFile();
+                } catch (Exception ignored) {}
+            }
+            if (binFile.exists() && binFile.length() > 0) {
+                // mtime guard: only reuse the bin if it is at least as new as the CSV.
+                // This ensures that updated hidden-state CSVs (new activations written each layer)
+                // are never served stale binary data.
+                if (binFile.lastModified() >= csvFile.lastModified()) {
+                    String absoluteBinPath;
+                    try { absoluteBinPath = binFile.getCanonicalPath(); } catch (Exception e) { absoluteBinPath = binFile.getAbsolutePath(); }
+                    System.out.println("[TranslateUtil] Sidecar hit (fresh): " + absoluteBinPath + " (" + (binFile.length() / 1024 / 1024) + " MB)");
+                    array.setBinaryFile(absoluteBinPath);
+                    return;
+                } else {
+                    System.out.println("[TranslateUtil] Sidecar stale for '" + arrayName + "' (csv newer), will re-parse and overwrite");
+                }
+            }
+        }
+
+        String data = csvInformation.getData();
+        if (data == null || data.trim().isEmpty()) return;
+
+        // Detect if single-row (no newlines except possibly trailing)
+        String trimmedData = data.endsWith("\n") ? data.substring(0, data.length() - 1) : data;
+        boolean singleRow = (trimmedData.indexOf('\n') < 0);
+
+        // Estimate value count from data size (rough: ~11 chars per float value)
+        long estimatedValues = data.length() / 8;
+
+        // For large arrays (>100K values), write binary file instead of populating HashMap
+        if (estimatedValues > 100000) {
+            try {
+                populateLargeArrayAsBinary(data, singleRow, array, arrayName, sidecarBinPath);
+                return;
+            } catch (Exception e) {
+                System.err.println("[TranslateUtil] Binary write failed for '" + arrayName + "', falling back to HashMap: " + e.getMessage());
+                // Fall through to HashMap population
+            }
+        }
+
+        // Fast CSV parsing: parse directly into the values map (ConcurrentHashMap — thread-safe)
+        Map<String, Object> values = array.getValues();
+
+        int row = 0;
+        int col = 0;
+        int start = 0;
+        int len = data.length();
+        for (int i = 0; i <= len; i++) {
+            char c = (i < len) ? data.charAt(i) : '\n';
+            if (c == ',' || c == '\n') {
+                if (i > start) {
+                    String valStr = data.substring(start, i).trim();
+                    if (!valStr.isEmpty()) {
+                        double val = Double.parseDouble(valStr);
+                        if (singleRow) {
+                            values.put(String.valueOf(col), val);
+                        } else {
+                            values.put(row + "_" + col, val);
+                        }
+                    }
+                }
+                if (c == ',') {
+                    col++;
+                } else {
+                    row++;
+                    col = 0;
+                }
+                start = i + 1;
+            }
+        }
+        System.out.println("[TranslateUtil] Direct-populated array '" + arrayName + "' with " + values.size() + " values");
+    }
+
+    /**
+     * Write large CSV array data as a binary float32 file and set the binaryFile
+     * path on the Array object. The native C++ side will load this directly,
+     * bypassing JSON serialization entirely.
+     */
+    private void populateLargeArrayAsBinary(String data, boolean singleRow, Array array, String arrayName,
+                                             String sidecarPath) throws Exception {
+        long t0 = System.currentTimeMillis();
+
+        // Prefer writing next to the CSV (sidecar) so subsequent calls find the bin via the
+        // existing fast-path check in populateSingleCsvArray and skip re-parsing entirely.
+        // Fall back to a temp file if the directory is not writable.
+        java.io.File tmpFile;
+        boolean usingSidecar = false;
+        if (sidecarPath != null) {
+            java.io.File sidecarFile = new java.io.File(sidecarPath);
+            java.io.File parentDir = sidecarFile.getParentFile();
+            if (parentDir != null && parentDir.canWrite()) {
+                tmpFile = sidecarFile;
+                usingSidecar = true;
+            } else {
+                tmpFile = java.io.File.createTempFile("rj_bin_" + arrayName + "_", ".bin");
+                tmpFile.deleteOnExit();
+            }
+        } else {
+            tmpFile = java.io.File.createTempFile("rj_bin_" + arrayName + "_", ".bin");
+            tmpFile.deleteOnExit();
+        }
+
+        // Parse CSV and write as flat float32 (little-endian)
+        int valueCount = 0;
+        try (java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(
+                new java.io.FileOutputStream(tmpFile), 1024 * 1024)) {
+
+            int start = 0;
+            int len = data.length();
+            byte[] buf = new byte[4]; // float32
+
+            for (int i = 0; i <= len; i++) {
+                char c = (i < len) ? data.charAt(i) : '\n';
+                if (c == ',' || c == '\n') {
+                    if (i > start) {
+                        // Fast inline trim
+                        int s = start, e = i;
+                        while (s < e && data.charAt(s) <= ' ') s++;
+                        while (e > s && data.charAt(e - 1) <= ' ') e--;
+                        if (s < e) {
+                            float val = Float.parseFloat(data.substring(s, e));
+                            int bits = Float.floatToRawIntBits(val);
+                            buf[0] = (byte) (bits);
+                            buf[1] = (byte) (bits >> 8);
+                            buf[2] = (byte) (bits >> 16);
+                            buf[3] = (byte) (bits >> 24);
+                            bos.write(buf);
+                            valueCount++;
+                        }
+                    }
+                    start = i + 1;
+                }
+            }
+        }
+
+        // Set the binary file path on the Array — native side will load from here
+        array.setBinaryFile(tmpFile.getAbsolutePath());
+        // Clear the values map to avoid JSON serialization of data
+        array.getValues().clear();
+
+        long elapsed = System.currentTimeMillis() - t0;
+        System.out.println("[TranslateUtil] Binary-populated array '" + arrayName + "' with " + valueCount
+                + " float32 values (" + (tmpFile.length() / 1024) + " KB) in " + elapsed + "ms"
+                + (usingSidecar ? " [sidecar]" : " [tmp]") + " -> " + tmpFile.getAbsolutePath());
+    }
+
+    /**
+     * Re-populates array values from fresh CSV data using an existing arrayMap.
+     * Called on cache-hit paths where interpretPython is skipped — only the
+     * per-call CSV values (e.g. hidden states) need to be refreshed.
+     */
+    public void repopulateCsvArrayValues(Map<String, Array> arrayMap, List<CsvInformation> csvList) {
+        Map<String, Array> arrayByName = new HashMap<>();
+        for (Map.Entry<String, Array> entry : arrayMap.entrySet()) {
+            String id = entry.getKey();
+            if (id != null && id.contains("_name_")) {
+                arrayByName.put(id.split("_name_")[1], entry.getValue());
+            }
+        }
+        int nThreads = Math.min(csvList.size(), Runtime.getRuntime().availableProcessors());
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(Math.max(1, nThreads));
+        java.util.concurrent.CountDownLatch latch =
+                new java.util.concurrent.CountDownLatch(csvList.size());
+        for (CsvInformation csv : csvList) {
+            pool.submit(() -> {
+                try { populateSingleCsvArray(csv, arrayByName); }
+                finally { latch.countDown(); }
+            });
+        }
+        try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        pool.shutdown();
     }
 
     /**
@@ -128,9 +477,19 @@ public class TranslateUtil {
         
         String trimmedCode = code.trim();
         
-        // Primary check: Ramanujan uses curly braces, Python doesn't
-        // If code contains curly braces, it's Ramanujan
-        if (trimmedCode.contains("{") || trimmedCode.contains("}")) {
+        // Primary check: Ramanujan uses curly braces, Python doesn't.
+        // However, threadStart(t) { ... } and threadParallelismCycle(t, n) { ... }
+        // are Ramanujan threading constructs that CAN appear in Python scripts.
+        // Strip those blocks before checking for stray braces.
+        // Strip Python line comments (#...) before checking for braces, so that
+        // notation like Σ_{k} in a comment does not fool the brace detector.
+        String codeWithoutComments = trimmedCode.replaceAll("(?m)#[^\n]*", "");
+        String codeWithoutThreadBlocks = codeWithoutComments;
+        // Remove threadStart(...) { ... } and threadParallelismCycle(...) { ... } blocks
+        // Also remove threadTriggerOnSomeThreadCompletion(...) { ... } blocks
+        codeWithoutThreadBlocks = codeWithoutThreadBlocks.replaceAll(
+                "(?s)(threadStart|threadParallelismCycle|threadTriggerOnSomeThreadCompletion)\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", "");
+        if (codeWithoutThreadBlocks.contains("{") || codeWithoutThreadBlocks.contains("}")) {
             return false;
         }
         
@@ -166,6 +525,12 @@ public class TranslateUtil {
         if (trimmedCode.matches("(?s).*(^|\\n)\\s*[a-zA-Z_]\\w*\\s*=\\s*.*")) {
             return true;
         }
+
+        // 7. Python-style function calls: func_name() or func_name(args)
+        // This covers code blocks inside threadStart that contain only function calls
+        if (trimmedCode.matches("(?s).*(^|\\n)\\s*[a-zA-Z_]\\w*\\s*\\(.*\\).*")) {
+            return true;
+        }
         
         // Default to Ramanujan if no clear indicators
         return false;
@@ -175,22 +540,32 @@ public class TranslateUtil {
         return (!Character.isAlphabetic(c) && !Character.isDigit(c));
     }
 
-    private String getToBeConsideredToken(String code, IndexWrapper threadStartCodeIndex, IndexWrapper threadEndCodeIndex) {
+    private String getToBeConsideredToken(String code, IndexWrapper threadStartCodeIndex, IndexWrapper threadEndCodeIndex,
+                                          IndexWrapper threadParallelismCycleCodeIndex) {
         String toBeConsidered = "";
-        if(threadEndCodeIndex.getIndex() == -1) {
-            toBeConsidered = CodeToken.threadStart;
-        } else {
-            if(threadStartCodeIndex.getIndex() == -1) {
-                toBeConsidered = CodeToken.threadTriggerOnSomeThreadCompleteion;
-            } else {
-                if(threadStartCodeIndex.getIndex() < threadEndCodeIndex.getIndex()) {
-                    toBeConsidered = CodeToken.threadStart;
-                } else {
-                    toBeConsidered = CodeToken.threadTriggerOnSomeThreadCompleteion;
-                }
-            }
+
+        // Find the earliest valid token among threadStart, threadOnEnd, threadParallelismCycle
+        int startIdx = threadStartCodeIndex.getIndex();
+        int endIdx   = threadEndCodeIndex.getIndex();
+        int cycleIdx = threadParallelismCycleCodeIndex.getIndex();
+
+        if(startIdx == -1 && endIdx == -1 && cycleIdx == -1) {
+            return "";
         }
 
+        // Pick the token with the smallest non-(-1) index
+        int minIdx = Integer.MAX_VALUE;
+        if(startIdx != -1) minIdx = Math.min(minIdx, startIdx);
+        if(endIdx   != -1) minIdx = Math.min(minIdx, endIdx);
+        if(cycleIdx != -1) minIdx = Math.min(minIdx, cycleIdx);
+
+        if(minIdx == startIdx) {
+            toBeConsidered = CodeToken.threadStart;
+        } else if(minIdx == cycleIdx) {
+            toBeConsidered = CodeToken.threadParallelismCycle;
+        } else {
+            toBeConsidered = CodeToken.threadTriggerOnSomeThreadCompleteion;
+        }
 
         if(CodeToken.threadStart.equals(toBeConsidered)) {
             Boolean flag = true;
@@ -204,6 +579,22 @@ public class TranslateUtil {
                 if(code.charAt(tmpIndex) != ' ') {
                     toBeConsidered ="";
                     threadStartCodeIndex.setIndex(code.indexOf(CodeToken.threadStart, threadStartCodeIndex.getIndex() + 1));
+                    break;
+                }
+                tmpIndex++;
+            }
+        } else if(CodeToken.threadParallelismCycle.equals(toBeConsidered)) {
+            Boolean flag = true;
+            int tmpIndex = threadParallelismCycleCodeIndex.getIndex() + CodeToken.threadParallelismCycle.length();
+            if(threadParallelismCycleCodeIndex.getIndex() > 0 && !validateIfSuffixOfMethod(code.charAt(threadParallelismCycleCodeIndex.getIndex() - 1))) {
+                toBeConsidered ="";
+                threadParallelismCycleCodeIndex.setIndex(code.indexOf(CodeToken.threadParallelismCycle, threadParallelismCycleCodeIndex.getIndex() + 1));
+                flag = false;
+            }
+            while(flag && code.charAt(tmpIndex) != '(') {
+                if(code.charAt(tmpIndex) != ' ') {
+                    toBeConsidered ="";
+                    threadParallelismCycleCodeIndex.setIndex(code.indexOf(CodeToken.threadParallelismCycle, threadParallelismCycleCodeIndex.getIndex() + 1));
                     break;
                 }
                 tmpIndex++;
@@ -306,6 +697,48 @@ public class TranslateUtil {
         }
     }
 
+    private void parseThreadParallelismCycleCode(String code, StringWrapper extractedCode, IndexWrapper indexWrapper,
+                                                  int threadParallelismCycleCodeIndex,
+                                                  Map<String, CodeSnippetElement> threadCodeSnippetMap,
+                                                  Map<String, List<CodeSnippetElement>> mappingToBeResolved,
+                                                  Map<String, List<CodeSnippetElement>> cloningToBeResolved,
+                                                  boolean isPython) {
+        // threadParallelismCycle block: body runs after EVERY cycle (not just the last one)
+        if(indexWrapper.getIndex() != threadParallelismCycleCodeIndex) {
+            String chunk = code.substring(indexWrapper.getIndex(), threadParallelismCycleCodeIndex);
+            extractedCode.concat(isPython ? chunk : chunk.trim());
+        }
+        indexWrapper.setIndex(threadParallelismCycleCodeIndex);
+
+        CodeContainer codeContainer = StringUtils.parseForCodeContainer(CodeToken.threadParallelismCycle,
+                code.substring(indexWrapper.getIndex()), indexWrapper);
+        indexWrapper.setIndex(indexWrapper.getIndex() + threadParallelismCycleCodeIndex);
+        List<String> arguments = codeContainer.getArguments().subList(0, codeContainer.getArguments().size() - 1);
+        int iterations = Integer.parseInt(codeContainer.getArguments().get(codeContainer.getArguments().size() - 1));
+
+        for(int iteration = 1; iteration <= iterations; iteration++) {
+            // Each cycle's body gets its own CodeSnippetElement with the SAME code
+            CodeSnippetElement cycleBodySnippet = getCodeSnippets(codeContainer.getCode(), threadCodeSnippetMap, mappingToBeResolved, cloningToBeResolved);
+
+            // Connect all dependent threads for this iteration to the cycle body
+            for(String argument : arguments) {
+                connectDependentThread(threadCodeSnippetMap, mappingToBeResolved,
+                        cycleBodySnippet, argument, iteration - 1);
+            }
+
+            // After the cycle body, spawn the next iteration's threads (except after the last cycle)
+            if(iteration != iterations) {
+                for(String argument : arguments) {
+                    CodeSnippetElement nextIterThreadSnippet = new CodeSnippetElement();
+                    cloneNewCodeSnippetWithOriginalCodeSnippetThatWillBeCreatedLater(
+                            threadCodeSnippetMap, cloningToBeResolved, iteration, argument,
+                            nextIterThreadSnippet);
+                    cycleBodySnippet.getNext().add(nextIterThreadSnippet);
+                }
+            }
+        }
+    }
+
     /*
     * threadCodeSnippetMap is the map of threadId and the codeSnippet corresponding to it
     * mappingToBeResolved is the map between the thread and the list of CodeSnippet successor to the given thread.
@@ -326,12 +759,15 @@ public class TranslateUtil {
         boolean isPython = isPythonCode(code);
         int threadStartCodeIndex = code.indexOf(CodeToken.threadStart);
         int threadEndCodeIndex = code.indexOf(CodeToken.threadTriggerOnSomeThreadCompleteion);
-        while(threadEndCodeIndex !=-1 || threadStartCodeIndex != -1) {
+        int threadParallelismCycleIndex = code.indexOf(CodeToken.threadParallelismCycle);
+        while(threadEndCodeIndex != -1 || threadStartCodeIndex != -1 || threadParallelismCycleIndex != -1) {
             IndexWrapper threadEndCodeIndexWrapper = new IndexWrapper(threadEndCodeIndex);
             IndexWrapper threadStartCodeIndexWrapper = new IndexWrapper(threadStartCodeIndex);
-            String toBeConsidered = getToBeConsideredToken(code, threadStartCodeIndexWrapper, threadEndCodeIndexWrapper);
+            IndexWrapper threadParallelismCycleIndexWrapper = new IndexWrapper(threadParallelismCycleIndex);
+            String toBeConsidered = getToBeConsideredToken(code, threadStartCodeIndexWrapper, threadEndCodeIndexWrapper, threadParallelismCycleIndexWrapper);
             threadEndCodeIndex = threadEndCodeIndexWrapper.getIndex();
             threadStartCodeIndex = threadStartCodeIndexWrapper.getIndex();
+            threadParallelismCycleIndex = threadParallelismCycleIndexWrapper.getIndex();
             if("".equals(toBeConsidered)) {
                 continue;
             }
@@ -341,6 +777,13 @@ public class TranslateUtil {
                 IndexWrapper indexWrapper = new IndexWrapper(index);
                 parseThreadStartCode(code, extractedCodeWrapper, indexWrapper, threadStartCodeIndex, threadCodeSnippetMap,
                     mappingToBeResolved, cloningToBeResolved, codeSnippetElement, isPython);
+                extractedCode = extractedCodeWrapper.getStr();
+                index = indexWrapper.getIndex();
+            } else if(CodeToken.threadParallelismCycle.equalsIgnoreCase(toBeConsidered)) {
+                StringWrapper extractedCodeWrapper = new StringWrapper(extractedCode);
+                IndexWrapper indexWrapper = new IndexWrapper(index);
+                parseThreadParallelismCycleCode(code, extractedCodeWrapper, indexWrapper, threadParallelismCycleIndex,
+                        threadCodeSnippetMap, mappingToBeResolved, cloningToBeResolved, isPython);
                 extractedCode = extractedCodeWrapper.getStr();
                 index = indexWrapper.getIndex();
             } else {
@@ -360,6 +803,11 @@ public class TranslateUtil {
                 threadEndCodeIndex = -1;
             } else {
                 threadEndCodeIndex = code.substring(index).indexOf(CodeToken.threadTriggerOnSomeThreadCompleteion) + index;
+            }
+            if(index >= code.length() || code.substring(index).indexOf(CodeToken.threadParallelismCycle) == -1) {
+                threadParallelismCycleIndex = -1;
+            } else {
+                threadParallelismCycleIndex = code.substring(index).indexOf(CodeToken.threadParallelismCycle) + index;
             }
         }
         if(index < code.length()) {

@@ -15,10 +15,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import in.ramanujan.developer.console.model.pojo.csv.CsvInformation;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -178,6 +181,107 @@ public class TranslateServiceTest {
 
         assertNotNull("sortArray not found", sorted);
         assertEquals(expected, sorted.getValues());
+    }
+
+    /**
+     * Tests that CSV data passed to translate() is correctly injected as a 2D Python array
+     * into the first code snippet.
+     *
+     * CSV "scores.csv" (3 rows x 2 cols):
+     *   1,2
+     *   3,4
+     *   5,6
+     *
+     * Expected: scores[3][2] array is available in Python code.
+     * Python code sums all elements → total = 1+2+3+4+5+6 = 21.
+     */
+    @Test
+    public void testPythonCsvIntegration() throws Exception {
+        CsvInformation csv = new CsvInformation();
+        csv.setFileName("scores.csv");
+        csv.setData("1,2\n3,4\n5,6");
+
+        List<CsvInformation> csvList = new ArrayList<>();
+        csvList.add(csv);
+
+        // Reads every element of the injected 2D array 'scores' and accumulates the sum
+        String pythonCode =
+            "total = 0\n" +
+            "i = 0\n" +
+            "while i < 3:\n" +
+            "    j = 0\n" +
+            "    while j < 2:\n" +
+            "        total = total + scores[i][j]\n" +
+            "        j = j + 1\n" +
+            "    i = i + 1\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+
+        TranslateResponse response = translateService.translate(pythonCode, csvList, variableMap, arrayMap).result();
+        if (response == null) {
+            fail("CSV integration translation failed: null response");
+        }
+
+        executeDagGraph(response, variableMap, arrayMap);
+
+        assertEquals("Sum of CSV elements should be 21", 21d,
+            getVariableValueByName(variableMap, "total"), 0.0001);
+    }
+
+    /**
+     * Tests CSV integration with two CSV files. Each CSV is injected as a separate 2D array.
+     * Python code reads from both arrays and computes a combined result.
+     *
+     * CSV "a.csv":
+     *   10,20
+     *   30,40
+     * CSV "b.csv":
+     *   1,2
+     *   3,4
+     *
+     * sumA = 10+20+30+40 = 100, sumB = 1+2+3+4 = 10 → combined = 110
+     */
+    @Test
+    public void testPythonMultipleCsvIntegration() throws Exception {
+        CsvInformation csvA = new CsvInformation();
+        csvA.setFileName("a.csv");
+        csvA.setData("10,20\n30,40");
+
+        CsvInformation csvB = new CsvInformation();
+        csvB.setFileName("b.csv");
+        csvB.setData("1,2\n3,4");
+
+        List<CsvInformation> csvList = new ArrayList<>();
+        csvList.add(csvA);
+        csvList.add(csvB);
+
+        String pythonCode =
+            "sumA = 0\n" +
+            "sumB = 0\n" +
+            "i = 0\n" +
+            "while i < 2:\n" +
+            "    j = 0\n" +
+            "    while j < 2:\n" +
+            "        sumA = sumA + a[i][j]\n" +
+            "        sumB = sumB + b[i][j]\n" +
+            "        j = j + 1\n" +
+            "    i = i + 1\n" +
+            "combined = sumA + sumB\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+
+        TranslateResponse response = translateService.translate(pythonCode, csvList, variableMap, arrayMap).result();
+        if (response == null) {
+            fail("Multiple CSV integration translation failed: null response");
+        }
+
+        executeDagGraph(response, variableMap, arrayMap);
+
+        assertEquals("sumA should be 100", 100d, getVariableValueByName(variableMap, "sumA"), 0.0001);
+        assertEquals("sumB should be 10",  10d,  getVariableValueByName(variableMap, "sumB"), 0.0001);
+        assertEquals("combined should be 110", 110d, getVariableValueByName(variableMap, "combined"), 0.0001);
     }
 
     @Test

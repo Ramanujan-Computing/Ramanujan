@@ -24,6 +24,7 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
 
     RuleEngineInput *ruleEngineInput = new RuleEngineInput(&root);
     Processor *processor = new Processor();
+
     processor->process(*ruleEngineInput, str1);
 
     std::unordered_map<std::string, std::unordered_map<std::string, double> *> *arrayMap = processor->arrChangeMap();
@@ -57,6 +58,11 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
         env->DeleteLocalRef(valueObject);
     }
 
+// Cache Double class and constructor once — calling FindClass inside the inner
+// loop (once per float) was the dominant JNI overhead (~1μs × 400K = ~400ms).
+    jclass doubleClass = env->FindClass("java/lang/Double");
+    jmethodID doubleConstructor = env->GetMethodID(doubleClass, "<init>", "(D)V");
+
 // Create a new map for arrayMap
     jobject arrayMapMap = env->NewObject(mapClass, mapConstructor);
     for (auto const &x: *arrayMap) {
@@ -65,7 +71,7 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
         for (auto const &y: *x.second) {
             jstring innerKey = env->NewStringUTF(y.first.c_str());
             jdouble value = y.second;
-            jobject valueObject = env->NewObject(env->FindClass("java/lang/Double"), env->GetMethodID(env->FindClass("java/lang/Double"), "<init>", "(D)V"), value);
+            jobject valueObject = env->NewObject(doubleClass, doubleConstructor, value);
             env->CallObjectMethod(innerMap, putMethod, innerKey, valueObject);
             env->DeleteLocalRef(innerKey);
             env->DeleteLocalRef(valueObject);
@@ -177,7 +183,7 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
 #endif
 
     delete processor;
-
+    delete ruleEngineInput;
 
     return map;
 }

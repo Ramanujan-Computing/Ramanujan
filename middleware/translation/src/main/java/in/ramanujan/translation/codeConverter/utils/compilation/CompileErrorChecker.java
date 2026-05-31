@@ -117,6 +117,10 @@ public class CompileErrorChecker {
         add("EXP");
         add("SQRT");
         add("POW");
+        add("LOG");
+        add("GPU_SYNC");
+        add("GPU_LOAD");
+
     }};
 
     private void checkFunctionCalls(String code, List<Integer> newLines, List<Integer> tabs) throws CompilationException {

@@ -11,12 +11,34 @@ public class Console {
         if(args.length == 0) {
             return;
         }
+        // 'server' keyword: start persistent JVM server mode (must be checked FIRST)
+        if ("server".equalsIgnoreCase(args[0])) {
+            OperationType.execute_inline_server.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
+        // 'homelab' keyword: start as homelab orchestration server
+        if ("homelab".equalsIgnoreCase(args[0])) {
+            OperationType.execute_inline_homelab_server.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
+        // 'worker' keyword: start as local worker connecting to a homelab server
+        if ("worker".equalsIgnoreCase(args[0])) {
+            OperationType.execute_inline_worker.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
         // If one argument is given, treat it as a path and use execute_inline
         if(args.length == 1) {
             OperationType.execute_inline.getImplementation().execute(Arrays.asList(args));
             return;
         }
-        // If more than one argument, use the first as operation type
+        // If the first argument looks like a file path (e.g. ends with .py or contains
+        // a path separator), treat ALL arguments as execute_inline args:
+        //   args[0] = script file, args[1..N] = CSV data files
+        if(args[0].contains(".") || args[0].contains("/") || args[0].contains("\\")) {
+            OperationType.execute_inline.getImplementation().execute(Arrays.asList(args));
+            return;
+        }
+        // Otherwise, use the first as operation type
         OperationType operationType = OperationType.getOperation(args[0]);
         if(operationType == null) {
             List<String> possibleOperators = new ArrayList<>();

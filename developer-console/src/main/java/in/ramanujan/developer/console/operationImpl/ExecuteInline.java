@@ -15,7 +15,10 @@ import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -23,11 +26,37 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
 
 /**
  * This class contains the core logic from DebugFetcher, excluding debug file and server creation.
- * It executes DAG elements in parallel where possible, respecting dependencies for optimal performance.
+ * Execution mode is controlled by the environment variable RAMANUJAN_SEQUENTIAL:
+ *   - unset / "false"  →  parallel execution (default, best throughput)
+ *   - "true"           →  sequential execution (deterministic, easier to debug)
  */
 public class ExecuteInline implements Operation {
     protected final TranslateUtil translateUtil = new TranslateUtil();
     protected final ObjectMapper objectMapper = new ObjectMapper();
+
+    private boolean shouldWriteRuleEngineDebug() {
+        return "true".equalsIgnoreCase(System.getenv("RAMANUJAN_WRITE_RULE_ENGINE_DEBUG"));
+    }
+
+    private int resolveThreadPoolSize() {
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        String configuredParallelism = System.getenv("RAMANUJAN_MAX_PARALLELISM");
+        if (configuredParallelism == null || configuredParallelism.trim().isEmpty()) {
+            return availableProcessors;
+        }
+        try {
+            int parsedParallelism = Integer.parseInt(configuredParallelism.trim());
+            if (parsedParallelism < 1) {
+                return 1;
+            }
+            if (parsedParallelism > availableProcessors) {
+                return availableProcessors;
+            }
+            return parsedParallelism;
+        } catch (NumberFormatException ignored) {
+            return availableProcessors;
+        }
+    }
 
 
     // Hook for subclasses: called before processing a DAG element
@@ -43,11 +72,29 @@ public class ExecuteInline implements Operation {
     protected void executeDagElement(DagElement dagElement, Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws IOException {
         preProcess(dagElement);
         if(dagElement.getFirstCommandId().isEmpty()) {
+            System.out.println("[DAG] element " + dagElement.getId() + " completed (empty — no commands)");
             postProcess(dagElement, null);
             return;
         }
+        String ruleEngineInputJson = objectMapper.writeValueAsString(dagElement.getRuleEngineInput());
+        if (shouldWriteRuleEngineDebug()) {
+            // Write combined wrapper that Test.cpp loadFromTmp() expects: {firstCommandId, ruleEngineInput}
+            Map<String, Object> wrapper = new LinkedHashMap<>();
+            wrapper.put("firstCommandId", dagElement.getFirstCommandId());
+            wrapper.put("ruleEngineInput", objectMapper.readTree(ruleEngineInputJson));
+            objectMapper.writeValue(new File("/tmp/rule_engine_debug.json"), wrapper);
+            objectMapper.writeValue(new File("/tmp/rule_engine_debug_meta.json"),
+                    Collections.singletonMap("firstCommandId", dagElement.getFirstCommandId()));
+        }
+
+        System.out.println("[ExecuteInline] Calling NativeProcessor for DAG element " + dagElement.getId() + " (firstCmd=" + dagElement.getFirstCommandId() + ")");
+        System.out.println("[ExecuteInline]   RuleEngineInput JSON size: " + (ruleEngineInputJson.length() / 1024) + " KB");
+        System.out.flush();
+        long nativeStart = System.currentTimeMillis();
         in.ramanujan.rule.engine.NativeProcessor nativeProcessor = new in.ramanujan.rule.engine.NativeProcessor();
-        nativeProcessor.process(objectMapper.writeValueAsString(dagElement.getRuleEngineInput()), dagElement.getFirstCommandId());
+        nativeProcessor.process(ruleEngineInputJson, dagElement.getFirstCommandId());
+        System.out.println("[ExecuteInline]   NativeProcessor completed in " + (System.currentTimeMillis() - nativeStart) + "ms");
+        System.out.flush();
         for(Object en : nativeProcessor.jniObject.entrySet()) {
             Map.Entry<String, Object> entry = (Map.Entry<String, Object>) en;
             String key = entry.getKey();
@@ -71,7 +118,51 @@ public class ExecuteInline implements Operation {
                 variable.setValue(value);
             }
         }
+        System.out.println("[DAG] element " + dagElement.getId() + " completed (firstCmd=" + dagElement.getFirstCommandId() + ")");
         postProcess(dagElement, nativeProcessor);
+    }
+
+    /**
+     * Execute DAG elements sequentially in topological order (debug mode).
+     * Before each native call, the element's RuleEngineInput is written to
+     * /tmp/rule_engine_debug.json so the standalone native Test binary can
+     * reproduce the exact crashing input.
+     */
+    protected void executeSequentially(DagElement firstDagElement, List<DagElement> dagElementList,
+                                       Map<String, Variable> variableMap, Map<String, Array> arrayMap) throws IOException {
+        Set<DagElement> allElements = new LinkedHashSet<>(dagElementList);
+        allElements.add(firstDagElement);
+        Set<DagElement> completed = new HashSet<>();
+        Deque<DagElement> readyQueue = new ArrayDeque<>();
+        readyQueue.add(firstDagElement);
+
+        while (completed.size() < allElements.size()) {
+            if (readyQueue.isEmpty()) {
+                // Find any element whose predecessors are all done
+                for (DagElement el : allElements) {
+                    if (!completed.contains(el) && completed.containsAll(el.getPreviousElements())) {
+                        readyQueue.add(el);
+                    }
+                }
+            }
+            if (readyQueue.isEmpty()) {
+                break; // no progress possible (cycle or done)
+            }
+
+            DagElement element = readyQueue.poll();
+            if (completed.contains(element)) {
+                continue;
+            }
+
+            executeDagElement(element, variableMap, arrayMap);
+            completed.add(element);
+
+            for (DagElement next : element.getNextElements()) {
+                if (!completed.contains(next) && completed.containsAll(next.getPreviousElements())) {
+                    readyQueue.add(next);
+                }
+            }
+        }
     }
 
     /**
@@ -84,8 +175,8 @@ public class ExecuteInline implements Operation {
         Set<DagElement> allElements = new HashSet<>(dagElementList);
         allElements.add(firstDagElement);
         
-        // Create thread pool - using number of available processors
-        int threadPoolSize = Runtime.getRuntime().availableProcessors();
+        // Create thread pool - configurable for large DAGs that would otherwise exhaust heap
+        int threadPoolSize = resolveThreadPoolSize();
         ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
         
         try {
@@ -212,9 +303,18 @@ public class ExecuteInline implements Operation {
             long startTime = System.currentTimeMillis();
             Map<String, Variable> variableMap = new HashMap<>();
             Map<String, Array> arrayMap = new HashMap<>();
+            System.out.println("[ExecuteInline] Creating JSON from args: " + args.get(0) + " + " + (args.size()-1) + " CSV files");
+            System.out.flush();
             CodeRunRequest codeRunRequest = createJson(args);
             String code = codeRunRequest.getCode();
-            List<CsvInformation> csvInformationList = new ArrayList<>();
+            List<CsvInformation> csvInformationList = codeRunRequest.getCsvInformationList() != null
+                    ? codeRunRequest.getCsvInformationList() : new ArrayList<>();
+            System.out.println("[ExecuteInline] CSV files loaded: " + csvInformationList.size());
+            for (CsvInformation ci : csvInformationList) {
+                String d = ci.getData();
+                System.out.println("[ExecuteInline]   " + ci.getFileName() + " -> " + (d == null ? "null" : (d.length() / 1024) + " KB"));
+            }
+            System.out.flush();
             TranslateResponse translateResponse = new TranslateResponse();
             Map<String, RuleEngineInput> functionCallsRuleEngineInput = new HashMap<>();
             ActualDebugCodeCreator actualDebugCodeCreator = new ActualDebugCodeCreator("", 0);
@@ -256,13 +356,22 @@ public class ExecuteInline implements Operation {
             translateResponse.setCodeAndDagElementMap(dagElementAndCodeMap);
             translateResponse.setCommonFunctionCode(functionCode);
 
-            System.out.println("compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
+            System.out.println("[ExecuteInline] compilation time: " + (System.currentTimeMillis() - startTime) + "ms");
+            System.out.println("[ExecuteInline] DAG elements: " + (dagElementList.size() + 1) + " (1 first + " + dagElementList.size() + " others)");
+            System.out.println("[ExecuteInline] Variables: " + variableMap.size() + ", Arrays: " + arrayMap.size());
+            System.out.flush();
 
             startTime = System.currentTimeMillis();
             
-            // Execute DAG in parallel mode
-            System.out.println("Executing DAG in parallel mode");
-            executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
+            // Execution mode: parallel (default) or sequential (set RAMANUJAN_SEQUENTIAL=true)
+            boolean runSequentially = "true".equalsIgnoreCase(System.getenv("RAMANUJAN_SEQUENTIAL"));
+            if (runSequentially) {
+                System.out.println("Executing DAG sequentially (RAMANUJAN_SEQUENTIAL=true)");
+                executeSequentially(firstDagElement, dagElementList, variableMap, arrayMap);
+            } else {
+                System.out.println("Executing DAG in parallel");
+                executeInParallel(firstDagElement, dagElementList, variableMap, arrayMap);
+            }
 
             System.out.println("execution time: " + (System.currentTimeMillis() - startTime) + "ms");
 

@@ -276,6 +276,13 @@ public class PythonAstToRuleEngineInputConverter {
      * Used to associate return statements with their function.
      */
     private String currentFunctionName;
+
+    /**
+     * All top-level {@link FunctionDefNode}s in the module, keyed by function name.
+     * Populated by a pre-scan at the start of {@link #convert(ModuleNode, List)} so that
+     * GPU functions can look up helper functions regardless of definition order.
+     */
+    private Map<String, FunctionDefNode> allModuleFunctions = new HashMap<>();
     
     /**
      * Constructs a new converter for transforming Python AST to RuleEngineInput.
@@ -337,6 +344,15 @@ public class PythonAstToRuleEngineInputConverter {
         Command previousCommand = null;
         List<AstNode> nonFunctionDefNodes = new ArrayList<>();
         List<AstNode> functionDefNodes = new ArrayList<>();
+
+        // Pre-scan: collect every function definition so GPU converters can look up helpers.
+        for (AstNode node : module.getBody()) {
+            if (node instanceof FunctionDefNode) {
+                FunctionDefNode fdn = (FunctionDefNode) node;
+                allModuleFunctions.put(fdn.getName(), fdn);
+            }
+        }
+
         for (AstNode node : module.getBody()) {
             if (node instanceof FunctionDefNode) {
                 functionDefNodes.add(node);
@@ -751,8 +767,19 @@ public class PythonAstToRuleEngineInputConverter {
             } else if (array != null) {
                 targetId = array.getId();
             } else {
-                throw new CompilationException(null, null, 
-                    "Variable " + varName + " not found for augmented assignment");
+                // Global fallback: try global scope when inside a function
+                Variable globalVar = codeConverter.getVariableMap().get(varName);
+                if (globalVar != null) {
+                    targetId = globalVar.getId();
+                } else {
+                    Array globalArr = codeConverter.getArrayMap().get(varName);
+                    if (globalArr != null) {
+                        targetId = globalArr.getId();
+                    } else {
+                        throw new CompilationException(null, null, 
+                            "Variable " + varName + " not found for augmented assignment");
+                    }
+                }
             }
             
             BinOpNode binOp = new BinOpNode();
@@ -830,6 +857,10 @@ public class PythonAstToRuleEngineInputConverter {
 
         } else {
             array = getExistingArray(arrayVarName, variableScope);
+            // Global fallback: try global scope when inside a function
+            if (array == null) {
+                array = codeConverter.getArrayMap().get(arrayVarName);
+            }
         }
         if (array == null) {
             throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
@@ -1352,6 +1383,40 @@ public class PythonAstToRuleEngineInputConverter {
         }
 
         functionCall.setAllVariablesInMethod(variablesInFunction);
+
+        // ---- GPU function handling ----
+        // Functions named with the "_GPU_N" suffix are executed as OpenCL kernels.
+        // Convention: def funcName_GPU_N(dataArg1, ..., dataArgK, rangeDim1, ..., rangeDimN)
+        //   - N (in the function name) = work_dim passed to clEnqueueNDRangeKernel.
+        //   - Last N params  → range dim args → get_global_id(0..N-1) declarations in kernel.
+        //   - First K params → __global float* data args in the kernel signature.
+        if (funcDef.getName().matches(".*_GPU_\\d+$")) {
+            try {
+                // Build a map of all non-GPU helper functions visible to this GPU kernel.
+                // GPU-suffixed functions are excluded because they cannot be called as device functions.
+                Map<String, FunctionDefNode> helpers = new HashMap<>();
+                for (Map.Entry<String, FunctionDefNode> entry : allModuleFunctions.entrySet()) {
+                    String fname = entry.getKey();
+                    if (!fname.equals(funcDef.getName()) && !fname.matches(".*_GPU_\\d+$")) {
+                        helpers.put(fname, entry.getValue());
+                    }
+                }
+                GpuFunctionBodyConverter gpuConverter = new GpuFunctionBodyConverter();
+                GpuFunctionBodyConverter.GpuConversionResult gpuResult = gpuConverter.convert(funcDef, helpers);
+                functionCall.setIsGpu(true);
+                functionCall.setOpenClCode(gpuResult.kernelCode);
+                functionCall.setGpuParallelismArgIndices(gpuResult.parallelismArgIndices);
+                System.out.println("========== GPU FUNCTION DETECTED: " + funcDef.getName() + " ==========");
+                System.out.println("OpenCL kernel code:\n" + gpuResult.kernelCode);
+                System.out.println("GPU parallelism arg indices (work_dim=" + gpuResult.parallelismArgIndices.size() + "): " + gpuResult.parallelismArgIndices);
+                System.out.println("=======================================================");
+            } catch (Exception e) {
+                throw new CompilationException(null, null,
+                        "Failed to generate OpenCL kernel for GPU function '"
+                        + funcDef.getName() + "': " + e.getMessage());
+            }
+        }
+
         ruleEngineInput.getFunctionCalls().add(functionCall);
         
         // Restore previous function name
@@ -2321,7 +2386,10 @@ public class PythonAstToRuleEngineInputConverter {
             return convertListToCommand((ListNode) expr, variableScope);
         }
         
-        throw new CompilationException(null, null, "Unsupported expression type: " + expr.getClass().getSimpleName());
+        throw new CompilationException(
+            expr.getLineno() > 0 ? expr.getLineno() : null,
+            expr.getColOffset(),
+            "Unsupported expression type: " + expr.getClass().getSimpleName() + "\nAST: " + expr.toString());
     }
     
     /**
@@ -2395,6 +2463,25 @@ public class PythonAstToRuleEngineInputConverter {
             command.setVariableId(newVar.getId());
             ruleEngineInput.getCommands().add(command);
             return command.getId();
+        }
+        
+        // Global fallback: try global scope when inside a function
+        if (isInsideFunction(variableScope)) {
+            Variable globalVar = codeConverter.getVariableMap().get(varName);
+            if (globalVar != null) {
+                Command command = new Command();
+                command.setId("command_" + UUID.randomUUID().toString());
+                command.setVariableId(globalVar.getId());
+                ruleEngineInput.getCommands().add(command);
+                return command.getId();
+            }
+            Array globalArr = codeConverter.getArrayMap().get(varName);
+            if (globalArr != null) {
+                throw new CompilationException(null, null, 
+                    "Bare array reference '" + varName + "' without subscripting is not supported. " +
+                    "Array indices must be explicitly specified (e.g., arr[0], arr[i][j]). " +
+                    "If you need to pass the entire array, use array subscript notation.");
+            }
         }
         
         throw new CompilationException(null, null, "Variable " + varName + " not found");
@@ -2548,6 +2635,23 @@ public class PythonAstToRuleEngineInputConverter {
             return command.getId();
         }
         
+        // Global fallback: try global scope when inside a function
+        if (isInsideFunction(variableScope)) {
+            Array globalArr = codeConverter.getArrayMap().get(arrayVarName);
+            if (globalArr != null) {
+                Command command = new Command();
+                command.setId("command_" + UUID.randomUUID().toString());
+                ArrayCommand arrayCommand = new ArrayCommand();
+                arrayCommand.setArrayId(globalArr.getId());
+                if (indices != null && !indices.isEmpty()) {
+                    arrayCommand.setIndex(indices);
+                }
+                command.setArrayCommand(arrayCommand);
+                ruleEngineInput.getCommands().add(command);
+                return command.getId();
+            }
+        }
+        
         throw new CompilationException(null, null, "Array or array parameter " + arrayVarName + " not found");
     }
     
@@ -2690,6 +2794,20 @@ public class PythonAstToRuleEngineInputConverter {
         MethodDataTypeAgnosticArg methodArg = getExistingMethodArg(varName, variableScope);
         if (methodArg != null) {
             return methodArg.getId();
+        }
+        
+        // Global fallback: if we're inside a function and all scoped lookups failed,
+        // try the global scope as a last resort. This allows functions to read global
+        // variables/arrays that are NOT shadowed by a local or parameter of the same name.
+        if (isInsideFunction(variableScope)) {
+            Variable globalVar = codeConverter.getVariableMap().get(varName);
+            if (globalVar != null) {
+                return globalVar.getId();
+            }
+            Array globalArr = codeConverter.getArrayMap().get(varName);
+            if (globalArr != null) {
+                return globalArr.getId();
+            }
         }
         
         throw new CompilationException(null, null, "Argument " + varName + " not found");
@@ -3214,6 +3332,12 @@ public class PythonAstToRuleEngineInputConverter {
             codeConverter.setVariable(newVar, scope);
             
             return newVar.getId();
+        }
+        
+        // Global fallback: try global scope when inside a function
+        Variable globalVar = codeConverter.getVariableMap().get(dimVarName);
+        if (globalVar != null) {
+            return globalVar.getId();
         }
         
         return null;

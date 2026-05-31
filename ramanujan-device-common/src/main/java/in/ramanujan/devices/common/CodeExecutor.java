@@ -16,7 +16,6 @@ import lombok.Data;
 import java.io.File;
 import java.io.FileWriter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static in.ramanujan.utils.Constants.arrayIndex;
 
@@ -53,12 +52,24 @@ public class CodeExecutor {
         ProcessorFutureMap processorFutureMap = new ProcessorFutureMap();
 //        processorFutureMap.setProcessor(processor);
 
-        AtomicInteger integer = new AtomicInteger(0);
-        String fileName = "/Users/pranav/Desktop/debug_";
+        // Detect GPU kernels in this rule engine input once, before spawning the thread.
+        final java.util.List<String> gpuKernelIds = new java.util.ArrayList<>();
+        if (ruleEngineInput.getFunctionCalls() != null) {
+            for (in.ramanujan.pojo.ruleEngineInputUnitsExt.FunctionCall fc : ruleEngineInput.getFunctionCalls()) {
+                if (Boolean.TRUE.equals(fc.getIsGpu()) && fc.getId() != null) {
+                    gpuKernelIds.add(fc.getId());
+                }
+            }
+        }
+        final boolean hasGpu = !gpuKernelIds.isEmpty();
+
         new Thread(() -> {
             try {
                 logger.info("start code exec for " + hostId);
-                long start = new Date().toInstant().toEpochMilli();
+                if (hasGpu) {
+                    logger.info("[GPU] " + gpuKernelIds.size() + " GPU kernel(s) detected: " + gpuKernelIds);
+                }
+                long start = System.currentTimeMillis();
                 NativeProcessor nativeProcessor = new NativeProcessor();
                 Map<String, Object> results = new HashMap<>();
                 if(openPingApiResponse.getFirstCommandId() != "") {
@@ -99,10 +110,37 @@ public class CodeExecutor {
                 if(results == null) {
                     results = new HashMap<>();
                 }
+                // Diagnostic: log what the native layer returned before sending to homelab server
+                Object arrIdx = results.get("arrayIndex");
+                if (arrIdx instanceof Map) {
+                    Map<?, ?> arrMap = (Map<?, ?>) arrIdx;
+                    logger.info("[DEBUG] GPU result: " + arrMap.size() + " array(s) changed, keys=" + arrMap.keySet());
+                    for (Map.Entry<?, ?> e : arrMap.entrySet()) {
+                        Object inner = e.getValue();
+                        if (inner instanceof Map) {
+                            Map<?, ?> innerMap = (Map<?, ?>) inner;
+                            // Log first 3 entries as a sample
+                            int count = 0;
+                            StringBuilder sample = new StringBuilder();
+                            for (Map.Entry<?, ?> ie : innerMap.entrySet()) {
+                                if (count++ >= 3) { sample.append("..."); break; }
+                                sample.append(ie.getKey()).append("=").append(ie.getValue()).append(" ");
+                            }
+                            logger.info("[DEBUG]   array id=" + e.getKey() + " entries=" + innerMap.size() + " sample=[" + sample + "]");
+                        }
+                    }
+                } else {
+                    logger.info("[DEBUG] GPU result: no arrayIndex in results, keys=" + results.keySet());
+                }
 //                Map<String, Object> results = new Processor(ruleEngineInput, openPingApiResponse.getFirstCommandId(), new CheckpointPushClient(openPingApiResponse.getUuid())).process();
                 processorFutureMap.setResult(results);
+                long elapsed = System.currentTimeMillis() - start;
                 logger.info("end code exec for " + hostId);
-                logger.info("total time " + (new Date().toInstant().toEpochMilli() - start));
+                if (hasGpu) {
+                    logger.info("[GPU] run latency: " + elapsed + " ms (kernels: " + gpuKernelIds + ")");
+                } else {
+                    logger.info("total time " + elapsed + " ms");
+                }
                 processorFutureMap.setDone(true);
             } catch (Throwable e) {
                 logger.error("ERROR for " + hostId, e);

@@ -1,22 +1,38 @@
+# Maven / Gradle build outputs
 */target/*
+target/
+*/build/*
+build/
+
+# IDE & tooling
 */.idea/*
 .idea/
 */.vscode/*
+.vscode/
 *iml
+
+# Gradle wrapper & cache
 */.gradle/*
+.gradle/
 */gradle/*
 */gradlew
 */gradlew.bat
-*/build/*
 
-*.vscode/
-*.gch
-*.o
+# CMake build directories
 *cmake-build-debug/
+cmake-build-debug/
 */cmake-build-release/
+cmake-build-release/
 */cmake_install.cmake
 */CMakeFiles/
+CMakeFiles/
 */Makefile
+
+# Android NDK / native build outputs
+*/build/intermediates/*
+*/build/outputs/*
+*/build/generated/*
+**/.cxx/
 
 *.log
 

@@ -833,4 +833,242 @@ public class TranslateUtilTest {
 
     }
 
+    /**
+     * threadParallelismCycle(t1, t2, 3) runs its body after EVERY cycle (3 cycles total),
+     * unlike threadOnEnd which only runs its body on the last cycle.
+     *
+     * Expected DAG for 3 cycles:
+     *  [preamble]
+     *    -> t1_1, t2_1  -> [cycleBody1]
+     *                          -> t1_2, t2_2  -> [cycleBody2]
+     *                                               -> t1_3, t2_3  -> [cycleBody3]
+     */
+    @Test
+    public void testThreadParallelismCycle() {
+        String code = "var x:integer;\n" +
+                "\tthreadStart(t1){\n" +
+                "\t\tx=1;\n" +
+                "\t}\n" +
+                "\tthreadStart(t2){\n" +
+                "\t\tx=2;\n" +
+                "\t}\n" +
+                "\tthreadParallelismCycle(t1,t2,3){\n" +
+                "\t\tx=x+1;\n" +
+                "\t}\n";
+
+        code = code.replaceAll("\\t", "").replaceAll("\\n", "");
+        CodeSnippetElement result = translateUtil.getCodeSnippets(code, new HashMap<>(), new HashMap<>(), new HashMap<>());
+
+        CodeSnippetElement assertion = new CodeSnippetElement();
+        assertion.setCode("var x:integer;");
+
+        CodeSnippetElement t1Iter1 = new CodeSnippetElement();
+        t1Iter1.setCode("x=1;");
+        CodeSnippetElement t2Iter1 = new CodeSnippetElement();
+        t2Iter1.setCode("x=2;");
+        CodeSnippetElement cycleBody1 = new CodeSnippetElement();
+        cycleBody1.setCode("x=x+1;");
+
+        assertion.getNext().add(t1Iter1);
+        assertion.getNext().add(t2Iter1);
+        t1Iter1.getNext().add(cycleBody1);
+        t2Iter1.getNext().add(cycleBody1);
+
+        CodeSnippetElement t1Iter2 = new CodeSnippetElement();
+        t1Iter2.setCode("x=1;");
+        CodeSnippetElement t2Iter2 = new CodeSnippetElement();
+        t2Iter2.setCode("x=2;");
+        CodeSnippetElement cycleBody2 = new CodeSnippetElement();
+        cycleBody2.setCode("x=x+1;");
+
+        cycleBody1.getNext().add(t1Iter2);
+        cycleBody1.getNext().add(t2Iter2);
+        t1Iter2.getNext().add(cycleBody2);
+        t2Iter2.getNext().add(cycleBody2);
+
+        CodeSnippetElement t1Iter3 = new CodeSnippetElement();
+        t1Iter3.setCode("x=1;");
+        CodeSnippetElement t2Iter3 = new CodeSnippetElement();
+        t2Iter3.setCode("x=2;");
+        CodeSnippetElement cycleBody3 = new CodeSnippetElement();
+        cycleBody3.setCode("x=x+1;");
+
+        cycleBody2.getNext().add(t1Iter3);
+        cycleBody2.getNext().add(t2Iter3);
+        t1Iter3.getNext().add(cycleBody3);
+        t2Iter3.getNext().add(cycleBody3);
+
+        Assert.assertTrue(new CodeSnippetDagChecker().checkDag(assertion, result));
+    }
+
+    @Test
+    public void testThreadParallelismCycleWithRandomSpace() {
+        String code = "var x:integer;\n" +
+                "\tthreadStart ( t1 ){\n" +
+                "\t\tx=1;\n" +
+                "\t}\n" +
+                "\tthreadStart   ( t2 ){\n" +
+                "\t\tx=2;\n" +
+                "\t}\n" +
+                "\t   threadParallelismCycle ( t1, t2, 3 ){\n" +
+                "\t\tx=x+1;\n" +
+                "\t}\n";
+
+        code = code.replaceAll("\\t", "").replaceAll("\\n", "");
+        CodeSnippetElement result = translateUtil.getCodeSnippets(code, new HashMap<>(), new HashMap<>(), new HashMap<>());
+
+        CodeSnippetElement assertion = new CodeSnippetElement();
+        assertion.setCode("var x:integer;");
+
+        CodeSnippetElement t1Iter1 = new CodeSnippetElement();
+        t1Iter1.setCode("x=1;");
+        CodeSnippetElement t2Iter1 = new CodeSnippetElement();
+        t2Iter1.setCode("x=2;");
+        CodeSnippetElement cycleBody1 = new CodeSnippetElement();
+        cycleBody1.setCode("x=x+1;");
+
+        assertion.getNext().add(t1Iter1);
+        assertion.getNext().add(t2Iter1);
+        t1Iter1.getNext().add(cycleBody1);
+        t2Iter1.getNext().add(cycleBody1);
+
+        CodeSnippetElement t1Iter2 = new CodeSnippetElement();
+        t1Iter2.setCode("x=1;");
+        CodeSnippetElement t2Iter2 = new CodeSnippetElement();
+        t2Iter2.setCode("x=2;");
+        CodeSnippetElement cycleBody2 = new CodeSnippetElement();
+        cycleBody2.setCode("x=x+1;");
+
+        cycleBody1.getNext().add(t1Iter2);
+        cycleBody1.getNext().add(t2Iter2);
+        t1Iter2.getNext().add(cycleBody2);
+        t2Iter2.getNext().add(cycleBody2);
+
+        CodeSnippetElement t1Iter3 = new CodeSnippetElement();
+        t1Iter3.setCode("x=1;");
+        CodeSnippetElement t2Iter3 = new CodeSnippetElement();
+        t2Iter3.setCode("x=2;");
+        CodeSnippetElement cycleBody3 = new CodeSnippetElement();
+        cycleBody3.setCode("x=x+1;");
+
+        cycleBody2.getNext().add(t1Iter3);
+        cycleBody2.getNext().add(t2Iter3);
+        t1Iter3.getNext().add(cycleBody3);
+        t2Iter3.getNext().add(cycleBody3);
+
+        Assert.assertTrue(new CodeSnippetDagChecker().checkDag(assertion, result));
+    }
+
+    /**
+     * Tests the tinyBertTrain.py pattern: threadParallelismCycle handles per-cycle work
+     * (body runs every cycle), while a separate threadOnEnd is used on DIFFERENT threads
+     * to signal completion of an outer workflow.
+     *
+     * Here we verify that threadParallelismCycle(t1, t2, 1) with 1 cycle behaves like
+     * threadOnEnd(t1, t2, 1) - the body runs exactly once on cycle 1 (the last and only cycle),
+     * and there is no re-spawn.
+     */
+    @Test
+    public void testThreadParallelismCycleSingleCycle() {
+        String code = "var x:integer;\n" +
+                "\tthreadStart(t1){\n" +
+                "\t\tx=1;\n" +
+                "\t}\n" +
+                "\tthreadStart(t2){\n" +
+                "\t\tx=2;\n" +
+                "\t}\n" +
+                "\tthreadParallelismCycle(t1,t2,1){\n" +
+                "\t\tx=x+99;\n" +
+                "\t}\n";
+
+        code = code.replaceAll("\\t", "").replaceAll("\\n", "");
+        CodeSnippetElement result = translateUtil.getCodeSnippets(code, new HashMap<>(), new HashMap<>(), new HashMap<>());
+
+        // With 1 cycle, the DAG should be:
+        // preamble -> t1, t2 -> [cycleBody] (no re-spawn)
+        CodeSnippetElement assertion = new CodeSnippetElement();
+        assertion.setCode("var x:integer;");
+
+        CodeSnippetElement t1 = new CodeSnippetElement();
+        t1.setCode("x=1;");
+        CodeSnippetElement t2 = new CodeSnippetElement();
+        t2.setCode("x=2;");
+        CodeSnippetElement cycleBody = new CodeSnippetElement();
+        cycleBody.setCode("x=x+99;");
+
+        assertion.getNext().add(t1);
+        assertion.getNext().add(t2);
+        t1.getNext().add(cycleBody);
+        t2.getNext().add(cycleBody);
+
+        Assert.assertTrue(new CodeSnippetDagChecker().checkDag(assertion, result));
+    }
+
+    /**
+     * Documents why threadParallelismCycle and threadOnEnd must NOT be combined on the
+     * same thread set.
+     *
+     * threadParallelismCycle already handles the final cycle — its body runs after every cycle
+     * including the N-th one. Adding threadOnEnd on the same threads causes two problems:
+     *
+     * 1. Each first-cycle thread receives TWO successors instead of one:
+     *    - The threadParallelismCycle body (correct)
+     *    - An extra empty join node injected by threadOnEnd's intermediate-iteration handling (wrong)
+     *
+     * 2. threadOnEnd overwrites map["t1_1"] with its own re-spawn clone, so the final body
+     *    is wired to a separate empty-join chain, not to the cycle-body chain. The last
+     *    threadParallelismCycle body becomes a dead-end that never leads to the threadOnEnd body.
+     *
+     * Correct usage: use threadParallelismCycle ALONE for per-cycle work (it covers the last
+     * cycle). Use threadOnEnd ALONE if you only want code to run on the final iteration.
+     */
+    @Test
+    public void testThreadParallelismCycleAndThreadOnEndOnSameThreadsShouldNotBeCombined() {
+        String code = "var x:integer;\n" +
+                "\tthreadStart(t1){\n" +
+                "\t\tx=1;\n" +
+                "\t}\n" +
+                "\tthreadStart(t2){\n" +
+                "\t\tx=2;\n" +
+                "\t}\n" +
+                "\tthreadParallelismCycle(t1,t2,2){\n" +
+                "\t\tx=x+10;\n" +
+                "\t}\n" +
+                "\tthreadOnEnd(t1,t2,2){\n" +
+                "\t\tx=x+99;\n" +
+                "\t}\n";
+
+        code = code.replaceAll("\\t", "").replaceAll("\\n", "");
+        CodeSnippetElement result = translateUtil.getCodeSnippets(code, new HashMap<>(), new HashMap<>(), new HashMap<>());
+
+        Assert.assertNotNull(result);
+        Assert.assertEquals("var x:integer;", result.getCode());
+        // Two first-cycle threads (t1, t2) are children of the preamble
+        Assert.assertEquals(2, result.getNext().size());
+
+        for (CodeSnippetElement thread : result.getNext()) {
+            // When combined incorrectly each first-cycle thread ends up with TWO successors:
+            //   1. the threadParallelismCycle body ("x=x+10;")
+            //   2. an extra empty join node ("") injected by threadOnEnd's intermediate iteration
+            // With threadParallelismCycle used ALONE the correct count is 1 (only the cycle body).
+            Assert.assertEquals(
+                    "Each first-cycle thread must have exactly 2 successors when threadParallelismCycle " +
+                            "and threadOnEnd are incorrectly combined on the same threads",
+                    2, thread.getNext().size()
+            );
+
+            boolean hasCycleBody = false;
+            boolean hasEmptyJoinNode = false;
+            for (CodeSnippetElement successor : thread.getNext()) {
+                if ("x=x+10;".equals(successor.getCode())) hasCycleBody = true;
+                if ("".equals(successor.getCode()))        hasEmptyJoinNode = true;
+            }
+            Assert.assertTrue("One successor must be the cycle body (x=x+10;)", hasCycleBody);
+            Assert.assertTrue(
+                    "One successor must be the empty join node ('') – the extra unwanted node from threadOnEnd",
+                    hasEmptyJoinNode
+            );
+        }
+    }
+
 }

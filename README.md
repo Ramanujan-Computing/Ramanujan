@@ -109,6 +109,7 @@ There are two methods in Ramanujan which need to be used to distribute the compu
 
 2. `threadOnEnd`:
    The `threadOnEnd` keyword is used to define actions that should be taken when one or more threads complete.
+   The body code executes **only on the last iteration**.
    Syntax:
     ```
     threadOnEnd(thread_seperated_thread_names, number_of_iterations) {
@@ -132,6 +133,45 @@ There are two methods in Ramanujan which need to be used to distribute the compu
             T0     T0   T0     T0     T0
    Here, In `Y` nodes, its just joining the thread and would do nothing, but on the last iteration, it would execute the code
     defined in `threadOnEnd` as node `Z`.
+
+3. `threadParallelismCycle`:
+   The `threadParallelismCycle` keyword is used to define actions that should be taken **after every cycle** of parallelism.
+   Unlike `threadOnEnd`, which only executes its body on the final iteration, `threadParallelismCycle` executes its body
+   after **each and every** completed cycle (including the last one).
+   Syntax:
+    ```
+    threadParallelismCycle(thread_names, number_of_iterations) {
+        // code – runs after every cycle
+    }
+    ```
+   Example:
+    ```
+    threadParallelismCycle(t0, t1, 5) {
+        // this block runs after each of the 5 cycles
+    }
+    ```
+
+   The DAG structure for `threadParallelismCycle(t0, t1, 3) { body }`:
+   ```
+       T0      T0      T0
+     /    \  /    \  /    \
+   X    body   body   body   (final)
+     \    /  \    /  \    /
+       T1      T1      T1
+   ```
+   Each `body` node runs after every pair of T0+T1 threads completes. After each body (except the last), the threads
+   are re-spawned for the next cycle.
+
+   > **Important**: Do **not** combine `threadParallelismCycle` and `threadOnEnd` on the **same** thread set.
+   > `threadParallelismCycle` already runs its body after the final cycle too, so `threadOnEnd` is
+   > redundant. When added on the same threads, `threadOnEnd` injects an extra empty join node as a
+   > second successor of every first-cycle thread (instead of the expected single cycle-body successor),
+   > and overwrites the internal re-spawn map entries that `threadParallelismCycle` set up. This breaks
+   > the cycle chain and creates an unintended parallel execution path.
+   >
+   > If you want a dedicated block that only runs after the **last** cycle, use `threadOnEnd` alone
+   > (without `threadParallelismCycle`). If you want code that runs after **every** cycle (including the
+   > last), use `threadParallelismCycle` alone.
 
 Example of complex threading:
 ```
@@ -732,6 +772,279 @@ while j < 1000:
 ```
 
 
+# GPU Acceleration Support (OpenCL):
+
+Ramanujan supports offloading compute-intensive work to the GPU via OpenCL. Any Python function
+whose name matches the pattern `funcName_GPU_N` (where `N` is a positive integer) is automatically
+compiled to an OpenCL C kernel during translation and dispatched to the GPU at runtime.
+
+## Writing a GPU function
+
+The function name encodes the number of NDRange dimensions:
+
+```python
+def funcName_GPU_N(dataArg1, dataArg2, ..., dataArgK, rangeDim1, ..., rangeDimN):
+    # body – use rangeDimK as the per-work-item index
+```
+
+| Part | Role | What the translator does |
+|---|---|---|
+| `N` in `_GPU_N` | Number of NDRange dimensions (`work_dim`) | Read from the function name; no extra argument needed |
+| `dataArg1 … dataArgK` | Data arrays (first `total_params − N` parameters) | Emitted as `__global float*` kernel parameters |
+| `rangeDim1 … rangeDimN` | Work-item index variables (last `N` parameters) | Emitted as `int dim = get_global_id(K);` declarations; their **call-site values** become `global_work_size[]` for `clEnqueueNDRangeKernel` |
+
+> **Requirement:** Data args must be arrays. The translator maps them to OpenCL buffers.
+
+## Examples
+
+### 1-D vector addition
+```python
+def vector_add_GPU_1(a, b, c, gid):
+    c[gid] = a[gid] + b[gid]
+
+# 1024-element arrays, 1 NDRange dimension
+vector_add_GPU_1(a, b, c, 1024)
+```
+Generated OpenCL kernel:
+```c
+__kernel void vector_add(__global float* a, __global float* b, __global float* c) {
+    int gid = get_global_id(0);
+    c[gid] = (a[gid] + b[gid]);
+}
+```
+
+### 2-D matrix kernel
+```python
+def matrix_add_GPU_2(a, b, c, row, col):
+    c[row] = a[row] + b[col]
+
+# 64 × 64 grid (2 NDRange dimensions)
+matrix_add_GPU_2(a, b, c, 64, 64)
+```
+
+### Control flow inside a GPU function
+`if/else` and `while` inside the function body are translated to their C equivalents:
+```python
+def relu_GPU_1(a, out, gid):
+    if a[gid] > 0:
+        out[gid] = a[gid]
+    else:
+        out[gid] = 0
+
+relu_GPU_1(a, out, 512)
+```
+
+### Calling helper (device) functions from a GPU kernel
+
+A GPU kernel can call ordinary (non-`_GPU_N`) Python functions that are defined in the same file.
+The translator converts those helpers to OpenCL C **device functions** and prepends them before the
+`__kernel` declaration so they are visible to the kernel body.
+
+```python
+# Plain Python helper – becomes a float device function in the generated OpenCL C
+def scale2(x):
+    r = x * 2
+    return r
+
+# GPU kernel – calls the helper for every work-item
+def apply_scale_GPU_1(a, out, gid):
+    v = a[gid]          # load array element into a local variable first
+    out[gid] = scale2(v)
+
+apply_scale_GPU_1(a, out, 1024)
+```
+
+Generated OpenCL C:
+```c
+float scale2(float x) {
+    float r = (x * 2);
+    return r;
+}
+
+__kernel void apply_scale(__global float* a, __global float* out) {
+    int gid = get_global_id(0);
+    float v = a[gid];
+    out[gid] = scale2(v);
+}
+```
+
+#### Helper function constraints
+
+| Constraint | Detail |
+|---|---|
+| **Parameter types** | All helper parameters are treated as `float` scalars. Array pointers (`__global float*`) are **not** supported in helper functions. |
+| **Return type** | Always `float`. |
+| **No subscript as argument** | Array element expressions (`a[i]`) cannot be passed directly as arguments to a helper call. Assign the element to a local variable first: `v = a[gid]; out[gid] = scale2(v)`. |
+| **No recursion** | A function may not call itself. The translator throws a `CompilationException` if a recursive call is detected at translation time. |
+| **No GPU–kernel calls** | A helper (or the kernel) may not call another `_GPU_N` function. GPU kernels are dispatched via `clEnqueueNDRangeKernel` and cannot be invoked as device functions. |
+| **Scope** | Only top-level module functions are eligible as helpers. Nested function definitions are not supported. |
+
+#### Recursion guard
+
+The translator enforces the no-recursion rule at **translation time**, not at runtime:
+
+```python
+# INVALID – will raise CompilationException during translation
+def bad_GPU_1(a, gid):
+    a[gid] = bad_GPU_1(a, gid)   # ❌ recursive GPU call
+
+# INVALID – helper self-recursion is also rejected
+def factorial(n):
+    return n * factorial(n - 1)  # ❌ recursive helper
+
+def kernel_GPU_1(a, gid):
+    a[gid] = factorial(a[gid])
+```
+
+## GPU built-in functions
+
+These special function names are recognised inside `_GPU_N` kernel bodies and
+translated to OpenCL C intrinsics.  They are **not** available on the host; use
+the corresponding Ramanujan host built-ins (`FLOOR`, `EXP`, etc.) outside GPU
+functions.
+
+### In-place scalar math (1 argument)
+
+Each call mutates its argument in place: `FUNC(x)` → `x = func(x)` in the
+generated OpenCL C.
+
+| Python call | Generated OpenCL C | Notes |
+|---|---|---|
+| `EXP(x)` | `x = exp(x);` | Natural exponential |
+| `LOG(x)` | `x = log(x);` | Natural logarithm |
+| `SQRT(x)` | `x = sqrt(x);` | Square root |
+| `FLOOR(x)` | `x = floor(x);` | Round toward −∞; result stays `float` |
+
+**`FLOOR` example** — locate the grid cell for a particle position:
+```python
+def p2g_GPU_1(positions, params, gid):
+    xp = positions[gid * 3]
+    gxp = (xp - (-1.0)) * 10.0  # map to grid coords
+    FLOOR(gxp)                   # gxp = floor(gxp) in OpenCL C
+    i0 = gxp                     # integer grid index (stored as float)
+```
+
+### Atomic float add (3 arguments)
+
+```python
+ATOMIC_ADD_F(arr, idx, delta)
+```
+
+Atomically adds `delta` (a `float`) to `arr[idx]` using a compare-and-swap
+loop.  Required whenever multiple work-items may scatter into the same array
+slot concurrently (e.g., particle-to-grid scattering in MPM).
+
+OpenCL 1.2 has no native `atomic_add` for `float`.  The translator emits a
+CAS loop on the int-reinterpreted bits using `atomic_cmpxchg`:
+
+```c
+/* Generated for: ATOMIC_ADD_F(arr, idx, delta) */
+{
+    __global volatile int* _aAddr = (__global volatile int*)(&arr[(int)(idx)]);
+    int _aOld, _aNew;
+    do {
+        _aOld = *_aAddr;
+        _aNew = as_int(as_float(_aOld) + (delta));
+    } while (atomic_cmpxchg(_aAddr, _aOld, _aNew) != _aOld);
+}
+```
+
+The `{}` block scope lets you call `ATOMIC_ADD_F` multiple times in the same
+kernel without variable-name conflicts.
+
+**Requirements:**
+- The target array must be a `__global float*` data argument (not a local variable).
+- Requires OpenCL 1.2 or later (`atomic_cmpxchg` on `__global int*` is a
+  core 1.2 feature on all platforms including Apple Metal-backed OpenCL).
+
+**`ATOMIC_ADD_F` example** — particle-to-grid mass scatter:
+```python
+def p2g_GPU_1(positions, g_mass, g_vel, params, gid):
+    # ... compute weight w and grid node index gnode ...
+    wm = w * params[0]                          # weighted mass
+    ATOMIC_ADD_F(g_mass, gnode, wm)             # safe concurrent scatter
+    ATOMIC_ADD_F(g_vel, gnode * 3,     wm * vx)
+    ATOMIC_ADD_F(g_vel, gnode * 3 + 1, wm * vy)
+    ATOMIC_ADD_F(g_vel, gnode * 3 + 2, wm * vz)
+```
+
+> **Note on P2G in MPM:** The above P2G kernel also requires `FLOOR` to locate
+> grid nodes (see above).  Both `FLOOR` and `ATOMIC_ADD_F` are needed before
+> P2G can fully run on GPU.
+
+## Build prerequisites
+
+| Platform | Requirement |
+|---|---|
+| macOS | OpenCL is part of the system framework – no extra install needed |
+| Linux | `sudo apt install ocl-icd-opencl-dev opencl-headers` |
+| Windows | Install GPU vendor drivers: NVIDIA CUDA Toolkit, AMD ROCm, or Intel OpenCL SDK |
+
+## Runtime behaviour
+- The OpenCL platform and device are initialised **once** on the first GPU call and reused for all subsequent calls.
+- A GPU device is preferred; if none is available the runtime falls back to any OpenCL device (e.g., a CPU implementation).
+- Each unique kernel source is **compiled and cached** on first invocation; repeated calls to the same GPU function reuse the cached `cl_kernel`.
+- Data is staged `double → float` before upload and `float → double` after read-back (OpenCL kernels operate on `float`).
+- If OpenCL initialisation fails at runtime a diagnostic is printed to `stderr` and execution returns immediately.
+- The `GPU_ENABLED` macro must be set at compile time (via `-DENABLE_GPU=ON`). Builds without it contain **no OpenCL code** and have no OpenCL runtime dependency.
+
+## Explicit GPU synchronisation — `GPU_SYNC`
+
+By default, GPU kernels dispatched with `_GPU_N` functions are **non-blocking**: the OpenCL
+command is queued but the CPU continues immediately.  This allows many kernel launches to
+be batched together without the CPU stalling after every one — which is the key to high GPU
+throughput.
+
+However, **any time the host (CPU) side needs to read back a value that a GPU kernel has
+written**, you must explicitly drain the GPU queue for that array first.  The built-in
+`GPU_SYNC` does exactly that.
+
+```python
+GPU_SYNC(array)
+```
+
+`GPU_SYNC(array)` issues a **blocking** `clEnqueueReadBuffer` for the given array, flushing
+all previously enqueued GPU work and copying the updated data back to the host buffer.  It
+is a no-op for arrays that are not GPU-backed (e.g., host-only arrays).
+
+### When to use `GPU_SYNC`
+
+| Situation | Action |
+|---|---|
+| Reading an array element in a Python host `while` loop after a GPU kernel has written it | Call `GPU_SYNC(array)` once before the loop |
+| Passing a GPU-written array to a host function or `exec` call | Call `GPU_SYNC(array)` before the call |
+| `dump array /path` after GPU kernel(s) wrote it | Call `GPU_SYNC(array)` before `dump` |
+| Using a GPU-written array only as input to the next GPU kernel (no host read) | **No `GPU_SYNC` needed** — GPU→GPU is handled automatically |
+
+### Example — batched transformer stack
+
+```python
+# 120+ GPU kernels dispatched with no CPU stalls …
+layernorm_GPU_1(hidden, ln_g, ln_b, h_ln, n_seq)
+matmul_bias_GPU_2(h_ln, c_attn_w, c_attn_b, qkv, kp, n_seq, 2304)
+# … more kernels …
+matmul_bias_GPU_2(h_ff, c_fc_proj_w, c_fc_proj_b, h_out_buf, kp, n_seq, 768)
+
+# CPU needs to read `hidden` and `h_out_buf` in the next loop → sync first
+GPU_SYNC(hidden)
+GPU_SYNC(h_out_buf)
+_i = 0
+while _i < n_seq * 768:
+    hidden[_i] = hidden[_i] + h_out_buf[_i]
+    _i = _i + 1
+```
+
+Without the `GPU_SYNC` calls, `hidden` and `h_out_buf` would still hold **stale** values from
+before the last GPU kernels ran, producing silently wrong results.
+
+### `GPU_SYNC` vs the previous implicit sync model
+
+Before `GPU_SYNC` was introduced, every `_GPU_N` call automatically issued a blocking
+`clEnqueueReadBuffer` + `clFinish` after the kernel, preventing any batching.  The overhead
+measured ~11% of total inference time on macOS (visible as `IOKit → IOGPU → clFinish` in
+profiler traces).  With the explicit model, the GPU queue is drained **only** at the
+necessary points, and all other kernel dispatches remain asynchronous.
+
 # Future of the language and platform:
 Ramanujan now supports a subset of Python syntax through AST-based conversion (see Python Support section above). The platform is actively evolving to support more Python features progressively.
 
@@ -812,7 +1125,17 @@ cmake ..
 cmake --build .
 ```
 
-## Usage:
+#### Ramanujan-native with GPU support (OpenCL):
+```
+cd ramanujan-native/native
+mkdir build-gpu
+cd build-gpu
+cmake -DENABLE_GPU=ON ..
+cmake --build .
+```
+Passing `-DENABLE_GPU=ON` sets the `GPU_ENABLED` preprocessor macro, links OpenCL, and activates
+OpenCL kernel dispatch for `_GPU`-suffixed functions. Standard builds (`-DENABLE_GPU=OFF`, the
+default) compile no OpenCL code and have no dependency on any OpenCL runtime.
 ### Docker build:
 Dockerfile is provided to containerize all the necessary services.
 
@@ -1237,6 +1560,99 @@ The interpreter integrates with the rest of the Ramanujan platform through:
 2. **Direct C++ API**: For native clients (Linux, macOS, Windows) : Future for non-Java running machines
 
 The `NativeProcessor.cpp` file provides the JNI bridge, receiving JSON input from the Java layer and returning results as structured data.
+
+---
+
+# New Features
+
+## Direct CSV Population (High-Performance Data Loading)
+
+When running `execute_inline` with CSV data files, the runtime now **bypasses the Python interpreter** for data population. Previously, every CSV value was converted to a Python assignment statement (`arr[r][c] = val`) and run through the full AST interpreter — for a 50-million-element CSV, that meant 50 million interpreted statements.
+
+The new approach:
+1. **Declaration only**: The CSV files generate minimal Python code — just the array declaration (e.g., `arr = [[0 for _ in range(3072)] for _ in range(9216)]`).
+2. **Direct population**: After the interpreter creates the Array objects, values are injected directly via `Double.parseDouble()` + `ConcurrentHashMap.put()`, skipping the interpreter entirely.
+3. **Parallel loading**: Multiple CSV files are loaded simultaneously using a thread pool.
+
+This makes it practical to load gigabytes of weight data (e.g., 41 GB of neural network weights across 197 CSV files) in seconds rather than hours.
+
+### Auto 1D/2D Detection
+
+Single-row CSVs (one line of comma-separated values) are automatically declared as **1D arrays** (`[0 for _ in range(N)]`), while multi-row CSVs are declared as **2D arrays** (`[[0 for _ in range(cols)] for _ in range(rows)]`). The population step stores values accordingly:
+- 1D: keys are `"0"`, `"1"`, `"2"`, ...
+- 2D: keys are `"row_col"` format (`"0_0"`, `"0_1"`, ..., `"1_0"`, ...)
+
+### CSV Filename to Array Name
+
+CSV filenames are automatically converted to valid array names:
+- Directory paths are stripped (`../weights/l0_iln.csv` → `l0_iln`)
+- The `.csv` extension is removed
+- Non-alphanumeric characters are replaced with `_`
+
+This means the array name in your kernel code must match the CSV filename (without path and extension).
+
+---
+
+## `dump` Command (Array Extraction)
+
+The `execute_inline` query console now supports a `dump` command for extracting array contents to CSV files:
+
+```
+dump <arrayName> [outputFile]
+```
+
+- **Without a file path**: prints comma-separated values to stdout
+- **With a file path**: writes values to the specified CSV file
+
+The command auto-detects whether the array is 1D or 2D:
+- **1D arrays**: outputs a single line of comma-separated values
+- **2D arrays**: outputs one row per line (standard CSV format)
+
+### Example
+```bash
+# Run a kernel, then dump results
+printf 'dump normed /tmp/normed_out.csv\nexit\n' | \
+  java -Xmx4g -jar developer-console-fat.jar execute_inline kernel.py data.csv weights.csv
+
+# Check output
+cat /tmp/normed_out.csv
+# 0.00288,-0.00078,0.00454,...
+```
+
+All query console commands:
+- `var <name>` — print a scalar variable
+- `arr <name> <index>` — print a single array element
+- `dump <name> [file]` — dump entire array to CSV
+- `exit` — end the session
+
+---
+
+## Phi-3 Reference Implementation
+
+The `ramanujan-test-codes/phi3/` directory contains a complete implementation of **Microsoft Phi-3-mini-4k-instruct** (3.8B parameters) running entirely on Ramanujan's GPU runtime. This serves as a reference for running large neural networks on the platform.
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `extract_weights.py` | Converts safetensors model → 197 CSV weight files (41 GB) |
+| `inference.py` | Hybrid NumPy + Ramanujan inference (CPU fallback) |
+| `inference_rj.py` | **Full Ramanujan** inference — every layer runs on GPU |
+| `layer_kernel.py` | Single transformer layer GPU kernel (RMS norm, QKV projection, RoPE, attention, FFN) |
+| `embed_kernel.py` | Embedding lookup kernel |
+| `head_kernel.py` | Final norm + LM head projection kernel |
+
+### Architecture: Layer-by-Layer Streaming
+Rather than loading all 41 GB of weights at once, the orchestrator (`inference_rj.py`) calls `rj` once per transformer layer, passing only that layer's weights (~1.3 GB) as CSV files. Between layers, results are extracted via the `dump` command and passed to the next invocation.
+
+```
+Token → [embed_kernel] → hidden
+                            ↓
+                     [layer_kernel × 32]  ← weights loaded per-layer
+                            ↓
+                     [head_kernel] → logits → argmax → next token
+```
+
+See `ramanujan-test-codes/phi3/README.md` for full details on weight extraction, model architecture, and usage instructions.
 
 
 

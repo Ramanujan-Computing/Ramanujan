@@ -11,11 +11,7 @@ public class OrchestratorApiCallHelper {
 
     static String host = "";
 
-    static synchronized  void setHost(String host) {
-        if(!OrchestratorApiCallHelper.host.isEmpty())
-        {
-            return;
-        }
+    static synchronized void setHost(String host) {
         OrchestratorApiCallHelper.host = host;
     }
 

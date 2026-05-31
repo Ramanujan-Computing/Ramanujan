@@ -17,7 +17,60 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(jsoncpp)
 
-# JNI include paths - use Android NDK for Android builds, otherwise use JDK_HOME
+# ---------------------------------------------------------------------------
+# GPU support  (disabled by default – no OpenCL dependency for standard builds)
+# Enable with:  cmake -DGPU_ENABLED=ON ..
+# macOS:  OpenCL ships with the system framework, no extra install needed.
+# Linux:  sudo apt install ocl-icd-opencl-dev opencl-headers
+# Windows: install GPU vendor drivers (NVIDIA CUDA Toolkit / AMD ROCm / Intel OpenCL SDK)
+# ---------------------------------------------------------------------------
+option(GPU_ENABLED "Build with OpenCL GPU kernel execution support" ON)
+if(GPU_ENABLED)
+    if(APPLE)
+        # macOS ships OpenCL as a system framework (-framework OpenCL).
+        # The Khronos ICD loader is for Linux/Windows; it does NOT discover
+        # Apple's platform and returns 0 platforms on macOS (including Apple Silicon).
+        find_package(OpenCL REQUIRED)
+        message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via system framework  (macOS, version ${OpenCL_VERSION_STRING})")
+    elseif(ANDROID)
+        # On Android we dlopen libOpenCL.so at runtime (see opencl_loader.h).
+        # The Khronos ICD loader looks for /etc/OpenCL/vendors/*.icd which does
+        # NOT exist on Android, so clGetPlatformIDs always returns 0 platforms.
+        # Instead we only fetch the headers for compilation and rely on dlopen
+        # at runtime — no ICD loader is linked.
+        FetchContent_Declare(
+            OpenCLHeaders
+            GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+            GIT_TAG        v2023.04.17
+        )
+        FetchContent_MakeAvailable(OpenCLHeaders)
+        message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via dlopen (Android) – headers only, no ICD loader")
+    else()
+        # Linux / Windows: compile the Khronos ICD loader from source.
+        # On Linux: sudo apt install ocl-icd-opencl-dev opencl-headers (or let
+        # FetchContent build it from source as done here).
+        FetchContent_Declare(
+            OpenCLHeaders
+            GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers.git
+            GIT_TAG        v2023.04.17
+        )
+        FetchContent_MakeAvailable(OpenCLHeaders)
+
+        # ICD loader must know where the headers live before it is configured
+        set(OPENCL_ICD_LOADER_HEADERS_DIR ${openclheaders_SOURCE_DIR} CACHE PATH "" FORCE)
+
+        FetchContent_Declare(
+            OpenCLICDLoader
+            GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-ICD-Loader.git
+            GIT_TAG        v2023.04.17
+        )
+        FetchContent_MakeAvailable(OpenCLICDLoader)
+        message(STATUS "[Ramanujan] OpenCL GPU support ENABLED via Khronos ICD loader  (Linux/Windows)")
+    endif()
+    add_compile_definitions(GPU_ENABLED)
+else()
+    message(STATUS "[Ramanujan] OpenCL GPU support DISABLED  (pass -DGPU_ENABLED=ON to enable)")
+endif()
 IF(ANDROID)
     # For Android builds, use NDK's JNI headers
     include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
@@ -141,11 +194,34 @@ add_executable(native ${SOURCE_FILES})
 #add_library(native SHARED ${SOURCE_FILES})
 target_link_libraries(native PRIVATE jsoncpp_static)
 
-# Debug build target
-add_library(native_debug SHARED ${SOURCE_FILES})
-target_link_libraries(native_debug PRIVATE jsoncpp_static)
-set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
-set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
+## Production shared-library target (no DEBUG_BUILD – used by the JVM via JNI)
+add_library(native_lib SHARED ${SOURCE_FILES})
+target_link_libraries(native_lib PRIVATE jsoncpp_static)
+set_target_properties(native_lib PROPERTIES OUTPUT_NAME "native")
+
+## Debug build target
+#add_library(native_debug SHARED ${SOURCE_FILES})
+#target_link_libraries(native_debug PRIVATE jsoncpp_static)
+#set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
+#set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
+
+# Link OpenCL into all three targets when GPU support is enabled.
+# On Android we use dlopen at runtime so we only add the headers include path;
+# we do NOT link against OpenCL::OpenCL (the ICD loader) to avoid the
+# /etc/OpenCL/vendors discovery that doesn't work on Android.
+if(GPU_ENABLED)
+    if(ANDROID)
+        # Headers only — runtime loading via dlopen in opencl_loader.h.
+        # Link against libdl so dlopen/dlsym/dlerror resolve.
+        target_include_directories(native PRIVATE ${openclheaders_SOURCE_DIR})
+        target_link_libraries(native PRIVATE dl log)
+        target_include_directories(native_lib PRIVATE ${openclheaders_SOURCE_DIR})
+        target_link_libraries(native_lib PRIVATE dl log)
+    else()
+        target_link_libraries(native PRIVATE OpenCL::OpenCL)
+        target_link_libraries(native_lib PRIVATE OpenCL::OpenCL)
+    endif()
+endif()
 
 #find_package(Boost REQUIRED)
 #if(Boost_FOUND)

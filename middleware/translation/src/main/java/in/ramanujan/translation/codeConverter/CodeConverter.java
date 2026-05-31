@@ -137,12 +137,57 @@ public class CodeConverter {
      * @return List of Commands created from the Python code
      * @throws CompilationException If there are errors during compilation
      */
+
+    /**
+     * Remove common leading whitespace from all non-empty lines (like Python's textwrap.dedent).
+     * This handles code extracted from threadStart { ... } blocks that may be indented.
+     */
+    private static String dedentPythonCode(String code) {
+        if (code == null || code.isEmpty()) return code;
+        String[] lines = code.split("\n", -1);
+        // Find minimum indentation of non-empty lines
+        int minIndent = Integer.MAX_VALUE;
+        for (String line : lines) {
+            if (line.trim().isEmpty()) continue;
+            int indent = 0;
+            for (int i = 0; i < line.length(); i++) {
+                if (line.charAt(i) == ' ') indent++;
+                else if (line.charAt(i) == '\t') indent += 4;
+                else break;
+            }
+            minIndent = Math.min(minIndent, indent);
+        }
+        if (minIndent == 0 || minIndent == Integer.MAX_VALUE) return code;
+        // Strip minIndent spaces from the beginning of each line
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) sb.append('\n');
+            if (lines[i].trim().isEmpty()) {
+                sb.append(lines[i]);
+            } else {
+                int removed = 0;
+                int j = 0;
+                while (j < lines[i].length() && removed < minIndent) {
+                    if (lines[i].charAt(j) == ' ') { removed++; j++; }
+                    else if (lines[i].charAt(j) == '\t') { removed += 4; j++; }
+                    else break;
+                }
+                sb.append(lines[i].substring(j));
+            }
+        }
+        return sb.toString();
+    }
+
     public List<Command> interpretPython(String pythonCode, RuleEngineInput ruleEngineInput, 
                                         List<String> variableScope,
                                         DebugLevelCodeCreator debugLevelCodeCreator, 
                                         Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
                                         Integer[] frameVariableCounterId) throws CompilationException {
         try {
+            // Dedent the code: strip common leading whitespace so code extracted
+            // from threadStart { ... } blocks doesn't cause IndentationError
+            pythonCode = dedentPythonCode(pythonCode);
+
             // Step 1: Invoke Python ast2json to get AST JSON
             PythonAstInvoker invoker = new PythonAstInvoker();
             String astJson = invoker.invokeAstJson(pythonCode);

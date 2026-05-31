@@ -12,32 +12,16 @@ public class NativeLibraryLoader {
         if (System.getProperty("java.runtime.name").toLowerCase(Locale.ROOT).contains("android")) {
             return; // Android environment, skip loading native libraries
         }
-        String os = detectOS();
-        String arch = detectArch();
-        String ext = getLibExtension(os);
         String libFileName = System.mapLibraryName(libBaseName);
-        String resourcePath = String.format("/native/%s/%s/%s", os, arch, libFileName);
-
-        String tmpDir = System.getenv(ENV_TMP_DIR);
-        if (tmpDir == null || tmpDir.isEmpty()) {
+        String wsDir = System.getenv(ENV_TMP_DIR);
+        if (wsDir == null || wsDir.isEmpty()) {
             throw new IOException("Environment variable '" + ENV_TMP_DIR + "' is not set");
         }
-        Path targetPath = Paths.get(tmpDir, libFileName);
-        if (!Files.exists(targetPath)) {
-            try (InputStream in = NativeLibraryLoader.class.getResourceAsStream(resourcePath)) {
-                if (in == null) {
-                    throw new FileNotFoundException("Native library not found in resources: " + resourcePath);
-                }
-                Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-            if (!isExecutable(ext)) {
-                targetPath.toFile().setReadable(true);
-                targetPath.toFile().setWritable(true);
-            } else {
-                targetPath.toFile().setExecutable(true);
-            }
+        Path libPath = Paths.get(wsDir, libFileName);
+        if (!Files.exists(libPath)) {
+            throw new FileNotFoundException("Native library not found in RAMANUJAN_WS: " + libPath);
         }
-        System.load(targetPath.toAbsolutePath().toString());
+        System.load(libPath.toAbsolutePath().toString());
     }
 
     private static String detectOS() {

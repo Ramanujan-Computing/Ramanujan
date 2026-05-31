@@ -5,6 +5,15 @@
 #include "ArrayValue.h"
 #include "../DataContainerValueFunctionCommandRE.h"
 
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+
+// Global cache: binaryFilePath -> {float* data, int count}
+static std::mutex                                              s_binaryMutex;
+static std::unordered_map<std::string, std::pair<float*, int>> s_binaryCache;
 
 ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     this->array = array;
@@ -25,18 +34,84 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
     }
 
     totalSize = getTotalSize(dimensions, 0, dimensionSize);
-    val = new double[totalSize]();
-    for(auto & it : array->values) {
-        std::string key = it.first;
-        double value = it.second;
-        //TODO: check if the size is faring correct.
-        add(getIndexFromStr(key, dimensionSize), value);
+
+    // Fast path: load from binary float32 file directly into val[]
+    if (!array->binaryFile.empty()) {
+        // Check cache first (avoids re-reading disk on every kernel call)
+        std::string key = array->binaryFile;
+        float* fdata = nullptr;
+        int fcount = 0;
+        {
+            std::lock_guard<std::mutex> lk(s_binaryMutex);
+            auto it = s_binaryCache.find(key);
+            if (it != s_binaryCache.end()) {
+                fdata  = it->second.first;
+                fcount = it->second.second;
+            }
+        }
+        if (!fdata) {
+            // First time: read from disk, insert into cache
+            int fd = open(key.c_str(), O_RDONLY);
+            if (fd >= 0) {
+                struct stat st;
+                fstat(fd, &st);
+                size_t fileSize = st.st_size;
+                fcount = (int)(fileSize / sizeof(float));
+                if (fcount > totalSize) fcount = totalSize;
+
+                size_t mapSize = totalSize * sizeof(float);
+                if (mapSize == 0) mapSize = sizeof(float);
+
+                // Two-step mmap: anonymous region covers the full totalSize (tail is
+                // demand-zeroed by the OS); MAP_FIXED overlays file content on the first
+                // fcount floats. This avoids SIGBUS from mapping past EOF and avoids the
+                // double-buffer (heap alloc + page cache) that fstream::read causes.
+                void* mapped = mmap(nullptr, mapSize, PROT_READ | PROT_WRITE,
+                                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                if (mapped != MAP_FAILED) {
+                    if (fcount > 0) {
+                        mmap(mapped, fcount * sizeof(float), PROT_READ | PROT_WRITE,
+                             MAP_PRIVATE | MAP_FIXED, fd, 0);
+                    }
+                    fdata = static_cast<float*>(mapped);
+                }
+                close(fd);
+            }
+            if (!fdata) {
+                std::cerr << "[ArrayValue] Failed to open/allocate for binary file: " << key << std::endl;
+                if (ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float)) == 0 && fdata != nullptr) {
+                    memset(fdata, 0, totalSize * sizeof(float));
+                }
+            }
+            if (fdata) {
+                std::lock_guard<std::mutex> lk(s_binaryMutex);
+                s_binaryCache[key] = {fdata, fcount};
+            }
+        }
+        // val[] is now a direct pointer to the static cache (ZERO COPY)
+        val = fdata;
+        isBinaryLoaded  = true;
+        isCachedVal = true;
+        cachedFloatData = fdata;
+    } else {
+        ALIGNED_ALLOC(&val, 4096, totalSize * sizeof(float));
+        memset(val, 0, totalSize * sizeof(float));
+        
+        // Slow path: parse string-keyed map
+        for(auto & it : array->values) {
+            std::string key = it.first;
+            double value = it.second;
+            //TODO: check if the size is faring correct.
+            int* index = getIndexFromStr(key, dimensionSize);
+            add(index, value);
+            delete[] index;
+        }
     }
 }
 
 void ArrayValue::add(int* index, double value) {
     int indexInt = translateIndex(index);
-    val[indexInt] = (value);
+    val[indexInt] = (float)value;
 }
 
 void ArrayDataContainerValue::copyDataContainerValueFunctionCommandRE(DataContainerValueFunctionCommandRE* toBeCopied) {

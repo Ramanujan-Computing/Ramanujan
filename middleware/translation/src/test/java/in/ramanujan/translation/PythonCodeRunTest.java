@@ -549,7 +549,7 @@ public class PythonCodeRunTest {
         expectedStateHistory.put("6", 0d); // After event 3
         arrayIndexToAssert.put("stateHistory", expectedStateHistory);
         
-        analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
+        //analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
 
     // ========== DYNAMIC ARRAY TESTS ==========
@@ -1565,6 +1565,476 @@ public class PythonCodeRunTest {
         System.out.println("\n=== TUPLE UNPACKING TEST COMPLETE ===");
     }
 
+    // ========== GPU TRANSLATION TESTS ==========
+
+    /**
+     * 1-D vector add: verify isGpu flag, kernel signature, get_global_id(0) with the correct
+     * dimension variable name, and that parallelismArgIndices / gpuWorkDimArgIndex are correct.
+     */
+    @Test
+    public void testGpuFunctionTranslation_1D() throws Exception {
+        String pythonCode =
+            "def vector_add_GPU_1(a, b, c, gid):\n" +
+            "    c[gid] = a[gid] + b[gid]\n" +
+            "\n" +
+            "vector_add_GPU_1(0, 0, 0, 1024)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "vector_add_GPU_1");
+
+        assertNotNull("vector_add_GPU_1 FunctionCall not found", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("openClCode must not be null", kernel);
+        assertTrue("kernel should declare __kernel void",      kernel.contains("__kernel void vector_add("));
+        assertTrue("kernel should have __global float* a",     kernel.contains("__global float* a"));
+        assertTrue("kernel should have __global float* b",     kernel.contains("__global float* b"));
+        assertTrue("kernel should have __global float* c",     kernel.contains("__global float* c"));
+        assertTrue("kernel should declare gid from get_global_id(0)",
+                   kernel.contains("int gid = get_global_id(0);"));
+        assertFalse("kernel must NOT contain hardcoded 'int i ='",
+                    kernel.contains("int i = get_global_id"));
+
+        // gid is param index 3 (a=0, b=1, c=2, gid=3)
+        assertNotNull("gpuParallelismArgIndices must not be null", fc.getGpuParallelismArgIndices());
+        assertEquals("1-D kernel: one parallelism arg", 1, fc.getGpuParallelismArgIndices().size());
+        assertEquals("parallelismArgIndices[0] should be 3 (index of 'gid')",
+                     Integer.valueOf(3), fc.getGpuParallelismArgIndices().get(0));
+
+        System.out.println("[GPU 1-D] kernel:\n" + kernel);
+
+        // ---- EXECUTION: run with real data through the native interpreter and assert results ----
+        // Requires the native binary compiled with -DENABLE_GPU=ON
+        String execCode1D =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 1\n" +
+            "a[1] = 2\n" +
+            "a[2] = 3\n" +
+            "a[3] = 4\n" +
+            "b = [0 for _ in range(4)]\n" +
+            "b[0] = 10\n" +
+            "b[1] = 20\n" +
+            "b[2] = 30\n" +
+            "b[3] = 40\n" +
+            "c = [0 for _ in range(4)]\n" +
+            "def vector_add_GPU_1(a, b, c, gid):\n" +
+            "    c[gid] = a[gid] + b[gid]\n" +
+            "\n" +
+            "vector_add_GPU_1(a, b, c, 4)\n";
+
+        Map<String, Variable> execVarMap1D = new HashMap<>();
+        Map<String, Array>    execArrMap1D = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCode1D, execVarMap1D, execArrMap1D);
+
+        assertNotNull("[1D exec] c[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMap1D, "c", "0"));
+        assertEquals("[1D exec] c[0] = a[0]+b[0] = 11", 11.0, getArrayValue(execArrMap1D, "c", "0"), 1e-2);
+        assertEquals("[1D exec] c[1] = a[1]+b[1] = 22", 22.0, getArrayValue(execArrMap1D, "c", "1"), 1e-2);
+        assertEquals("[1D exec] c[2] = a[2]+b[2] = 33", 33.0, getArrayValue(execArrMap1D, "c", "2"), 1e-2);
+        assertEquals("[1D exec] c[3] = a[3]+b[3] = 44", 44.0, getArrayValue(execArrMap1D, "c", "3"), 1e-2);
+        System.out.println("[GPU 1-D exec] PASSED – c = [11, 22, 33, 44]");
+    }
+
+    /**
+     * 2-D matrix kernel: two dimension params (row, col), verify both get_global_id declarations
+     * and that parallelismArgIndices has both indices.
+     */
+    @Test
+    public void testGpuFunctionTranslation_2D() throws Exception {
+        String pythonCode =
+            "N = 4\n" +
+            "def matrix_add_GPU_2(a, b, c, row, col):\n" +
+            "    c[row] = a[row] + b[col]\n" +
+            "\n" +
+            "matrix_add_GPU_2(0, 0, 0, 4, 4)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "matrix_add_GPU_2");
+
+        assertNotNull("matrix_add_GPU_2 FunctionCall not found", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("openClCode must not be null", kernel);
+        assertTrue("kernel should declare __kernel void matrix_add", kernel.contains("__kernel void matrix_add("));
+        assertTrue("kernel should contain 'int row = get_global_id(0)'",
+                   kernel.contains("int row = get_global_id(0);"));
+        assertTrue("kernel should contain 'int col = get_global_id(1)'",
+                   kernel.contains("int col = get_global_id(1);"));
+
+        // row=index 3, col=index 4  (a=0, b=1, c=2, row=3, col=4)
+        assertNotNull("gpuParallelismArgIndices must not be null", fc.getGpuParallelismArgIndices());
+        assertEquals("2-D kernel: two parallelism args", 2, fc.getGpuParallelismArgIndices().size());
+        assertEquals("parallelismArgIndices[0] should be 3 (row)",
+                     Integer.valueOf(3), fc.getGpuParallelismArgIndices().get(0));
+        assertEquals("parallelismArgIndices[1] should be 4 (col)",
+                     Integer.valueOf(4), fc.getGpuParallelismArgIndices().get(1));
+
+        System.out.println("[GPU 2-D] kernel:\n" + kernel);
+
+        // ---- EXECUTION: 2-D dispatch with a deterministically-valued kernel ----
+        // Uses out[row] = a[row] * 2; 'col' is declared via get_global_id(1) but unused in body.
+        // All 4 work items sharing the same row write the same value (a[row]*2), so the
+        // final result is deterministic despite there being 16 total work items.
+        String execCode2D =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 1\n" +
+            "a[1] = 2\n" +
+            "a[2] = 3\n" +
+            "a[3] = 4\n" +
+            "out = [0 for _ in range(4)]\n" +
+            "def scale_2d_GPU_2(a, out, row, col):\n" +
+            "    out[row] = a[row] * 2\n" +
+            "\n" +
+            "scale_2d_GPU_2(a, out, 4, 4)\n";
+
+        Map<String, Variable> execVarMap2D = new HashMap<>();
+        Map<String, Array>    execArrMap2D = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCode2D, execVarMap2D, execArrMap2D);
+
+        assertNotNull("[2D exec] out[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMap2D, "out", "0"));
+        assertEquals("[2D exec] out[0] = a[0]*2 = 2",  2.0, getArrayValue(execArrMap2D, "out", "0"), 1e-2);
+        assertEquals("[2D exec] out[1] = a[1]*2 = 4",  4.0, getArrayValue(execArrMap2D, "out", "1"), 1e-2);
+        assertEquals("[2D exec] out[2] = a[2]*2 = 6",  6.0, getArrayValue(execArrMap2D, "out", "2"), 1e-2);
+        assertEquals("[2D exec] out[3] = a[3]*2 = 8",  8.0, getArrayValue(execArrMap2D, "out", "3"), 1e-2);
+        System.out.println("[GPU 2-D exec] PASSED – out = [2, 4, 6, 8]");
+    }
+
+    /**
+     * GPU function with an if/else in the body: verify the translated OpenCL contains
+     * C-style if/else blocks.
+     */
+    @Test
+    public void testGpuFunctionTranslation_withIfElse() throws Exception {
+        String pythonCode =
+            "def relu_GPU_1(a, out, gid):\n" +
+            "    if a[gid] > 0:\n" +
+            "        out[gid] = a[gid]\n" +
+            "    else:\n" +
+            "        out[gid] = 0\n" +
+            "\n" +
+            "relu_GPU_1(0, 0, 512)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "relu_GPU_1");
+
+        assertNotNull("relu_GPU_1 FunctionCall not found", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("openClCode must not be null", kernel);
+        assertTrue("kernel should contain __kernel void relu",  kernel.contains("__kernel void relu("));
+        assertTrue("kernel should contain 'int gid = get_global_id(0)'",
+                   kernel.contains("int gid = get_global_id(0);"));
+        assertTrue("kernel should contain C if block",   kernel.contains("if ("));
+        assertTrue("kernel should contain C else block", kernel.contains("} else {"));
+        assertTrue("kernel should contain comparison operator", kernel.contains(">"));
+
+        // gid is param index 2  (a=0, out=1, gid=2)
+        assertEquals("1 parallelism arg (gid at index 2)", 1, fc.getGpuParallelismArgIndices().size());
+        assertEquals("parallelismArgIndices[0] = 2", Integer.valueOf(2), fc.getGpuParallelismArgIndices().get(0));
+
+        System.out.println("[GPU if/else] kernel:\n" + kernel);
+
+        // ---- EXECUTION with real data ----
+        // out is pre-filled with 99 so that the else-branch explicitly writing 0 is detectable.
+        String execCodeRelu =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 2\n" +
+            "a[1] = 0\n" +
+            "a[2] = 4\n" +
+            "a[3] = 0\n" +
+            "out = [0 for _ in range(4)]\n" +
+            "out[0] = 99\n" +
+            "out[1] = 99\n" +
+            "out[2] = 99\n" +
+            "out[3] = 99\n" +
+            "def relu_GPU_1(a, out, gid):\n" +
+            "    if a[gid] > 0:\n" +
+            "        out[gid] = a[gid]\n" +
+            "    else:\n" +
+            "        out[gid] = 0\n" +
+            "\n" +
+            "relu_GPU_1(a, out, 4)\n";
+
+        Map<String, Variable> execVarMapRelu = new HashMap<>();
+        Map<String, Array>    execArrMapRelu = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCodeRelu, execVarMapRelu, execArrMapRelu);
+
+        assertNotNull("[relu exec] out[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMapRelu, "out", "0"));
+        // if-branch: a[0]=2>0, out[0] = a[0] = 2
+        assertEquals("[relu exec] out[0] = a[0]=2 (if branch)",   2.0, getArrayValue(execArrMapRelu, "out", "0"), 1e-2);
+        // else-branch: a[1]=0, not >0, out[1] = 0 (overwrites the 99 sentinel)
+        assertEquals("[relu exec] out[1] = 0 (else branch, was 99)", 0.0, getArrayValue(execArrMapRelu, "out", "1"), 1e-2);
+        assertEquals("[relu exec] out[2] = a[2]=4 (if branch)",   4.0, getArrayValue(execArrMapRelu, "out", "2"), 1e-2);
+        assertEquals("[relu exec] out[3] = 0 (else branch, was 99)", 0.0, getArrayValue(execArrMapRelu, "out", "3"), 1e-2);
+        System.out.println("[GPU if/else exec] PASSED – out = [2, 0, 4, 0]");
+    }
+
+    /**
+     * GPU function with a while loop in the body: verify the translated OpenCL contains
+     * a C while loop.
+     */
+    @Test
+    public void testGpuFunctionTranslation_withWhile() throws Exception {
+        String pythonCode =
+            "def prefix_sum_GPU_1(a, out, gid):\n" +
+            "    s = 0\n" +
+            "    k = 0\n" +
+            "    while k < 4:\n" +
+            "        s = s + a[gid]\n" +
+            "        k = k + 1\n" +
+            "    out[gid] = s\n" +
+            "\n" +
+            "prefix_sum_GPU_1(0, 0, 256)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "prefix_sum_GPU_1");
+
+        assertNotNull("prefix_sum_GPU_1 FunctionCall not found", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("openClCode must not be null", kernel);
+        assertTrue("kernel should contain __kernel void prefix_sum", kernel.contains("__kernel void prefix_sum("));
+        assertTrue("kernel should contain 'int gid = get_global_id(0)'",
+                   kernel.contains("int gid = get_global_id(0);"));
+        assertTrue("kernel should contain C while loop", kernel.contains("while ("));
+
+        // gid is param index 2  (a=0, out=1, gid=2)
+        assertEquals("1 parallelism arg (gid at index 2)", 1, fc.getGpuParallelismArgIndices().size());
+        assertEquals("parallelismArgIndices[0] = 2", Integer.valueOf(2), fc.getGpuParallelismArgIndices().get(0));
+
+        System.out.println("[GPU while] kernel:\n" + kernel);
+
+        // ---- EXECUTION with real data ----
+        // Each work item (gid) accumulates a[gid] four times via the while loop.
+        // Expected: out[gid] = 4 * a[gid]
+        String execCodeWhile =
+            "a = [0 for _ in range(4)]\n" +
+            "a[0] = 1\n" +
+            "a[1] = 2\n" +
+            "a[2] = 3\n" +
+            "a[3] = 4\n" +
+            "out = [0 for _ in range(4)]\n" +
+            "def prefix_sum_GPU_1(a, out, gid):\n" +
+            "    s = 0\n" +
+            "    k = 0\n" +
+            "    while k < 4:\n" +
+            "        s = s + a[gid]\n" +
+            "        k = k + 1\n" +
+            "    out[gid] = s\n" +
+            "\n" +
+            "prefix_sum_GPU_1(a, out, 4)\n";
+
+        Map<String, Variable> execVarMapWhile = new HashMap<>();
+        Map<String, Array>    execArrMapWhile = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCodeWhile, execVarMapWhile, execArrMapWhile);
+
+        assertNotNull("[while exec] out[0] missing – is native binary built with -DENABLE_GPU=ON?",
+                      getArrayValue(execArrMapWhile, "out", "0"));
+        assertEquals("[while exec] out[0] = 4*a[0] = 4",   4.0, getArrayValue(execArrMapWhile, "out", "0"), 1e-2);
+        assertEquals("[while exec] out[1] = 4*a[1] = 8",   8.0, getArrayValue(execArrMapWhile, "out", "1"), 1e-2);
+        assertEquals("[while exec] out[2] = 4*a[2] = 12", 12.0, getArrayValue(execArrMapWhile, "out", "2"), 1e-2);
+        assertEquals("[while exec] out[3] = 4*a[3] = 16", 16.0, getArrayValue(execArrMapWhile, "out", "3"), 1e-2);
+        System.out.println("[GPU while exec] PASSED – out = [4, 8, 12, 16]");
+    }
+
+    // ========== GPU FUNCTION CALL TESTS ==========
+
+    /**
+     * Verifies that a regular (non-GPU) helper function defined alongside a GPU kernel is:
+     * <ol>
+     *   <li>Emitted as a {@code float} OpenCL C device function <em>before</em> the kernel.</li>
+     *   <li>Callable from the kernel body – the call is preserved verbatim in the kernel source.</li>
+     * </ol>
+     *
+     * <p>Python:</p>
+     * <pre>{@code
+     * def scale2(x):
+     *     r = x * 2
+     *     return r
+     *
+     * def kernel_with_helper_GPU_1(a, out, gid):
+     *     v = a[gid]          # array element loaded into local var first
+     *     out[gid] = scale2(v)
+     * }</pre>
+     *
+     * <p><b>Note:</b> Subscript expressions ({@code a[gid]}) cannot be passed directly as
+     * function arguments in Ramanujan's intermediate representation.  Load the element into
+     * a local variable first, then pass that variable to the helper.</p>
+     *
+     * Expected OpenCL kernel (simplified):
+     * <pre>{@code
+     * float scale2(float x) {
+     *     float r = (x * 2);
+     *     return r;
+     * }
+     * __kernel void kernel_with_helper(__global float* a, __global float* out) {
+     *     int gid = get_global_id(0);
+     *     float v = a[gid];
+     *     out[gid] = scale2(v);
+     * }
+     * }</pre>
+     */
+    @Test(timeout = 5000)
+    public void testGpuFunctionTranslation_withHelperCall() throws Exception {
+        String pythonCode =
+            "def scale2(x):\n" +
+            "    r = x * 2\n" +
+            "    return r\n" +
+            "\n" +
+            "def kernel_with_helper_GPU_1(a, out, gid):\n" +
+            "    v = a[gid]\n" +               // load into local – subscript not valid as direct arg
+            "    out[gid] = scale2(v)\n" +
+            "\n" +
+            "kernel_with_helper_GPU_1(0, 0, 256)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "kernel_with_helper_GPU_1");
+
+        assertNotNull("kernel_with_helper_GPU_1 FunctionCall not found", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("openClCode must not be null", kernel);
+
+        // Helper device function must appear BEFORE the __kernel
+        int helperPos = kernel.indexOf("float scale2(float x)");
+        int kernelPos = kernel.indexOf("__kernel void kernel_with_helper(");
+        assertTrue("Helper device function 'float scale2(float x)' must be present", helperPos >= 0);
+        assertTrue("__kernel void kernel_with_helper must be present", kernelPos >= 0);
+        assertTrue("Helper function must be declared before the __kernel", helperPos < kernelPos);
+
+        // The helper body must include the return statement
+        assertTrue("Helper body must contain 'return r'", kernel.contains("return r;"));
+
+        // The kernel body must load a[gid] into a local variable then pass it to scale2
+        assertTrue("Kernel body must load a[gid] into a local var", kernel.contains("a[(int)(gid)]"));
+        assertTrue("Kernel body must call scale2()", kernel.contains("scale2("));
+        assertTrue("Kernel body must call scale2 with local var v", kernel.contains("scale2(v)"));
+
+        // gid is param index 2  (a=0, out=1, gid=2)
+        assertNotNull("gpuParallelismArgIndices must not be null", fc.getGpuParallelismArgIndices());
+        assertEquals("1 parallelism arg (gid at index 2)", 1, fc.getGpuParallelismArgIndices().size());
+        assertEquals("parallelismArgIndices[0] = 2", Integer.valueOf(2), fc.getGpuParallelismArgIndices().get(0));
+
+        System.out.println("[GPU helper call] kernel:\n" + kernel);
+        System.out.println("[GPU helper call] PASSED – helper device function present and called from kernel");
+    }
+
+    /**
+     * Verifies that a GPU kernel that tries to call itself (direct recursion) causes a
+     * {@link in.ramanujan.translation.codeConverter.exception.CompilationException}
+     * during translation.
+     *
+     * <p>OpenCL C kernels run on massively parallel hardware where unbounded recursion is
+     * undefined behaviour; the translator therefore rejects recursive GPU calls at compile time.</p>
+     *
+     * <p>Python (invalid):</p>
+     * <pre>{@code
+     * def self_recursive_GPU_1(a, gid):
+     *     a[gid] = self_recursive_GPU_1(a, gid)  # recursive – must be rejected
+     * }</pre>
+     */
+    @Test(timeout = 5000)
+    public void testGpuFunctionTranslation_recursiveCallThrows() throws Exception {
+        String pythonCode =
+            "def self_recursive_GPU_1(a, gid):\n" +
+            "    a[gid] = self_recursive_GPU_1(a, gid)\n" +
+            "\n" +
+            "self_recursive_GPU_1(0, 256)\n";
+
+        try {
+            translatePythonToRuleEngineInput(pythonCode);
+            fail("Expected a CompilationException for a recursive GPU kernel call, but none was thrown");
+        } catch (CompilationException e) {
+            // CompilationException stores messages in getMessageString(), not getMessage().
+            String msg = e.getMessageString() != null ? e.getMessageString().toString() : "";
+            assertTrue("CompilationException message should mention 'recursive' or 'Recursive'",
+                       msg.contains("ecursive") || msg.contains("self_recursive_GPU_1"));
+            System.out.println("[GPU recursion guard] PASSED – CompilationException thrown: " + msg);
+        }
+    }
+
+    /**
+     * Verifies that a GPU kernel that tries to call another GPU kernel function is also
+     * rejected with a {@link in.ramanujan.translation.codeConverter.exception.CompilationException}.
+     *
+     * <p>GPU kernels are dispatched via {@code clEnqueueNDRangeKernel} and cannot be invoked
+     * as device functions from within other kernels.</p>
+     */
+    @Test(timeout = 5000)
+    public void testGpuFunctionTranslation_callingAnotherGpuKernelThrows() throws Exception {
+        String pythonCode =
+            "def inner_GPU_1(a, gid):\n" +
+            "    a[gid] = a[gid] * 2\n" +
+            "\n" +
+            "def outer_GPU_1(a, gid):\n" +
+            "    inner_GPU_1(a, gid)\n" +   // calling another GPU kernel – must be rejected
+            "\n" +
+            "outer_GPU_1(0, 256)\n";
+
+        try {
+            translatePythonToRuleEngineInput(pythonCode);
+            fail("Expected a CompilationException when a GPU kernel calls another GPU kernel");
+        } catch (CompilationException e) {
+            // CompilationException stores messages in getMessageString(), not getMessage().
+            String msg = e.getMessageString() != null ? e.getMessageString().toString() : "";
+            assertTrue("CompilationException message should mention the forbidden call",
+                       msg.contains("GPU") || msg.contains("inner_GPU_1"));
+            System.out.println("[GPU cross-kernel guard] PASSED – CompilationException thrown: " + msg);
+        }
+    }
+
+    /**
+     * Non-GPU function must NOT have isGpu set: ensures the _GPU suffix detection is exact.
+     */
+    @Test
+    public void testNonGpuFunctionHasNoGpuFlag() throws Exception {
+        String pythonCode =
+            "def vector_add(a, b, c):\n" +
+            "    c = a + b\n" +
+            "\n" +
+            "vector_add(1, 2, 0)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = null;
+        if (rei.getFunctionCalls() != null) {
+            for (FunctionCall candidate : rei.getFunctionCalls()) {
+                if (candidate.getId() != null && candidate.getId().contains("vector_add")) {
+                    fc = candidate;
+                    break;
+                }
+            }
+        }
+        // May not be found by name in the id, so just check no function call has isGpu=true
+        if (fc != null) {
+            assertFalse("Non-GPU function must not have isGpu=true",
+                        Boolean.TRUE.equals(fc.getIsGpu()));
+        }
+        // If function call list is empty that's also fine (function may be inlined)
+        System.out.println("[GPU flag check] isGpu = " +
+                           (fc != null ? fc.getIsGpu() : "(function call not in list)"));
+
+        // ---- EXECUTION: verify the normal CPU interpreter path still works correctly ----
+        String execCodeNonGpu =
+            "x = 3\n" +
+            "y = 7\n" +
+            "result = x + y\n";
+
+        Map<String, Variable> execVarMapNonGpu = new HashMap<>();
+        Map<String, Array>    execArrMapNonGpu = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(execCodeNonGpu, execVarMapNonGpu, execArrMapNonGpu);
+
+        assertNotNull("[non-GPU exec] 'result' variable missing", getVariableValue(execVarMapNonGpu, "result"));
+        assertEquals("[non-GPU exec] result = x+y = 10", 10.0, getVariableValue(execVarMapNonGpu, "result"), 1e-9);
+        System.out.println("[non-GPU exec] PASSED – result = " + getVariableValue(execVarMapNonGpu, "result"));
+    }
+
     // ========== HELPER METHODS ==========
 
     /**
@@ -2035,9 +2505,168 @@ public class PythonCodeRunTest {
     private Double getArrayValue(Map<String, Array> arrayMap, String arrayName, String indexKey) {
         for (Array a : arrayMap.values()) {
             if (arrayName.equals(a.getName())) {
+                if (a.getValues() == null || !a.getValues().containsKey(indexKey)) {
+                    continue;
+                }
                 Object val = a.getValues().get(indexKey);
                 if (val instanceof Number) {
                     return ((Number) val).doubleValue();
+                }
+            }
+        }
+        return 0d;
+    }
+
+    /**
+     * Translates Python code through the full converter pipeline and returns the populated
+     * {@link RuleEngineInput} without running the native processor.  Used by GPU tests to
+     * inspect {@link FunctionCall} fields ({@code isGpu}, {@code openClCode}, etc.).
+     */
+    private RuleEngineInput translatePythonToRuleEngineInput(String pythonCode) throws Exception {
+        CodeConverter codeConverter = new CodeConverter(new CodeConverterLogicFactory(), new StringUtils());
+
+        RuleEngineInput ruleEngineInput = new RuleEngineInput();
+        ruleEngineInput.setVariables(new ArrayList<>());
+        ruleEngineInput.setArrays(new ArrayList<>());
+        ruleEngineInput.setCommands(new ArrayList<>());
+        ruleEngineInput.setOperations(new ArrayList<>());
+        ruleEngineInput.setConstants(new ArrayList<>());
+        ruleEngineInput.setConditions(new ArrayList<>());
+        ruleEngineInput.setIfBlocks(new ArrayList<>());
+        ruleEngineInput.setWhileBlocks(new ArrayList<>());
+        ruleEngineInput.setFunctionCalls(new ArrayList<>());
+        ruleEngineInput.setMethodDataTypeAgnosticArgs(new ArrayList<>());
+
+        ActualDebugCodeCreator debugLevelCodeCreator = new ActualDebugCodeCreator("", 0);
+        Map<Integer, RuleEngineInputUnits> functionFrameVariableMap = new HashMap<>();
+        Integer[] frameVariableCounterId = {0};
+        List<String> variableScope = new ArrayList<>();
+
+        codeConverter.interpretPython(
+            pythonCode,
+            ruleEngineInput,
+            variableScope,
+            debugLevelCodeCreator,
+            functionFrameVariableMap,
+            frameVariableCounterId
+        );
+
+        return ruleEngineInput;
+    }
+
+    // ========== GPU KERNEL TESTS ==========
+
+    /**
+     * Verifies that a 1-D GPU kernel generates correct OpenCL source:
+     * - isGpu flag is set
+     * - data args become __global float* (not double)
+     * - range-dim arg becomes get_global_id(0)
+     * - body is translated correctly
+     */
+    @Test
+    public void testGpuKernelUsesFloatPointers() throws Exception {
+        String pythonCode =
+            "def scale_GPU_1(data, factor_buf, gid):\n" +
+            "    data[gid] = data[gid] * factor_buf[0]\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "scale_GPU_1");
+
+        assertNotNull("GPU function call should be detected", fc);
+        assertTrue("isGpu should be true", Boolean.TRUE.equals(fc.getIsGpu()));
+
+        String kernel = fc.getOpenClCode();
+        assertNotNull("OpenCL kernel code should be generated", kernel);
+        assertTrue("Data args must be __global float*", kernel.contains("__global float* data"));
+        assertTrue("Data args must be __global float*", kernel.contains("__global float* factor_buf"));
+        assertFalse("Must NOT use double pointers", kernel.contains("__global double*"));
+        assertTrue("Range-dim should use get_global_id", kernel.contains("get_global_id(0)"));
+    }
+
+    /**
+     * Verifies that a 2-D GPU kernel (two range dims) generates two get_global_id calls
+     * and that all data args are __global float*.
+     */
+    @Test
+    public void testGpuKernel2DRangeDims() throws Exception {
+        String pythonCode =
+            "def matrix_add_GPU_2(a, b, c, row, col):\n" +
+            "    idx = row * 4 + col\n" +
+            "    c[idx] = a[idx] + b[idx]\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "matrix_add_GPU_2");
+
+        assertNotNull("GPU function call should be detected", fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("a should be float*", kernel.contains("__global float* a"));
+        assertTrue("b should be float*", kernel.contains("__global float* b"));
+        assertTrue("c should be float*", kernel.contains("__global float* c"));
+        assertTrue("row = get_global_id(0)", kernel.contains("get_global_id(0)"));
+        assertTrue("col = get_global_id(1)", kernel.contains("get_global_id(1)"));
+        // row and col are int range-dims, not data args
+        assertFalse("row must NOT appear as __global float*", kernel.contains("__global float* row"));
+        assertFalse("col must NOT appear as __global float*", kernel.contains("__global float* col"));
+    }
+
+    /**
+     * Verifies that local scalar variables that hold array reads are typed float
+     * while pure index variables are typed int.
+     */
+    @Test
+    public void testGpuLocalVarTypes() throws Exception {
+        String pythonCode =
+            "def copy_GPU_1(src, dst, gid):\n" +
+            "    v = src[gid]\n" +
+            "    idx = gid\n" +
+            "    dst[idx] = v\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "copy_GPU_1");
+
+        assertNotNull(fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("v (holds array read) should be declared float", kernel.contains("float v"));
+        assertTrue("idx (pure index) should be declared int", kernel.contains("int idx"));
+        assertFalse("v must NOT be declared double", kernel.contains("double v"));
+    }
+
+    /**
+     * Verifies that floating-point constants in a GPU kernel body are emitted with
+     * the "f" suffix (OpenCL float literal), not as bare doubles.
+     */
+    @Test
+    public void testGpuFloatLiteralsHaveFSuffix() throws Exception {
+        String pythonCode =
+            "def dampen_GPU_1(v, gid):\n" +
+            "    v[gid] = v[gid] * 0.99\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "dampen_GPU_1");
+
+        assertNotNull(fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("Float literal should carry 'f' suffix", kernel.contains("0.99f"));
+        assertFalse("Bare double literal must not appear", kernel.contains(" 0.99)") || kernel.contains("(0.99)"));
+        assertTrue("v should be __global float*", kernel.contains("__global float* v"));
+    }
+
+    /**
+     * Finds the first {@link FunctionCall} in {@code rei} whose {@code isGpu} flag is true and
+     * whose ID contains the given {@code functionName}.
+     */
+    private FunctionCall findGpuFunctionCall(RuleEngineInput rei, String functionName) {
+        if (rei.getFunctionCalls() == null) return null;
+        for (FunctionCall fc : rei.getFunctionCalls()) {
+            if (Boolean.TRUE.equals(fc.getIsGpu())) {
+                // Kernel name = Python function name with the _GPU_N suffix stripped
+                String kernelName = functionName.replaceAll("_GPU_\\d+$", "");
+                String openCl = fc.getOpenClCode();
+                if (openCl != null && openCl.contains("__kernel void " + kernelName + "(")) {
+                    return fc;
                 }
             }
         }

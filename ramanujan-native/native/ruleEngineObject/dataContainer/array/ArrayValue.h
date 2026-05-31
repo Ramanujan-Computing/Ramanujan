@@ -13,6 +13,17 @@
 #include "../DataContainerValue.h"
 #include "../AbstractDataContainer.h"
 
+// Cross-platform aligned memory allocation
+#ifdef _WIN32
+    #include <malloc.h>
+    #define ALIGNED_ALLOC(ptr, alignment, size) *(ptr) = _aligned_malloc((size), (alignment))
+    #define ALIGNED_FREE(ptr) _aligned_free(ptr)
+#else
+    #include <stdlib.h>
+    #define ALIGNED_ALLOC(ptr, alignment, size) posix_memalign((void**)(ptr), (alignment), (size))
+    #define ALIGNED_FREE(ptr) free(ptr)
+#endif
+
 // Forward declarations
 class AbstractDataContainer;
 class DataContainerValueFunctionCommandRE;
@@ -28,9 +39,21 @@ private:
 
 
 public:
-    double* val = nullptr;
+    float* val = nullptr;
     int totalSize = 0;
     int* sizeAtIndex = nullptr;
+    // Set when loaded from a .bin weight file.
+    // cachedFloatData: aligned float32 buffer for zero-copy GPU uploads (CL_MEM_USE_HOST_PTR).
+    // isCachedVal: val points into the static weight cache, do NOT delete[].
+    bool   isBinaryLoaded  = false;
+    bool   isCachedVal     = false;
+    float* cachedFloatData = nullptr;  // non-null after first load; never freed (static lifetime)
+
+    // GPU buffer residency (set/read by GPUFunctionCommandRE; void* avoids pulling in OpenCL headers here)
+    // When non-null: gpuBuffer holds a valid cl_mem for this array's current data.
+    // Any GPU kernel that needs this array as input can reuse it without re-uploading.
+    void*  gpuBuffer      = nullptr;
+    size_t gpuBufferBytes = 0;
     
     // Optimized default constructor - no allocations
     ArrayValue() : array(nullptr), dimensions(nullptr), dimensionSize(0), 
@@ -68,8 +91,8 @@ public:
             if (dimensions != nullptr && dimensions != other.dimensions) {
                 delete[] dimensions;
             }
-            if (val != nullptr && val != other.val) {
-                delete[] val;
+            if (val != nullptr && val != other.val && !isCachedVal) {
+                ALIGNED_FREE(val);
             }
             if (sizeAtIndex != nullptr && sizeAtIndex != other.sizeAtIndex) {
                 delete[] sizeAtIndex;
@@ -115,10 +138,14 @@ public:
         this->dimensionSize = toBeCopied.dimensionSize;
         this->dimensions = toBeCopied.dimensions;
         this->sizeAtIndex = toBeCopied.sizeAtIndex;
-        if (!shallowCopy)
-            this->val = new double[toBeCopied.totalSize]();
-        else
+        if (!shallowCopy) {
+            ALIGNED_ALLOC(&this->val, 4096, toBeCopied.totalSize * sizeof(float));
+            memset(this->val, 0, toBeCopied.totalSize * sizeof(float));
+            memcpy(this->val, toBeCopied.val, toBeCopied.totalSize * sizeof(float));
+        } else {
             this->val = toBeCopied.val;
+            this->isCachedVal = true;
+        }
         this->totalSize = toBeCopied.totalSize;
     }
 
@@ -127,19 +154,22 @@ public:
         this->dimensionSize = toBeCopied->dimensionSize;
         this->dimensions = toBeCopied->dimensions;
         this->sizeAtIndex = toBeCopied->sizeAtIndex;
-        if (!shallowCopy)
-            this->val = new double[toBeCopied->totalSize]();
-        else
+        if (!shallowCopy) {
+            ALIGNED_ALLOC(&this->val, 4096, toBeCopied->totalSize * sizeof(float));
+            memset(this->val, 0, toBeCopied->totalSize * sizeof(float));
+            memcpy(this->val, toBeCopied->val, toBeCopied->totalSize * sizeof(float));
+        } else {
             this->val = toBeCopied->val;
+            this->isCachedVal = true;
+        }
         this->totalSize = toBeCopied->totalSize;
-
     }
 
     void destroy() {
         if(dimensions != nullptr)
             delete[] dimensions;
-        if(val != nullptr)
-            delete[] val;
+        if(val != nullptr && !isCachedVal)
+            ALIGNED_FREE(val);
     }
 
     void add(int* index, double value);
@@ -216,7 +246,7 @@ public:
     ArrayValue * arrayValue = nullptr, *oldValue = nullptr;
     bool isClone = false;
 
-    double* placeholder= nullptr;
+    float* placeholder= nullptr;
 
     ArrayDataContainerValue() = default;
 

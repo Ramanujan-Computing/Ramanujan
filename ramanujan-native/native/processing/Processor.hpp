@@ -22,6 +22,8 @@ class Processor {
         ~Processor();
     std::unordered_map<std::string, double>* varChangeMap();
     std::unordered_map<std::string, std::unordered_map<std::string, double>*>* arrChangeMap();
+    std::list<RuleEngineInputUnits*>& getArrayREs() { return arrayREs; }
+    std::list<RuleEngineInputUnits*>& getVariableREs() { return variableREs; }
     
     private:
         std::unordered_map<std::string, RuleEngineInputUnits*> * createMap(RuleEngineInput ruleEngineInput);
@@ -37,7 +39,8 @@ class Processor {
 
     void fixConditions(std::unordered_map<std::string, RuleEngineInputUnits *> *pMap, std::vector<Condition *> conditions);
 
-    std::unordered_map<double*, double> dataFieldOriginalData;
+    std::unordered_map<void*, double> dataFieldOriginalData;
+    std::unordered_map<std::string, std::vector<float>> arraySnapshotMap;
 
     std::list<RuleEngineInputUnits*> arrayREs;
     std::list<RuleEngineInputUnits*> variableREs;

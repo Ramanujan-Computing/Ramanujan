@@ -15,10 +15,10 @@ public:
     // Ultra-fast default constructor - no allocations at all
     DataContainerValueFunctionCommandRE() = default;
 
-    // can represent both double value or double ptr or arrayValue array.
+    // can represent both double value or float ptr or arrayValue array.
     //union {
         double value;
-        double *arrayValuePtr = nullptr;
+        float *arrayValuePtr = nullptr;
     //};
 
     // Ultra-fast destructor - only cleanup when needed
