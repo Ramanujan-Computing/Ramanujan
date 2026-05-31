@@ -293,3 +293,268 @@ Audit your mathematical functions and swap standard python math operations for c
 *   Write your prefill phase (token block execution).
 *   Sequence your decode phase inside a standard `while` generation loop (`while _step < n_tokens`).
 *   Include host memory synchronizations (`GPU_SYNC()`) before passing generated tokens back to the host JVM application layer.
+
+---
+
+## 4. End-to-End Developer Conversion Guide
+
+This section walks you through converting a real PyTorch model to Ramanujan from scratch. Follow these steps in order.
+
+### Phase 0: Set Up Ramanujan
+
+Before writing any kernel code, get the developer console running:
+
+```sh
+chmod +x install_ramanujan.sh
+./install_ramanujan.sh   # sets RAMANUJAN_WS, downloads fat JAR, adds `rj` alias
+source ~/.zshrc          # or ~/.bashrc
+```
+
+Verify the installation:
+```sh
+rj --version             # should print the fat-JAR version
+```
+
+For GPU acceleration, build the native runtime with OpenCL enabled:
+```sh
+cd ramanujan-native/native && mkdir build-gpu && cd build-gpu
+cmake -DENABLE_GPU=ON .. && cmake --build .
+```
+
+---
+
+### Phase 1: Audit Your PyTorch Model
+
+Before touching code, answer these four questions about your PyTorch model:
+
+| Question | Why it matters |
+|---|---|
+| Which layers are compute-heavy? | Those get GPU kernels (`_GPU_N`). |
+| What are the tensor shapes at each step? | You need these to compute flat offsets manually. |
+| Does your model use quantized weights? | Plan a CSV export + dequantize-at-runtime strategy. |
+| Does inference run in two phases (prefill + decode)? | If so, you'll write an "uber loop" that handles both. |
+
+---
+
+### Phase 2: Know What Ramanujan Python Supports
+
+Ramanujan parses a strict **subset** of Python via AST. Before porting, internalize these rules:
+
+**Supported:**
+- Variables (`x = 5`, `y = 3.14`) and 1D/2D/ND arrays (`arr = [0 for _ in range(n)]`)
+- `while` loops, `if/else` (no `elif`)
+- Arithmetic: `+`, `-`, `*`, `/`, augmented assignments (`+=`, etc.)
+- Functions with `def`; arguments are passed **by reference** — mutations inside the function affect the caller's arrays
+- GPU built-ins inside `_GPU_N` kernels: `EXP(x)`, `LOG(x)`, `SQRT(x)`, `FLOOR(x)`, `ATOMIC_ADD_F(arr, idx, delta)`
+- `GPU_SYNC(array)` to drain the GPU queue before a host read
+
+**Not supported (work around these):**
+| Unsupported | Workaround |
+|---|---|
+| `class` / `nn.Module` | Global flat arrays + procedural functions |
+| `for` loops | Rewrite as `while` |
+| `elif` | Nest `if/else` |
+| `import` statements | Pre-load weights externally; pass as arrays |
+| `arr.append()`, `len()` | Pre-allocate fixed-size arrays |
+| `obj.method()` | Free functions that take the array as a parameter |
+| `and`/`or`/`not` in conditions | Nest `if` statements |
+| Nested function calls `f(g(x))` | Assign `tmp = g(x)` first |
+| Power `**` / modulo `%` | Implement with a loop or approximation |
+| Strings | Use integer token IDs |
+
+---
+
+### Phase 3: Export Weights to CSV
+
+Ramanujan loads weights from CSV files (or binary `.bin` sidecars for large models). Write a one-time Python export script using PyTorch or `safetensors`:
+
+```python
+import torch
+import numpy as np
+
+# Load your model
+model = torch.load("model.pt", map_location="cpu")
+
+# Export each weight matrix as a CSV
+# - Naming: the CSV filename becomes the array name in your kernel
+# - For 4-bit quantization, pack and scale here; the kernel dequantizes on the GPU
+for name, param in model.named_parameters():
+    arr = param.detach().float().numpy()
+    safe_name = name.replace(".", "_")
+    np.savetxt(f"weights/{safe_name}.csv", arr, delimiter=",")
+```
+
+**CSV naming rules:**
+- Directory paths and `.csv` extension are stripped automatically
+- Non-alphanumeric characters become `_`
+- The resulting name **must match** the variable name used in your kernel code
+
+For large weight files (>100 MB), generate binary sidecars to avoid JVM heap pressure:
+```python
+import numpy as np, glob, os
+
+for csv_path in glob.glob("weights/*.csv"):
+    arr = np.loadtxt(csv_path, delimiter=",", dtype=np.float32)
+    bin_path = csv_path.replace(".csv", ".bin")
+    arr.tofile(bin_path)
+```
+
+---
+
+### Phase 4: Rewrite Each Layer as a GPU Kernel
+
+For each PyTorch `nn.Module`, write a corresponding Ramanujan function following this template:
+
+```python
+# 1-D kernel template: one thread per row
+def my_op_GPU_1(input_array, weight_array, output_array, row):
+    base = row * HIDDEN_DIM   # manual flat offset for this thread's row
+    s = 0.0
+    k = 0
+    while k < HIDDEN_DIM:
+        val = input_array[base + k]
+        # ... compute ...
+        k = k + 1
+    output_array[row] = s
+
+# 2-D kernel template: one thread per (row, col) output element
+def my_matmul_GPU_2(A, W, C, kparams, row, col):
+    K = kparams[0]   # inner dimension
+    N = kparams[1]   # number of columns in C
+    s = 0.0
+    k = 0
+    while k < K:
+        a_idx = row * K + k   # always use an intermediate variable for index arithmetic
+        w_idx = col * K + k
+        s = s + A[a_idx] * W[w_idx]
+        k = k + 1
+    c_idx = row * N + col
+    C[c_idx] = s
+```
+
+**Key rules when writing kernels:**
+1. The last `N` parameters of a `_GPU_N` function are the grid dimensions. Their call-site values become the NDRange sizes. Inside the kernel, they hold the thread's coordinate.
+2. All index arithmetic **must** be lowered into intermediate variables before being used inside `[ ]`. The compiler rejects complex bracket expressions.
+3. Replace `math.sqrt` → `SQRT(x)`, `math.exp` → `EXP(x)`, `math.floor` → `FLOOR(x)` (these mutate the variable in-place).
+4. When multiple threads write to the same array slot (e.g., scatter operations), use `ATOMIC_ADD_F(arr, idx, delta)` instead of a plain assignment.
+
+---
+
+### Phase 5: Write Non-GPU Helper Functions
+
+Lightweight host-side logic (tokenization helpers, argmax, softmax over a small vector) stays as plain Python functions callable from the kernel:
+
+```python
+# Plain function — runs on the host CPU
+def host_argmax(logits, vocab_size):
+    best = 0
+    best_val = logits[0]
+    i = 1
+    while i < vocab_size:
+        v = logits[i]
+        if v > best_val:
+            best_val = v
+            best = i
+        i = i + 1
+    return best
+```
+
+Plain functions can also be called from inside a `_GPU_N` kernel as **device helpers** — the translator promotes them to OpenCL device functions. Device helpers must accept only scalar `float` arguments (no array pointers) and cannot be recursive.
+
+---
+
+### Phase 6: Assemble the Uber Loop
+
+Replace PyTorch's training/inference loop with a single flat script:
+
+```python
+# --- Pre-allocate all scratch buffers ---
+hidden   = [0 for _ in range(MAX_SEQ * HIDDEN_DIM)]
+h_ln     = [0 for _ in range(MAX_SEQ * HIDDEN_DIM)]
+qkv_buf  = [0 for _ in range(MAX_SEQ * 3 * HEAD_DIM * N_HEADS)]
+out_buf  = [0 for _ in range(MAX_SEQ * HIDDEN_DIM)]
+
+# --- Prefill: process all prompt tokens at once ---
+embed_GPU_1(token_ids, wte, hidden, n_seq)   # embed each token in parallel
+layer_idx = 0
+while layer_idx < N_LAYERS:
+    rmsnorm_GPU_1(hidden, ln_g, h_ln, n_seq)
+    matmul_4bit_GPU_2(h_ln, qkv_packed, qkv_scales, qkv_buf, kp, n_seq, 3 * HEAD_DIM * N_HEADS)
+    # ... remaining layer ops ...
+    layer_idx = layer_idx + 1
+
+# --- Decode: one token at a time ---
+_step = 0
+while _step < n_generate:
+    embed_GPU_1(last_token_id, wte, hidden, 1)
+    # ... 32 layers on a single row ...
+    GPU_SYNC(logits)           # drain before host reads logit values
+    next_token = host_argmax(logits, VOCAB_SIZE)
+    token_ids[n_seq] = next_token
+    n_seq = n_seq + 1
+    _step = _step + 1
+```
+
+---
+
+### Phase 7: Place `GPU_SYNC` Correctly
+
+GPU kernels are **non-blocking** by default — the CPU queues the kernel and continues immediately. You only need to sync when the host CPU is about to read a value that a GPU kernel has written:
+
+| When | Action |
+|---|---|
+| Reading a GPU-written array in a host `while` loop | `GPU_SYNC(array)` before the loop |
+| Passing GPU output to a host helper function | `GPU_SYNC(array)` before the call |
+| Dumping an array to CSV with the `dump` command | `GPU_SYNC(array)` before `dump` |
+| Passing GPU output as input to the next GPU kernel | **No sync needed** — GPU→GPU is handled automatically |
+
+Placing `GPU_SYNC` too eagerly (e.g., after every kernel call) kills throughput. Batch as many kernel dispatches as possible and sync only at host read-back boundaries.
+
+---
+
+### Phase 8: Run and Debug
+
+Execute your kernel with the developer console:
+
+```sh
+# Single file, no external weights
+rj my_kernel.py
+
+# With CSV weight files
+java -jar developer-console-fat.jar execute_inline my_kernel.py \
+    weights/w1.csv weights/w2.csv ...
+
+# Interactive dump session (inspect outputs without modifying the kernel)
+printf 'dump hidden /tmp/hidden.csv\nexit\n' | \
+  java -jar developer-console-fat.jar execute_inline my_kernel.py weights/*.csv
+```
+
+**Common errors and fixes:**
+
+| Error | Cause | Fix |
+|---|---|---|
+| `CompilationException: complex bracket expression` | Index math inside `[ ]` | Extract to a named variable first |
+| `CompilationException: recursive call detected` | Helper function calls itself | Unroll the recursion manually |
+| Silently wrong outputs after GPU kernels | Missing `GPU_SYNC` before host read | Add `GPU_SYNC(array)` at the right point |
+| JVM OOM on large CSV files | No binary sidecar present | Run `generate_bin_sidecars.py` first |
+| `elif` / `for` / `and` parse error | Unsupported Python syntax | Apply the workarounds from Phase 2 |
+
+---
+
+### Quick Reference: PyTorch → Ramanujan Cheat Sheet
+
+```
+PyTorch                          Ramanujan
+─────────────────────────────────────────────────────────────────
+class Model(nn.Module)      →   flat global arrays + def functions
+tensor[b, s, h, d]          →   tensor[b*S*H*D + s*H*D + h*D + d]
+torch.exp(x)                →   EXP(x)  [mutates x in-place]
+torch.sqrt(x)               →   SQRT(x) [mutates x in-place]
+math.floor(x)               →   FLOOR(x) [mutates x in-place]
+for i in range(n):          →   i = 0; while i < n: ... i += 1
+elif:                       →   else: if ...:
+a[i] = f(g(a[i]))           →   tmp = g(a[i]); a[i] = f(tmp)
+tensor.mean(-1)             →   manual while loop inside the kernel
+atomic scatter              →   ATOMIC_ADD_F(arr, idx, delta)
+wait for GPU result         →   GPU_SYNC(array)
+```
