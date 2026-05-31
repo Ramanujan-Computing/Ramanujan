@@ -31,10 +31,7 @@ Processor::~Processor() {
     ArrayDataContainerValue *adcv =
         static_cast<ArrayDataContainerValue *>(ar->getVal());
     if (adcv && adcv->arrayValue) {
-      if (adcv->arrayValue->val != nullptr) {
-        delete[] adcv->arrayValue->val;
-        adcv->arrayValue->val = nullptr;
-      }
+      adcv->arrayValue->destroy();
     }
   }
   arrayREs.clear();

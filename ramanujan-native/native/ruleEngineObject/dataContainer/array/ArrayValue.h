@@ -91,8 +91,8 @@ public:
             if (dimensions != nullptr && dimensions != other.dimensions) {
                 delete[] dimensions;
             }
-            if (val != nullptr && val != other.val) {
-                delete[] val;
+            if (val != nullptr && val != other.val && !isCachedVal) {
+                ALIGNED_FREE(val);
             }
             if (sizeAtIndex != nullptr && sizeAtIndex != other.sizeAtIndex) {
                 delete[] sizeAtIndex;
