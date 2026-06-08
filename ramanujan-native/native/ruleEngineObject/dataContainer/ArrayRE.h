@@ -20,6 +20,7 @@ private:
 public:
     ArrayDataContainerValue arrayValue;
     std::string name, frameCount;
+    bool markedForReturn = false;
 
     ArrayRE(Array *array) : arrayValue(new ArrayValue(array, array->id)){
         this->array = array;

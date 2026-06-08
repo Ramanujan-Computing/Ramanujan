@@ -139,8 +139,15 @@ Processor::arrChangeMap() {
       *arrChangeMap =
           new std::unordered_map<std::string,
                                  std::unordered_map<std::string, double> *>();
+
+  bool anyMarked = false;
+  for (RuleEngineInputUnits *u : arrayREs) {
+    if (static_cast<ArrayRE *>(u)->markedForReturn) { anyMarked = true; break; }
+  }
+
   for (RuleEngineInputUnits *arrayRE1 : arrayREs) {
     ArrayRE *arrayRE = (ArrayRE *)arrayRE1;
+    if (anyMarked && !arrayRE->markedForReturn) continue;
     auto snapIt = arraySnapshotMap.find(arrayRE->id);
     if (snapIt == arraySnapshotMap.end())
       continue; // large array, not tracked

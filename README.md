@@ -1037,7 +1037,57 @@ while _i < n_seq * 768:
 Without the `GPU_SYNC` calls, `hidden` and `h_out_buf` would still hold **stale** values from
 before the last GPU kernels ran, producing silently wrong results.
 
-### `GPU_SYNC` vs the previous implicit sync model
+### Selective result return — `RETURN`
+
+By default, after execution completes `arrChangeMap()` reports **every** array that was modified
+(comparing each element against its pre-execution snapshot).  For large models with hundreds of
+weight arrays this means the JNI result map can contain far more data than the caller needs.
+
+The `RETURN` built-in lets user code explicitly name the arrays that should appear in the result.
+If `RETURN` is called at any point during execution, **only** the listed arrays are included in
+`arrChangeMap()`; all other modified arrays are silently dropped.  If `RETURN` is never called
+the behaviour is unchanged — all modified arrays are returned.
+
+```python
+RETURN(arr1, arr2, ..., arrN)
+```
+
+`RETURN` accepts any number of array arguments and marks each with an internal flag at runtime.
+It is a no-op for the computation itself (it does not stop execution or modify any values).
+
+### Example
+
+```python
+hidden = [0 for _ in range(768)]
+kv_cache = [0 for _ in range(4096)]
+weights = [0 for _ in range(131072)]  # large weight buffer
+
+# ... kernel calls that write to all three arrays ...
+
+# Only return the outputs the caller actually needs
+RETURN(hidden, kv_cache)
+```
+
+Without `RETURN`, `weights` and every other modified array would be serialised back through JNI
+even though the caller only needs `hidden` and `kv_cache`.
+
+### Behaviour summary
+
+| Script contains `RETURN(...)`? | What `arrChangeMap()` returns |
+|---|---|
+| No | All modified arrays with their changed indexes (unchanged default) |
+| Yes | Only the listed arrays, still reporting only changed indexes |
+
+### `RETURN` vs `GPU_SYNC`
+
+`GPU_SYNC` and `RETURN` are independent and complementary:
+
+| | Purpose | When to use |
+|---|---|---|
+| `GPU_SYNC(arr)` | Flush the GPU queue and read `arr` back to the CPU | Before the host reads a GPU-written array |
+| `RETURN(arr1, ...)` | Filter which arrays are included in the final result | To reduce serialisation overhead when only a subset of arrays is needed |
+
+## `GPU_SYNC` vs the previous implicit sync model
 
 Before `GPU_SYNC` was introduced, every `_GPU_N` call automatically issued a blocking
 `clEnqueueReadBuffer` + `clFinish` after the kernel, preventing any batching.  The overhead

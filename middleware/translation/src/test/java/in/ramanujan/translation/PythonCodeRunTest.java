@@ -1384,6 +1384,119 @@ public class PythonCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
 
+    // ========== RETURN DIRECTIVE TESTS ==========
+
+    /**
+     * Verifies that RETURN(arr1) causes only arr1 to appear in arrChangeMap,
+     * even though arr2 was also modified during execution.
+     */
+    @Test(timeout = 5000)
+    public void testReturnDirectiveSelectiveArrayReturn() throws Exception {
+        String pythonCode =
+            "arr1 = [0 for _ in range(3)]\n" +
+            "arr2 = [0 for _ in range(3)]\n" +
+            "arr1[0] = 10\n" +
+            "arr1[1] = 20\n" +
+            "arr1[2] = 30\n" +
+            "arr2[0] = 100\n" +
+            "arr2[1] = 200\n" +
+            "arr2[2] = 300\n" +
+            "RETURN(arr1)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        // arr1 must be in the result
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 10d);
+        expectedArr1.put("1", 20d);
+        expectedArr1.put("2", 30d);
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        analyzeResults(variableMap, arrayMap, new HashMap<>(), arrayIndexToAssert);
+
+        // arr2 must NOT be in the result (RETURN filtered it out)
+        for (Array a : arrayMap.values()) {
+            if ("arr2".equals(a.getName())) {
+                assertTrue("arr2 should not be returned when RETURN(arr1) is used",
+                    a.getValues() == null || a.getValues().isEmpty());
+            }
+        }
+    }
+
+    /**
+     * Verifies that RETURN(arr1, arr2) causes both arrays to appear while a third
+     * modified array is excluded.
+     */
+    @Test(timeout = 5000)
+    public void testReturnDirectiveMultipleArrays() throws Exception {
+        String pythonCode =
+            "arr1 = [0 for _ in range(2)]\n" +
+            "arr2 = [0 for _ in range(2)]\n" +
+            "arr3 = [0 for _ in range(2)]\n" +
+            "arr1[0] = 1\n" +
+            "arr1[1] = 2\n" +
+            "arr2[0] = 3\n" +
+            "arr2[1] = 4\n" +
+            "arr3[0] = 5\n" +
+            "arr3[1] = 6\n" +
+            "RETURN(arr1, arr2)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 1d);
+        expectedArr1.put("1", 2d);
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        Map<String, Object> expectedArr2 = new HashMap<>();
+        expectedArr2.put("0", 3d);
+        expectedArr2.put("1", 4d);
+        arrayIndexToAssert.put("arr2", expectedArr2);
+        analyzeResults(variableMap, arrayMap, new HashMap<>(), arrayIndexToAssert);
+
+        // arr3 must NOT be in the result
+        for (Array a : arrayMap.values()) {
+            if ("arr3".equals(a.getName())) {
+                assertTrue("arr3 should not be returned when RETURN(arr1, arr2) is used",
+                    a.getValues() == null || a.getValues().isEmpty());
+            }
+        }
+    }
+
+    /**
+     * Regression: without RETURN, all modified arrays are returned (unchanged behaviour).
+     */
+    @Test(timeout = 5000)
+    public void testNoReturnDirectiveReturnsAllModifiedArrays() throws Exception {
+        String pythonCode =
+            "arr1 = [0 for _ in range(2)]\n" +
+            "arr2 = [0 for _ in range(2)]\n" +
+            "arr1[0] = 5\n" +
+            "arr1[1] = 15\n" +
+            "arr2[0] = 50\n" +
+            "arr2[1] = 150\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 5d);
+        expectedArr1.put("1", 15d);
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        Map<String, Object> expectedArr2 = new HashMap<>();
+        expectedArr2.put("0", 50d);
+        expectedArr2.put("1", 150d);
+        arrayIndexToAssert.put("arr2", expectedArr2);
+
+        analyzeResults(variableMap, arrayMap, new HashMap<>(), arrayIndexToAssert);
+    }
+
     // ========== AST PARSING TESTS ==========
 
     /**

@@ -262,21 +262,22 @@ public:
  * that don't require full function call overhead.
  */
 enum BuiltInFunctions {
-  NINF,     // Negative infinity assignment
-  PINF,     // Positive infinity assignment
-  RAND,     // Random number generation
-  ABS,      // Absolute value
-  SIN,      // Sine trigonometric function
-  COS,      // Cosine trigonometric function
-  TAN,      // Tangent trigonometric function
-  ASIN,     // Arcsine trigonometric function
-  ACOS,     // Arccosine trigonometric function
-  ATAN,     // Arctangent trigonometric function
-  FLOOR,    // Floor function (round down)
-  CEIL,     // Ceiling function (round up)
-  EXP,      // Exponential function (e^x)
-  GPU_SYNC, // GPU explicit sync (GPU → CPU)
-  GPU_LOAD, // GPU explicit load (CPU → GPU)
+  NINF,         // Negative infinity assignment
+  PINF,         // Positive infinity assignment
+  RAND,         // Random number generation
+  ABS,          // Absolute value
+  SIN,          // Sine trigonometric function
+  COS,          // Cosine trigonometric function
+  TAN,          // Tangent trigonometric function
+  ASIN,         // Arcsine trigonometric function
+  ACOS,         // Arccosine trigonometric function
+  ATAN,         // Arctangent trigonometric function
+  FLOOR,        // Floor function (round down)
+  CEIL,         // Ceiling function (round up)
+  EXP,          // Exponential function (e^x)
+  GPU_SYNC,     // GPU explicit sync (GPU → CPU)
+  GPU_LOAD,     // GPU explicit load (CPU → GPU)
+  RETURN_ARRAYS_ENUM, // Selective array return
 };
 
 /**
@@ -784,6 +785,41 @@ public:
   RuleEngineInputUnits *process() override;
 };
 
+/**
+ * Selective Array Return Directive.
+ * Marks specified arrays so that Processor::arrChangeMap() returns only those
+ * arrays instead of all modified arrays.
+ *
+ * Usage:
+ * - RETURN(arr1, arr2, ...) - marks arr1, arr2, ... for selective return
+ *
+ * If RETURN() is never called, arrChangeMap() returns all modified arrays
+ * (unchanged behaviour). If called, only the marked arrays are returned.
+ */
+class RETURN_ARRAYS : public BuiltInFunctionsImpl {
+  std::vector<ArrayRE *> targetArrays;
+public:
+  RETURN_ARRAYS(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+  void setFields(
+      std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+    for (int i = 0; i < functionCommandInfo->argumentsSize; i++) {
+      ArrayRE *arr = dynamic_cast<ArrayRE *>(
+          map->at(functionCommandInfo->arguments[i]));
+      if (arr != nullptr) {
+        targetArrays.push_back(arr);
+      }
+    }
+  }
+
+  RuleEngineInputUnits *process() override {
+    for (ArrayRE *arr : targetArrays) {
+      arr->markedForReturn = true;
+    }
+    return nextUnit;
+  }
+};
+
 #ifdef GPU_ENABLED
 // ==================== GPU Function Command ====================
 
@@ -928,6 +964,8 @@ static FunctionCommandRE *GetFunctionCommandRE(
     return new class GPU_SYNC(functionCommand);
   } else if (id == "GPU_LOAD") {
     return new class GPU_LOAD(functionCommand);
+  } else if (id == "RETURN") {
+    return new RETURN_ARRAYS(functionCommand);
   }
 
   // Default case: user-defined functions.
