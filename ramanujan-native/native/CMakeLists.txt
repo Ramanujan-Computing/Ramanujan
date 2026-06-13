@@ -7,15 +7,37 @@ include_directories(input)
 include_directories(processing)
 
 include(FetchContent)
-set(BUILD_SHARED_LIBS OFF) # Ensure static build
-set(JSONCPP_WITH_PIC ON)   # Enable -fPIC for static lib
+
+# ---------------------------------------------------------------------------
+# Protobuf
+# ---------------------------------------------------------------------------
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_Declare(
-    jsoncpp
-    GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
-    GIT_TAG 1.9.5
+    protobuf
+    GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+    GIT_TAG        v3.25.3
 )
-FetchContent_MakeAvailable(jsoncpp)
+FetchContent_MakeAvailable(protobuf)
+
+# Generate C++ sources from the proto file shared with the Java project.
+set(PROTO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../rule-engine/src/main/proto/rule_engine_input.proto")
+set(PROTO_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/proto")
+file(MAKE_DIRECTORY ${PROTO_OUT_DIR})
+
+add_custom_command(
+    OUTPUT ${PROTO_OUT_DIR}/rule_engine_input.pb.cc ${PROTO_OUT_DIR}/rule_engine_input.pb.h
+    COMMAND protobuf::protoc
+    ARGS --cpp_out=${PROTO_OUT_DIR} --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/../../rule-engine/src/main/proto ${PROTO_FILE}
+    DEPENDS ${PROTO_FILE}
+    COMMENT "Generating C++ protobuf files"
+)
+
+set(PROTO_SRCS "${PROTO_OUT_DIR}/rule_engine_input.pb.cc")
+set(PROTO_HDRS "${PROTO_OUT_DIR}/rule_engine_input.pb.h")
+include_directories(${PROTO_OUT_DIR})
 
 # ---------------------------------------------------------------------------
 # GPU support  (disabled by default – no OpenCL dependency for standard builds)
@@ -86,8 +108,10 @@ ENDIF()
 
 add_definitions(-D_GNU_SOURCE)
 
-# Define the source files
-set(SOURCE_FILES
+# Core sources shared by the JNI library and standalone test binary
+set(CORE_SOURCE_FILES
+        "${PROTO_SRCS}"
+        "${PROTO_HDRS}"
         input/Array.hpp
         input/ArrayCommand.hpp
         input/Command.hpp
@@ -167,7 +191,6 @@ set(SOURCE_FILES
         in_ramanujan_rule_engine_NativeProcessor.h
         processing/ProcessingResult.cpp
         NativeProcessor.cpp
-        ruleEngineObject/Test.cpp
         ruleEngineObject/dataContainer/array/ArrayValue.cpp
         ruleEngineObject/CommandTypeProcessingDefinition.h
         ruleEngineObject/processingDefinition/ConstantReProcessing.h
@@ -189,19 +212,18 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/ArrayRE.cpp
 )
 
-# Normal build target
-add_executable(native ${SOURCE_FILES})
-#add_library(native SHARED ${SOURCE_FILES})
-target_link_libraries(native PRIVATE jsoncpp_static)
+# Standalone test binary (includes Test.cpp which still uses JSON for dev convenience)
+add_executable(native ${CORE_SOURCE_FILES} ruleEngineObject/Test.cpp)
+target_link_libraries(native PRIVATE protobuf::libprotobuf)
 
 ## Production shared-library target (no DEBUG_BUILD – used by the JVM via JNI)
-add_library(native_lib SHARED ${SOURCE_FILES})
-target_link_libraries(native_lib PRIVATE jsoncpp_static)
+add_library(native_lib SHARED ${CORE_SOURCE_FILES})
+target_link_libraries(native_lib PRIVATE protobuf::libprotobuf)
 set_target_properties(native_lib PROPERTIES OUTPUT_NAME "native")
 
 ## Debug build target
 #add_library(native_debug SHARED ${SOURCE_FILES})
-#target_link_libraries(native_debug PRIVATE jsoncpp_static)
+#target_link_libraries(native_debug PRIVATE protobuf::libprotobuf)
 #set_target_properties(native_debug PROPERTIES COMPILE_FLAGS "-DDEBUG_BUILD")
 #set_target_properties(native_debug PROPERTIES OUTPUT_NAME "native_debug")
 

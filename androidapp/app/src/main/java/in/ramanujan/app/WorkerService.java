@@ -19,6 +19,7 @@ import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.FunctionCall;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeProcessor;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -227,10 +228,10 @@ public class WorkerService extends Service {
                     Map<String, Object> results = new HashMap<>();
                     long start = System.currentTimeMillis();
                     try {
-                        String reiJson = MAPPER.writeValueAsString(rei);
                         NativeProcessor np = new NativeProcessor();
                         if (firstCommandId != null && !firstCommandId.isEmpty()) {
-                            np.process(reiJson, firstCommandId);
+                            byte[] reiProto = RuleEngineInputProtoSerializer.serialize(rei);
+                            np.process(reiProto, firstCommandId);
                             if (np.jniObject != null) results = np.jniObject;
                         }
                     } catch (Exception e) {

@@ -3,6 +3,7 @@
 
 #include <string>
 #include "RuleEngineInputUnit.hpp"
+#include "rule_engine_input.pb.h"
 
 
 
@@ -11,10 +12,10 @@ class Constant : public RuleEngineInputUnit {
         std::string dataType;
         double value;
 
-        Constant(Json::Value* value) {
-            this->id = (*value)["id"].asString();
-            this->dataType = (*value)["dataType"].asString();
-            this->value = (*value)["value"].asDouble();
+        Constant(const ramanujan::Constant* p) {
+            this->id = p->id();
+            this->dataType = p->data_type();
+            this->value = p->value();
         }
 
     RuleEngineInputUnits *getInternalAnalogy();

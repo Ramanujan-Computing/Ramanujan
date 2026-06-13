@@ -3,26 +3,22 @@
 //
 
 #include "in_ramanujan_rule_engine_NativeProcessor.h"
+#include "rule_engine_input.pb.h"
 
 JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
-        (JNIEnv *env, jobject obj, jstring ruleEngineInputJsonStr, jstring firstCommandIdStr) {
-    // Convert jstring to std::string
-    const char *cStr = env->GetStringUTFChars(ruleEngineInputJsonStr, 0);
-    std::string str(cStr);
-    env->ReleaseStringUTFChars(ruleEngineInputJsonStr, cStr);
+        (JNIEnv *env, jobject obj, jbyteArray ruleEngineInputProtoBytes, jstring firstCommandIdStr) {
+    // Deserialize protobuf bytes into the generated message
+    jsize len = env->GetArrayLength(ruleEngineInputProtoBytes);
+    jbyte* bytes = env->GetByteArrayElements(ruleEngineInputProtoBytes, nullptr);
+    ramanujan::RuleEngineInput proto;
+    proto.ParseFromArray(bytes, len);
+    env->ReleaseByteArrayElements(ruleEngineInputProtoBytes, bytes, JNI_ABORT);
 
     const char *cStr1 = env->GetStringUTFChars(firstCommandIdStr, 0);
     std::string str1(cStr1);
     env->ReleaseStringUTFChars(firstCommandIdStr, cStr1);
 
-    // Parse JSON std::string
-    Json::Value root;
-    Json::CharReaderBuilder builder;
-    std::string errors;
-    std::istringstream iss(str);
-    Json::parseFromStream(builder, iss, &root, &errors);
-
-    RuleEngineInput *ruleEngineInput = new RuleEngineInput(&root);
+    RuleEngineInput *ruleEngineInput = new RuleEngineInput(&proto);
     Processor *processor = new Processor();
 
     processor->process(*ruleEngineInput, str1);

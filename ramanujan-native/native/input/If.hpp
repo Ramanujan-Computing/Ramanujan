@@ -3,7 +3,7 @@
 
 #include <string>
 #include "RuleEngineInputUnit.hpp"
-#include <json/json.h>
+#include "rule_engine_input.pb.h"
 
 
 
@@ -11,12 +11,12 @@ class If : public RuleEngineInputUnit {
     public:
         std::string conditionId, ifCommand, elseCommand;
 
-        If(Json::Value* value) {
-            this->id = (*value)["id"].asString();
-            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
-            this->conditionId = (*value)["conditionId"].asString();
-            this->ifCommand = (*value)["ifCommand"].asString();
-            this->elseCommand = (*value)["elseCommandId"].asString();
+        If(const ramanujan::IfBlock* p) {
+            this->id = p->id();
+            this->immediateParentRuleEngineInputUnitId = p->immediate_parent_rule_engine_input_unit_id();
+            this->conditionId = p->condition_id();
+            this->ifCommand = p->if_command();
+            this->elseCommand = p->else_command();
         }
 
     RuleEngineInputUnits *getInternalAnalogy();
@@ -24,4 +24,3 @@ class If : public RuleEngineInputUnit {
 
 
 #endif
-

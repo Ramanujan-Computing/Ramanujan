@@ -15,7 +15,6 @@
 #include "../ruleEngineObject/dataContainer/ArrayRE.h"
 #include "../ruleEngineObject/dataContainer/VariableRE.h"
 #include "ProcessingResult.hpp"
-#include <json/json.h>
 // #include <boost/stacktrace.hpp>
 #include <DebugPoint.h>
 

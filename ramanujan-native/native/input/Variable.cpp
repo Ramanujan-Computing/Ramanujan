@@ -12,27 +12,26 @@ RuleEngineInputUnits* Variable::getInternalAnalogy() {
     return new VariableRE(this);
 }
 
-Variable::Variable(Json::Value *pValue) {
-    id = (*pValue)["id"].asString();
-    name = (*pValue)["name"].asString();
-    dataType = (*pValue)["dataType"].asString();
-    value = (*pValue)["value"].asDouble();
-    frameCount = (*pValue)["frameCount"].asString();
+Variable::Variable(const ramanujan::Variable* p) {
+    id = p->id();
+    name = p->name();
+    dataType = p->data_type();
+    value = p->value();
+    frameCount = p->frame_count();
 }
 
 RuleEngineInputUnits* MethodAgnosticVariable::getInternalAnalogy() {
     return new MethodAgnosticVariableRE(this);
 }
 
-MethodAgnosticVariable::MethodAgnosticVariable(Json::Value *pValue) {
-    id = (*pValue)["id"].asString();
-    name = (*pValue)["name"].asString();
-    value = (*pValue)["value"].asDouble();
-    frameCount = (*pValue)["frameCount"].asString();
+MethodAgnosticVariable::MethodAgnosticVariable(const ramanujan::MethodDataTypeAgnosticArg* p) {
+    id = p->id();
+    name = p->name();
+    value = p->value();
+    frameCount = p->frame_count();
 }
 
 
 
 
 #endif
-
