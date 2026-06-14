@@ -218,6 +218,12 @@ With the sentinel path, all levels of the recursive chain share the same class-l
 
 Regular function argument save/restore (Phases 1–6) still runs for every recursive call, giving each frame its own isolated local variables.
 
+### Mutual recursion between two methods
+
+The same `__self__` sentinel works when method A calls method B and method B calls method A. The call-site `FunctionCall` emitted for `self.pong(...)` inside `ping` has `id = ClassName_pong` (the cross-method definition), not `ClassName_ping`. The runtime resolves it through the normal `functionInfoRE` pointer, so the correct body executes.
+
+Only the **outermost** `ClassBasedFunctionCommandRE` (the one with a real UUID) performs Phases 0 and 7. Every `__self__` hop — whether into the same method or a different one — skips those phases and just runs the function body, leaving the class field vars live throughout the entire mutual-recursion chain.
+
 ### Field vs local isolation during recursion
 
 | Variable type | Saved/restored per call? | Visible across recursive calls? |
@@ -297,6 +303,44 @@ del a
 ```
 
 After execution: `result == 15.0` (= 5 + 4 + 3 + 2 + 1).
+
+### Mutually recursive methods sharing a class field
+
+```python
+limit = 0   # global: stop when n reaches limit
+
+class PingPong:
+    steps = 0  # class field: counts every non-base invocation
+
+    def ping(self, n):
+        if n <= limit:
+            steps = steps        # base case — no-op keeps the field intact
+        else:
+            steps = steps + 1
+            n_minus_1 = n - 1
+            self.pong(n_minus_1) # cross-method __self__ call
+
+    def pong(self, n):
+        if n <= limit:
+            steps = steps
+        else:
+            steps = steps + 1
+            n_minus_1 = n - 1
+            self.ping(n_minus_1)
+
+    def getSteps(self, out):
+        out = steps
+
+p = PingPong()
+p.ping(4)
+result = 0
+p.getSteps(result)
+del p
+```
+
+After execution: `result == 4.0`.
+
+Call chain: `ping(4) → pong(3) → ping(2) → pong(1) → ping(0)` [base]. `steps` is incremented on each non-base call (4 times). The outermost `ClassBasedFunctionCommandRE` for `ping(4)` owns Phases 0 and 7; every `self.pong` / `self.ping` hop inside uses `__self__` and sees the same live `steps` field var.
 
 Execution trace for `a.addDown(5)`:
 

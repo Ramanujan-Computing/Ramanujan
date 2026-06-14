@@ -2858,6 +2858,56 @@ public class PythonCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
+    /**
+     * Two class methods call each other mutually recursively, accumulating into a
+     * shared class field. A global (limit = 0) is the base-case sentinel.
+     *
+     * ping(4) → pong(3) → ping(2) → pong(1) → ping(0) [base]
+     * steps incremented on every non-base call: 4 times.
+     * Expected: result == 4.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsMutualRecursionBetweenMethods() throws Exception {
+        String pythonCode =
+            "limit = 0\n" +
+            "\n" +
+            "class PingPong:\n" +
+            "    steps = 0\n" +
+            "\n" +
+            "    def ping(self, n):\n" +
+            "        if n <= limit:\n" +
+            "            steps = steps\n" +
+            "        else:\n" +
+            "            steps = steps + 1\n" +
+            "            n_minus_1 = n - 1\n" +
+            "            self.pong(n_minus_1)\n" +
+            "\n" +
+            "    def pong(self, n):\n" +
+            "        if n <= limit:\n" +
+            "            steps = steps\n" +
+            "        else:\n" +
+            "            steps = steps + 1\n" +
+            "            n_minus_1 = n - 1\n" +
+            "            self.ping(n_minus_1)\n" +
+            "\n" +
+            "    def getSteps(self, out):\n" +
+            "        out = steps\n" +
+            "\n" +
+            "p = PingPong()\n" +
+            "p.ping(4)\n" +
+            "result = 0\n" +
+            "p.getSteps(result)\n" +
+            "del p\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 4.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     // ========== GPU KERNEL TESTS ==========
 
     /**
