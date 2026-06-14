@@ -1621,7 +1621,8 @@ public class PythonCodeRunTest {
             "def vector_add_GPU_1(a, b, c, gid):\n" +
             "    c[gid] = a[gid] + b[gid]\n" +
             "\n" +
-            "vector_add_GPU_1(a, b, c, 4)\n";
+            "vector_add_GPU_1(a, b, c, 4)\n" +
+            "GPU_SYNC(c)\n";
 
         Map<String, Variable> execVarMap1D = new HashMap<>();
         Map<String, Array>    execArrMap1D = new HashMap<>();
@@ -1687,7 +1688,8 @@ public class PythonCodeRunTest {
             "def scale_2d_GPU_2(a, out, row, col):\n" +
             "    out[row] = a[row] * 2\n" +
             "\n" +
-            "scale_2d_GPU_2(a, out, 4, 4)\n";
+            "scale_2d_GPU_2(a, out, 4, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMap2D = new HashMap<>();
         Map<String, Array>    execArrMap2D = new HashMap<>();
@@ -1757,7 +1759,8 @@ public class PythonCodeRunTest {
             "    else:\n" +
             "        out[gid] = 0\n" +
             "\n" +
-            "relu_GPU_1(a, out, 4)\n";
+            "relu_GPU_1(a, out, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMapRelu = new HashMap<>();
         Map<String, Array>    execArrMapRelu = new HashMap<>();
@@ -1828,7 +1831,8 @@ public class PythonCodeRunTest {
             "        k = k + 1\n" +
             "    out[gid] = s\n" +
             "\n" +
-            "prefix_sum_GPU_1(a, out, 4)\n";
+            "prefix_sum_GPU_1(a, out, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMapWhile = new HashMap<>();
         Map<String, Array>    execArrMapWhile = new HashMap<>();
@@ -2779,6 +2783,78 @@ public class PythonCodeRunTest {
 
         Map<String, Object> variablesToAssert = new HashMap<>();
         variablesToAssert.put("result", 5.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Method reads a global variable instead of a class field.
+     * The global 'g' is set to 42 before the call; the class field 'value' is 0.
+     * Expected: result == 42.0 (global wins over unset field)
+     */
+    @Test(timeout = 5000)
+    public void testOopsMethodUsesGlobalNotClassField() throws Exception {
+        String pythonCode =
+            "g = 42\n" +
+            "\n" +
+            "class Foo:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "    def readGlobal(self, out):\n" +
+            "        out = g\n" +
+            "\n" +
+            "f = Foo()\n" +
+            "result = 0\n" +
+            "f.readGlobal(result)\n" +
+            "del f\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 42.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Recursive class method that accumulates into a class field using a global
+     * as the base-case sentinel.
+     *
+     * addDown(5) computes 5 + 4 + 3 + 2 + 1 = 15; global base = 1 terminates
+     * recursion; class field total holds the running sum across recursive calls.
+     * Expected: result == 15.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsRecursiveMethodUsesClassFieldAndGlobal() throws Exception {
+        String pythonCode =
+            "base = 1\n" +
+            "\n" +
+            "class Accumulator:\n" +
+            "    total = 0\n" +
+            "\n" +
+            "    def addDown(self, n):\n" +
+            "        if n <= base:\n" +
+            "            total = total + n\n" +
+            "        else:\n" +
+            "            total = total + n\n" +
+            "            n_minus_1 = n - 1\n" +
+            "            self.addDown(n_minus_1)\n" +
+            "\n" +
+            "    def getTotal(self, out):\n" +
+            "        out = total\n" +
+            "\n" +
+            "a = Accumulator()\n" +
+            "a.addDown(5)\n" +
+            "result = 0\n" +
+            "a.getTotal(result)\n" +
+            "del a\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 15.0);
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 

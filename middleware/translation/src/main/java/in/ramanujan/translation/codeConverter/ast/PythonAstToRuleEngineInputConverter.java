@@ -380,7 +380,11 @@ public class PythonAstToRuleEngineInputConverter {
             }
         }
 
-        // 1. Class definitions — must run first so classRegistry is populated before
+        // 1a. Pre-register global scalars so class-method bodies can reference them.
+        //     (convertAssign will find them via getExistingVariable and skip re-registration.)
+        preRegisterGlobalScalars(nonFunctionDefNodes, variableScope);
+
+        // 1b. Class definitions — must run first so classRegistry is populated before
         //    any instantiation statements (e.g. c1 = Counter()) are processed.
         //    convertClassDef emits only IR metadata (ClassDefinition, Variable/Array,
         //    FunctionCall defs), never Command objects, so this is safe.
@@ -408,6 +412,31 @@ public class PythonAstToRuleEngineInputConverter {
         return commands;
     }
     
+    /**
+     * Pre-registers global scalar variables so class-method bodies can reference them
+     * before the actual assignment commands are emitted in the main pass.
+     */
+    private void preRegisterGlobalScalars(List<AstNode> nodes, List<String> variableScope) {
+        for (AstNode node : nodes) {
+            if (!(node instanceof AssignNode)) continue;
+            AssignNode assign = (AssignNode) node;
+            if (assign.getTargets().isEmpty()) continue;
+            AstNode target = assign.getTargets().get(0);
+            if (!(target instanceof NameNode)) continue;
+            AstNode value = assign.getValue();
+            String dataType = inferDataType(value);
+            if ("array".equals(dataType)) continue;
+            String varName = ((NameNode) target).getId();
+            if (codeConverter.getVariableMap().get(varName) != null) continue;
+            Variable variable = new Variable();
+            variable.setId(UUID.randomUUID().toString() + "_name_" + varName);
+            variable.setName(varName);
+            variable.setDataType(dataType);
+            ruleEngineInput.getVariables().add(variable);
+            codeConverter.setVariable(variable, "");
+        }
+    }
+
     /**
      * Converts a single AST statement node into a Command.
      * 
@@ -3092,6 +3121,21 @@ public class PythonAstToRuleEngineInputConverter {
         }
         String objVarName = ((NameNode) attr.getValue()).getId();
         String methodName = attr.getAttr();
+
+        // self.method() inside a class method → recursive call on the same object
+        if ("self".equals(objVarName) && currentClassName != null) {
+            FunctionCall functionCall = new FunctionCall();
+            functionCall.setId(currentClassName + "_" + methodName);
+            functionCall.setObjectHandleId("__self__");
+            List<String> argumentIds = new ArrayList<>();
+            for (AstNode arg : call.getArgs()) {
+                argumentIds.add(getArgumentId(arg, variableScope, false));
+            }
+            functionCall.setArguments(argumentIds);
+            command.setFunctionCall(functionCall);
+            debugLevelCodeCreator.concat("self." + methodName + "()");
+            return;
+        }
 
         String[] objInfo = codeConverter.getObjectInfo(objVarName);
         if (objInfo == null) {

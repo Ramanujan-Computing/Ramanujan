@@ -1297,6 +1297,12 @@ void ClassBasedFunctionCommandRE::setFields(
 }
 
 RuleEngineInputUnits* ClassBasedFunctionCommandRE::process() {
+    // Recursive self-call: field vars are already live from the outermost call;
+    // skip the slot-swap phases to let the live values flow through unchanged.
+    if (objectHandleId == "__self__") {
+        return FunctionCommandRE::process();
+    }
+
     ObjectInstance* inst = ObjectInstanceStore::get(objectHandleId);
     if (!inst) return nextUnit;
 
