@@ -1325,10 +1325,9 @@ void ClassBasedFunctionCommandRE::setFields(
         objectHandleArgRE = dynamic_cast<ObjectHandleArgRE*>(it->second);
     }
 
-    // Determine class name: from ObjectHandleArgRE (typed param) or classOwner (direct call)
-    std::string className = objectHandleArgRE
-        ? objectHandleArgRE->getClassName()
-        : functionInfoRE->functionCall->classOwner;
+    // Always use classOwner from the method definition to select field vars.
+    // With inheritance, the receiver's declared type may differ from the defining class.
+    std::string className = functionInfoRE->functionCall->classOwner;
 
     ClassDefinition* classDef = ObjectInstanceStore::getClass(className);
     if (!classDef) return;

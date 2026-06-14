@@ -294,10 +294,13 @@ public class PythonAstToRuleEngineInputConverter {
     /** Compile-time metadata about a class: its ordered field names and index maps. */
     private static class ClassMeta {
         String className;
+        String parentClassName;
         List<String> scalarFieldNames = new ArrayList<>();
         List<String> arrayFieldNames = new ArrayList<>();
         Map<String, Integer> scalarFieldIndex = new HashMap<>();
         Map<String, Integer> arrayFieldIndex = new HashMap<>();
+        Set<String> methodNames = new HashSet<>();
+        List<AssignNode> fieldDecls = new ArrayList<>();
     }
     
     /**
@@ -3035,58 +3038,94 @@ public class PythonAstToRuleEngineInputConverter {
             }
         }
 
-        // Build ClassMeta field order
+        // Extract parent class name from bases list (first NameNode wins)
+        String parentClassName = null;
+        for (AstNode base : classDef.getBases()) {
+            if (base instanceof NameNode) {
+                parentClassName = ((NameNode) base).getId();
+                break;
+            }
+        }
+        classMeta.parentClassName = parentClassName;
+
+        // Prepend all ancestor fields (parent-first order) into this class's field lists.
+        // Walking up the chain in reverse so that grandparent fields come before parent fields.
+        if (parentClassName != null) {
+            List<ClassMeta> ancestors = new ArrayList<>();
+            String cur = parentClassName;
+            while (cur != null) {
+                ClassMeta anc = classRegistry.get(cur);
+                if (anc == null) break;
+                ancestors.add(0, anc); // prepend so grandparent is first
+                cur = anc.parentClassName;
+            }
+            // ancestors is now ordered [grandparent, ..., parent]
+            for (ClassMeta anc : ancestors) {
+                for (String fn : anc.scalarFieldNames) {
+                    if (!classMeta.scalarFieldIndex.containsKey(fn)) {
+                        classMeta.scalarFieldIndex.put(fn, classMeta.scalarFieldNames.size());
+                        classMeta.scalarFieldNames.add(fn);
+                    }
+                }
+                for (String fn : anc.arrayFieldNames) {
+                    if (!classMeta.arrayFieldIndex.containsKey(fn)) {
+                        classMeta.arrayFieldIndex.put(fn, classMeta.arrayFieldNames.size());
+                        classMeta.arrayFieldNames.add(fn);
+                    }
+                }
+            }
+        }
+
+        // Build ClassMeta field order for own fields (appended after inherited ones)
         for (AssignNode field : fieldDecls) {
             if (field.getTargets().isEmpty() || !(field.getTargets().get(0) instanceof NameNode)) continue;
             String fieldName = ((NameNode) field.getTargets().get(0)).getId();
             String dataType = inferDataType(field.getValue());
             if ("array".equals(dataType)) {
-                classMeta.arrayFieldIndex.put(fieldName, classMeta.arrayFieldNames.size());
-                classMeta.arrayFieldNames.add(fieldName);
+                if (!classMeta.arrayFieldIndex.containsKey(fieldName)) {
+                    classMeta.arrayFieldIndex.put(fieldName, classMeta.arrayFieldNames.size());
+                    classMeta.arrayFieldNames.add(fieldName);
+                }
             } else {
-                classMeta.scalarFieldIndex.put(fieldName, classMeta.scalarFieldNames.size());
-                classMeta.scalarFieldNames.add(fieldName);
+                if (!classMeta.scalarFieldIndex.containsKey(fieldName)) {
+                    classMeta.scalarFieldIndex.put(fieldName, classMeta.scalarFieldNames.size());
+                    classMeta.scalarFieldNames.add(fieldName);
+                }
             }
         }
+
+        // Track own method names for method resolution
+        for (FunctionDefNode method : methods) {
+            classMeta.methodNames.add(method.getName());
+        }
+
+        // Store own field declarations so descendant classes can re-emit them
+        classMeta.fieldDecls = fieldDecls;
+
         classRegistry.put(className, classMeta);
 
         String classScope = "class_" + className + "_";
 
-        // Emit field IR entries scoped under "class_<ClassName>_"
-        for (AssignNode field : fieldDecls) {
-            if (field.getTargets().isEmpty() || !(field.getTargets().get(0) instanceof NameNode)) continue;
-            String fieldName = ((NameNode) field.getTargets().get(0)).getId();
-            String dataType = inferDataType(field.getValue());
-
-            if ("array".equals(dataType)) {
-                if (!(field.getValue() instanceof ListCompNode)) continue;
-                Array array = new Array();
-                array.setId("class_" + className + "_" + fieldName + "_arr");
-                array.setName(fieldName);
-                array.setDataType("array");
-                List<String> classFieldScope = new ArrayList<>(variableScope);
-                classFieldScope.add(classScope);
-                List<Integer> constantDims = new ArrayList<>();
-                boolean[] hasNonConstant = new boolean[]{false};
-                extractArrayDimensionsFromListComp((ListCompNode) field.getValue(), classFieldScope, constantDims, hasNonConstant);
-                if (!hasNonConstant[0]) array.setDimension(constantDims);
-                ruleEngineInput.getArrays().add(array);
-                codeConverter.setArray(array, classScope);
-            } else {
-                Variable variable = new Variable();
-                variable.setId("class_" + className + "_" + fieldName + "_var");
-                variable.setName(fieldName);
-                variable.setDataType(dataType);
-                if (field.getValue() instanceof ConstantNode) {
-                    Object val = ((ConstantNode) field.getValue()).getValue();
-                    if (val instanceof Number) variable.setValue(((Number) val).doubleValue());
-                }
-                ruleEngineInput.getVariables().add(variable);
-                codeConverter.setVariable(variable, classScope);
+        // Emit inherited field IR entries under this class's scope.
+        // This allows NewObjectCommandRE and child method bodies to find them via class_<ChildClass>_ prefix.
+        if (parentClassName != null) {
+            List<ClassMeta> ancestors = new ArrayList<>();
+            String cur = parentClassName;
+            while (cur != null) {
+                ClassMeta anc = classRegistry.get(cur);
+                if (anc == null) break;
+                ancestors.add(0, anc);
+                cur = anc.parentClassName;
+            }
+            for (ClassMeta anc : ancestors) {
+                emitFieldIR(anc.fieldDecls, className, classScope, variableScope);
             }
         }
 
-        // Emit ClassDefinition IR entry
+        // Emit own field IR entries scoped under "class_<ClassName>_"
+        emitFieldIR(fieldDecls, className, classScope, variableScope);
+
+        // Emit ClassDefinition IR entry (contains all fields: inherited + own)
         ClassDefinition classDefinition = new ClassDefinition();
         classDefinition.setId(className);
         classDefinition.setClassName(className);
@@ -3101,6 +3140,46 @@ public class PythonAstToRuleEngineInputConverter {
             convertClassMethodDef(method, className, classMeta, variableScope);
         }
         this.currentClassName = previousClassName;
+    }
+
+    private void emitFieldIR(List<AssignNode> fieldDecls, String className, String classScope,
+                              List<String> variableScope) throws CompilationException {
+        for (AssignNode field : fieldDecls) {
+            if (field.getTargets().isEmpty() || !(field.getTargets().get(0) instanceof NameNode)) continue;
+            String fieldName = ((NameNode) field.getTargets().get(0)).getId();
+            String dataType = inferDataType(field.getValue());
+
+            if ("array".equals(dataType)) {
+                if (!(field.getValue() instanceof ListCompNode)) continue;
+                // Skip if already emitted under this scope (avoids duplicates in multi-level chains)
+                if (codeConverter.getArrayMap().containsKey(classScope + fieldName)) continue;
+                Array array = new Array();
+                array.setId("class_" + className + "_" + fieldName + "_arr");
+                array.setName(fieldName);
+                array.setDataType("array");
+                List<String> classFieldScope = new ArrayList<>(variableScope);
+                classFieldScope.add(classScope);
+                List<Integer> constantDims = new ArrayList<>();
+                boolean[] hasNonConstant = new boolean[]{false};
+                extractArrayDimensionsFromListComp((ListCompNode) field.getValue(), classFieldScope, constantDims, hasNonConstant);
+                if (!hasNonConstant[0]) array.setDimension(constantDims);
+                ruleEngineInput.getArrays().add(array);
+                codeConverter.setArray(array, classScope);
+            } else {
+                // Skip if already emitted under this scope (avoids duplicates in multi-level chains)
+                if (codeConverter.getVariableMap().containsKey(classScope + fieldName)) continue;
+                Variable variable = new Variable();
+                variable.setId("class_" + className + "_" + fieldName + "_var");
+                variable.setName(fieldName);
+                variable.setDataType(dataType);
+                if (field.getValue() instanceof ConstantNode) {
+                    Object val = ((ConstantNode) field.getValue()).getValue();
+                    if (val instanceof Number) variable.setValue(((Number) val).doubleValue());
+                }
+                ruleEngineInput.getVariables().add(variable);
+                codeConverter.setVariable(variable, classScope);
+            }
+        }
     }
 
     private void convertClassMethodDef(FunctionDefNode methodDef, String className, ClassMeta classMeta,
@@ -3171,6 +3250,21 @@ public class PythonAstToRuleEngineInputConverter {
         this.currentFunctionName = previousFunctionName;
     }
 
+    /**
+     * Walks the inheritance chain starting at startClass to find which class defines methodName.
+     * Returns the first class in the chain that owns the method, or startClass if not found.
+     */
+    private String resolveMethodOwner(String startClass, String methodName) {
+        String cn = startClass;
+        while (cn != null) {
+            ClassMeta m = classRegistry.get(cn);
+            if (m == null) break;
+            if (m.methodNames.contains(methodName)) return m.className;
+            cn = m.parentClassName;
+        }
+        return startClass;
+    }
+
     private void convertMethodCall(CallNode call, Command command, List<String> variableScope)
             throws CompilationException {
         AttributeNode attr = (AttributeNode) call.getFunc();
@@ -3183,7 +3277,7 @@ public class PythonAstToRuleEngineInputConverter {
         // self.method() inside a class method → recursive call on the same object
         if ("self".equals(objVarName) && currentClassName != null) {
             FunctionCall functionCall = new FunctionCall();
-            functionCall.setId(currentClassName + "_" + methodName);
+            functionCall.setId(resolveMethodOwner(currentClassName, methodName) + "_" + methodName);
             functionCall.setObjectHandleId("__self__");
             List<String> argumentIds = new ArrayList<>();
             List<String> callerObjHandleIds = new ArrayList<>();
@@ -3209,7 +3303,7 @@ public class PythonAstToRuleEngineInputConverter {
             }
             // Use the ObjectHandleArg's IR id as the objectHandleId so the runtime resolves it dynamically
             FunctionCall functionCall = new FunctionCall();
-            functionCall.setId(objArg.getClassName() + "_" + methodName);
+            functionCall.setId(resolveMethodOwner(objArg.getClassName(), methodName) + "_" + methodName);
             functionCall.setObjectHandleId(objArg.getId());
             List<String> argumentIds = new ArrayList<>();
             List<String> callerObjHandleIds = new ArrayList<>();
@@ -3228,7 +3322,7 @@ public class PythonAstToRuleEngineInputConverter {
         String className = objInfo[1];
 
         FunctionCall functionCall = new FunctionCall();
-        functionCall.setId(className + "_" + methodName);
+        functionCall.setId(resolveMethodOwner(className, methodName) + "_" + methodName);
         functionCall.setObjectHandleId(objectHandleId);
 
         List<String> argumentIds = new ArrayList<>();

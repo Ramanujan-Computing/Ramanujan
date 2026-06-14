@@ -3127,6 +3127,129 @@ public class PythonCodeRunTest {
         assertTrue("v should be __global float*", kernel.contains("__global float* v"));
     }
 
+    // ========== INHERITANCE TESTS ==========
+
+    /**
+     * Child object calling parent methods; both parent and child fields work independently.
+     * Expected: result_age == 2.0, result_tricks == 1.0
+     */
+    @Test(timeout = 5000)
+    public void testInheritanceBasic() throws Exception {
+        String pythonCode =
+            "class Animal:\n" +
+            "    age = 0\n" +
+            "\n" +
+            "    def birthday(self):\n" +
+            "        age = age + 1\n" +
+            "\n" +
+            "    def getAge(self, out):\n" +
+            "        out = age\n" +
+            "\n" +
+            "class Dog(Animal):\n" +
+            "    tricks = 0\n" +
+            "\n" +
+            "    def learnTrick(self):\n" +
+            "        tricks = tricks + 1\n" +
+            "\n" +
+            "    def getTricks(self, out):\n" +
+            "        out = tricks\n" +
+            "\n" +
+            "d = Dog()\n" +
+            "d.birthday()\n" +
+            "d.birthday()\n" +
+            "d.learnTrick()\n" +
+            "result_age = 0\n" +
+            "result_tricks = 0\n" +
+            "d.getAge(result_age)\n" +
+            "d.getTricks(result_tricks)\n" +
+            "del d\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result_age", 2.0);
+        variablesToAssert.put("result_tricks", 1.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Child method body reads and writes an inherited parent field.
+     * Expected: result == 10.0 (child's own method doubles the inherited age)
+     */
+    @Test(timeout = 5000)
+    public void testInheritanceChildMethodAccessesParentField() throws Exception {
+        String pythonCode =
+            "class Animal:\n" +
+            "    age = 0\n" +
+            "\n" +
+            "    def setAge(self, v):\n" +
+            "        age = v\n" +
+            "\n" +
+            "class Dog(Animal):\n" +
+            "    def doubleAge(self):\n" +
+            "        age = age * 2\n" +
+            "\n" +
+            "    def getAge(self, out):\n" +
+            "        out = age\n" +
+            "\n" +
+            "d = Dog()\n" +
+            "d.setAge(5)\n" +
+            "d.doubleAge()\n" +
+            "result = 0\n" +
+            "d.getAge(result)\n" +
+            "del d\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 10.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Two sibling child objects are independent; inheriting same parent methods doesn't mix state.
+     * Expected: result_a == 1.0, result_b == 3.0
+     */
+    @Test(timeout = 5000)
+    public void testInheritanceTwoChildInstancesIndependent() throws Exception {
+        String pythonCode =
+            "class Animal:\n" +
+            "    age = 0\n" +
+            "\n" +
+            "    def setAge(self, v):\n" +
+            "        age = v\n" +
+            "\n" +
+            "    def getAge(self, out):\n" +
+            "        out = age\n" +
+            "\n" +
+            "class Dog(Animal):\n" +
+            "    tricks = 0\n" +
+            "\n" +
+            "a = Dog()\n" +
+            "b = Dog()\n" +
+            "a.setAge(1)\n" +
+            "b.setAge(3)\n" +
+            "result_a = 0\n" +
+            "result_b = 0\n" +
+            "a.getAge(result_a)\n" +
+            "b.getAge(result_b)\n" +
+            "del a\n" +
+            "del b\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result_a", 1.0);
+        variablesToAssert.put("result_b", 3.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     /**
      * Finds the first {@link FunctionCall} in {@code rei} whose {@code isGpu} flag is true and
      * whose ID contains the given {@code functionName}.

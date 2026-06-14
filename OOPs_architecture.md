@@ -350,6 +350,120 @@ During Phase 0/7, field var pointers are redirected to the specific instance's s
 
 ---
 
+## Inheritance
+
+### Syntax
+
+A child class declares its parent with the standard Python parenthesis syntax:
+
+```python
+class Animal:
+    age = 0
+    def birthday(self):
+        age = age + 1
+    def getAge(self, out):
+        out = age
+
+class Dog(Animal):         # Dog inherits from Animal
+    tricks = 0
+    def learnTrick(self):
+        tricks = tricks + 1
+    def getTricks(self, out):
+        out = tricks
+```
+
+### Rules and constraints
+
+- **Parent must be defined before child** in the source file (same requirement as Python itself).
+- **Single parent only** — one name in the base list is supported. Multiple inheritance is not.
+- **No `super()`** and **no `self.parent_method()` from within a child method body** — those are out of scope for now. Only direct external calls (`child_obj.parent_method()`) are supported.
+
+### Field slot layout
+
+The child `ObjectInstance` slots are laid out parent-fields-first, child-own-fields-last:
+
+```
+Dog(Animal) — Animal has [age], Dog adds [tricks]:
+  scalarSlotValues = [ age,   tricks ]
+                       ^0     ^1
+                       used by Animal methods   used by Dog methods
+```
+
+Multi-level inheritance follows the same rule (grandparent fields first):
+
+```
+Puppy(Dog) — Animal has [age], Dog adds [tricks], Puppy adds [size]:
+  scalarSlotValues = [ age,   tricks,   size ]
+                       ^0     ^1        ^2
+```
+
+### How field access works
+
+**Compiler**: when `convertClassDef` processes a child class it:
+1. Walks the ancestor chain (grandparent → … → parent) and prepends all inherited field names to the child's `ClassMeta` field lists. This sets correct slot indices.
+2. Emits `Variable`/`Array` IR entries for every inherited field **under the child's own scope** (`class_Dog_age_var`). This allows:
+   - `NewObjectCommandRE` to find initial values via `class_<ChildClass>_<field>_var`.
+   - Child method bodies to resolve inherited field references via the `class_Dog_` scope prefix.
+
+**Runtime**: field vars for a method call are selected by the method definition's `classOwner`:
+- A parent method (`classOwner = "Animal"`) uses `class_Animal_age_var` ↔ slot[0] of the child object.
+- A child method (`classOwner = "Dog"`) uses `class_Dog_age_var` / `class_Dog_tricks_var` ↔ slots[0,1].
+
+The two workspace variables (`class_Animal_age_var` and `class_Dog_age_var`) are independent `VariableRE` objects; the object slot is the persistent truth. Phases 0 and 7 load/store the slot correctly regardless of which class's workspace is used.
+
+### Method resolution
+
+At compile time, `resolveMethodOwner(startClass, methodName)` walks the class registry from `startClass` up through `parentClassName` links until it finds a `ClassMeta` that declares `methodName` in its own `methodNames` set. The resolved owner class name is used as the prefix in the method call ID:
+
+```
+d.birthday()   →  classOwner resolved to "Animal"  →  id = "Animal_birthday"
+d.learnTrick() →  classOwner resolved to "Dog"     →  id = "Dog_learnTrick"
+```
+
+### What is supported
+
+| Feature | Supported |
+|---|---|
+| Child object calling parent method: `d.birthday()` | Yes |
+| Child method body reading/writing inherited field | Yes |
+| Multi-level inheritance (`Puppy(Dog)`, `Dog(Animal)`) | Yes |
+| Passing child object as parent-typed parameter | Yes |
+| `super()` | No |
+| `self.parent_method()` inside a child method body | No |
+| Multiple inheritance | No |
+
+### Example
+
+```python
+class Animal:
+    age = 0
+    def birthday(self):
+        age = age + 1
+    def getAge(self, out):
+        out = age
+
+class Dog(Animal):
+    tricks = 0
+    def learnTrick(self):
+        tricks = tricks + 1
+    def getTricks(self, out):
+        out = tricks
+
+d = Dog()
+d.birthday()
+d.birthday()
+d.learnTrick()
+result_age = 0
+result_tricks = 0
+d.getAge(result_age)
+d.getTricks(result_tricks)
+del d
+```
+
+After execution: `result_age == 2.0`, `result_tricks == 1.0`.
+
+---
+
 ## Processor Integration
 
 In `Processor::process()`:
