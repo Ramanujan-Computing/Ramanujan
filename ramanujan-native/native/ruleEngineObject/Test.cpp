@@ -70,13 +70,13 @@ public:
         std::string jsonPayload = code;
         std::string tmpFirstCommand;
         std::string tmpJson;
-        if (loadFromTmp(tmpJson, tmpFirstCommand)) {
-            jsonPayload = tmpJson;
-            firstCommandId = tmpFirstCommand;
-            std::cout << "Loaded ruleEngineInput from " << tmpDebugPath << std::endl;
-        } else {
-            std::cout << "Using embedded ruleEngineInput fallback" << std::endl;
-        }
+//        if (loadFromTmp(tmpJson, tmpFirstCommand)) {
+//            jsonPayload = tmpJson;
+//            firstCommandId = tmpFirstCommand;
+//            std::cout << "Loaded ruleEngineInput from " << tmpDebugPath << std::endl;
+//        } else {
+//            std::cout << "Using embedded ruleEngineInput fallback" << std::endl;
+//        }
 
         // Parse JSON std::string
         Json::Value root;

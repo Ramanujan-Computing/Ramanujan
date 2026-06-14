@@ -183,9 +183,9 @@ Cleared at the start and end of each `Processor::process()` call.
 
 ### ClassBasedFunctionCommandRE
 
-Extends `FunctionCommandRE`. Intercepts method calls on objects.
+Extends `ObjectArgFunctionCommandRE` (which itself extends `FunctionCommandRE`). Intercepts method calls on objects. The parent `ObjectArgFunctionCommandRE` handles phases 0.5 and 5.5 for any object-typed parameters the method may receive.
 
-**`setFields`** override: looks up class-level `VariableRE`/`ArrayRE` entries for all fields and stores them in `scalarFieldVars` / `arrayFieldVars`.
+**`setFields`** override: calls `ObjectArgFunctionCommandRE::setFields`, then looks up class-level `VariableRE`/`ArrayRE` entries for all fields and stores them in `scalarFieldVars` / `arrayFieldVars`.
 
 **`process`** override — 8 phases:
 
@@ -242,36 +242,37 @@ currentObjectHandleId  ← set by FunctionCommandRE at Phase 0.5
                        ← restored by FunctionCommandRE at Phase 5.5
 ```
 
-### Extended `FunctionCommandRE::process()` phases
+### `ObjectArgFunctionCommandRE`
 
-Two new phases are inserted around the existing 6:
+A child class of `FunctionCommandRE` created by the factory **only** when `callerObjectHandleIds` is non-empty (i.e. the call actually passes object-typed arguments). Plain functions with no object params continue to use bare `FunctionCommandRE::process()` with no overhead.
+
+`ObjectArgFunctionCommandRE` owns the three object-param vectors (`objectHandleArgREs`, `callerObjectHandleArgREs`, `callerObjectHandleLiteralIds`) and overrides both `setFields` and `process`.
+
+`setFields` calls `FunctionCommandRE::setFields`, then collects the `ObjectHandleArgRE` entries and pairs them with the caller-supplied IDs.
+
+`process` wraps `FunctionCommandRE::process()` with two extra phases:
 
 | Phase | Action |
 |---|---|
 | 0.5 | For each `ObjectHandleArgRE` in `objectHandleArgREs`: save its current UUID; set it to the caller-supplied UUID (from `callerObjectHandleIds` or a forwarded `ObjectHandleArgRE`) |
-| 1 | Save current locals |
-| 2 | Copy scalar/array arguments in |
-| 3 | Execute function body |
-| 4 | Restore locals |
-| 5 | Copy-back output args |
+| 1–6 | `FunctionCommandRE::process()` |
 | 5.5 | Restore each `ObjectHandleArgRE` to its saved UUID |
-| 6 | Cleanup |
 
 Phase 0.5 resolves the caller-supplied value by checking whether the entry in `callerObjectHandleArgREs` is itself an `ObjectHandleArgRE` (forwarded param) or a literal UUID string (`callerObjectHandleLiteralIds`).
 
 ### `ClassBasedFunctionCommandRE` with object params
 
-When a method is called on an object that is itself a parameter (not a locally instantiated object), the compiler sets `objectHandleId` on the call-site `FunctionCall` to the `ObjectHandleArg`'s `id` (`"objarg_..."`).
+`ClassBasedFunctionCommandRE` extends `ObjectArgFunctionCommandRE` (not `FunctionCommandRE` directly), so it automatically inherits the object-param binding logic for methods that also receive object-typed arguments.
 
-At `setFields` time, `ClassBasedFunctionCommandRE` checks whether this ID resolves to an `ObjectHandleArgRE` in the global map. If so, it stores the pointer and derives `className` from `ObjectHandleArgRE::getClassName()` (set from the type annotation at compile time).
+`setFields` calls `ObjectArgFunctionCommandRE::setFields`, then resolves the class field vars.
 
 At `process()` time, the actual UUID is read dynamically:
 
 ```
 resolvedHandleId = objectHandleArgRE ? objectHandleArgRE->get() : objectHandleId
-if resolvedHandleId == "__self__": return FunctionCommandRE::process()
+if resolvedHandleId == "__self__": return ObjectArgFunctionCommandRE::process()
 inst = ObjectInstanceStore::get(resolvedHandleId)
-// Phases 0 and 7 proceed with inst
+// Phase 0, then ObjectArgFunctionCommandRE::process(), then Phase 7
 ```
 
 This means all Phases 0 and 7 (slot ↔ field var) operate on whichever object the parameter is bound to at that moment, which can differ across recursive or nested calls.

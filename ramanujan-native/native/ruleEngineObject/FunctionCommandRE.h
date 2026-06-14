@@ -167,15 +167,6 @@ private:
 
   std::unordered_map<std::string, std::string> dataContainerNameMethodMap;
 
-  // ==================== Object-Param Support ====================
-  // Definition-side ObjectHandleArgRE entries (one per object-typed parameter).
-  std::vector<ObjectHandleArgRE*> objectHandleArgREs;
-  // Per-entry: if the caller ID is itself an ObjectHandleArgRE, store its pointer for
-  // dynamic resolution at process() time; otherwise nullptr means a literal UUID.
-  std::vector<ObjectHandleArgRE*> callerObjectHandleArgREs;
-  // Literal UUIDs for entries where callerObjectHandleArgREs[i] == nullptr.
-  std::vector<std::string> callerObjectHandleLiteralIds;
-
 public:
   // ==================== Constructor and Destructor ====================
 
@@ -853,14 +844,35 @@ public:
 };
 #endif // GPU_ENABLED
 
+// ==================== Object-Arg Function Command ====================
+
+/**
+ * Extends FunctionCommandRE for calls that pass object instances as arguments.
+ * Adds Phase 0.5 (bind caller object handles to ObjectHandleArgREs) before the
+ * 6 standard phases, and Phase 5.5 (restore ObjectHandleArgREs) after.
+ * Only created by the factory when callerObjectHandleIds is non-empty.
+ */
+class ObjectArgFunctionCommandRE : public FunctionCommandRE {
+protected:
+    std::vector<ObjectHandleArgRE*> objectHandleArgREs;
+    std::vector<ObjectHandleArgRE*> callerObjectHandleArgREs;
+    std::vector<std::string> callerObjectHandleLiteralIds;
+public:
+    ObjectArgFunctionCommandRE(FunctionCall* fc, FunctionCallRE* fi)
+        : FunctionCommandRE(fc, fi) {}
+
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits*>* map) override;
+    RuleEngineInputUnits* process() override;
+};
+
 // ==================== Class-Based Function Command ====================
 
 /**
- * Extends FunctionCommandRE for class method calls.
- * Adds Phase 0 (copy object slot → field var) before the 6 standard phases,
+ * Extends ObjectArgFunctionCommandRE for class method calls.
+ * Adds Phase 0 (copy object slot → field var) before the standard phases,
  * and Phase 7 (copy field var → object slot, then restore field var) after.
  */
-class ClassBasedFunctionCommandRE : public FunctionCommandRE {
+class ClassBasedFunctionCommandRE : public ObjectArgFunctionCommandRE {
     std::string objectHandleId;
     // Non-null when objectHandleId is an ObjectHandleArgRE key; resolved dynamically at process().
     ObjectHandleArgRE* objectHandleArgRE = nullptr;
@@ -868,7 +880,7 @@ class ClassBasedFunctionCommandRE : public FunctionCommandRE {
     std::vector<ArrayRE*> arrayFieldVars;
 public:
     ClassBasedFunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo)
-        : FunctionCommandRE(functionCommand, functionInfo) {}
+        : ObjectArgFunctionCommandRE(functionCommand, functionInfo) {}
 
     void setFields(std::unordered_map<std::string, RuleEngineInputUnits*>* map) override;
     RuleEngineInputUnits* process() override;
@@ -968,6 +980,11 @@ static FunctionCommandRE *GetFunctionCommandRE(
   // Class method call: objectHandleId is set on the call-site FunctionCall.
   if (!functionCommand->objectHandleId.empty()) {
     return new ClassBasedFunctionCommandRE(functionCommand, funcInfoRE);
+  }
+
+  // Plain function that receives object-typed arguments.
+  if (!functionCommand->callerObjectHandleIds.empty()) {
+    return new ObjectArgFunctionCommandRE(functionCommand, funcInfoRE);
   }
 
 #ifdef GPU_ENABLED

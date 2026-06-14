@@ -579,6 +579,110 @@ def compute(x):
 value = compute(5)
 ```
 
+## Object-Oriented Programming (OOP)
+
+Ramanujan supports Python-style OOP. The pipeline is the same as for plain Python: source → Python AST → Ramanujan IR → C++ native execution.
+
+### Field declaration
+
+Fields are declared at the class body level (not inside any method, and **not** via `self.xxx`). Any name referenced inside a method body that is not a parameter and not locally assigned there is resolved as a class field.
+
+```python
+class Counter:
+    value = 0          # scalar field
+    history = [0, 0, 0]  # array field
+
+    def increment(self):
+        value = value + 1  # 'value' resolves to the scalar field above
+```
+
+No `__init__` method is needed. Fields receive their initial values from the class-body assignments.
+
+### Supported OOP features
+
+| Feature | Supported |
+|---|---|
+| Scalar and array class fields | Yes |
+| Object instantiation: `c = Counter()` | Yes |
+| Method calls: `c.increment()` | Yes |
+| Object deletion: `del c` | Yes |
+| Multiple independent instances | Yes |
+| Recursive method call: `self.method(args)` | Yes |
+| Mutually recursive methods: `self.ping()` ↔ `self.pong()` | Yes |
+| Object passed as argument to a free function | Yes |
+| Object passed as argument to a class method | Yes |
+| Single inheritance: `class Dog(Animal)` | Yes |
+| Multi-level inheritance: `class Puppy(Dog)` | Yes |
+| Child object calling an inherited parent method | Yes |
+| Child method reading/writing an inherited field | Yes |
+| Passing a child object where a parent type is expected | Yes |
+| `super()` | No |
+| `self.parent_method()` from inside a child method | No |
+| Multiple inheritance | No |
+
+### Object-typed parameters
+
+Use a type annotation matching a registered class name to declare an object-typed parameter. The called function can then call methods on the received object:
+
+```python
+class Counter:
+    value = 0
+    def increment(self):
+        value = value + 1
+    def getValue(self, out):
+        out = value
+
+def incrementTwice(c: Counter):
+    c.increment()
+    c.increment()
+
+counter = Counter()
+incrementTwice(counter)
+result = 0
+counter.getValue(result)
+del counter
+# result == 2.0
+```
+
+The same syntax works for class method parameters:
+
+```python
+class Runner:
+    def runOnce(self, c: Counter):
+        c.increment()
+```
+
+### Inheritance example
+
+```python
+class Animal:
+    age = 0
+    def birthday(self):
+        age = age + 1
+    def getAge(self, out):
+        out = age
+
+class Dog(Animal):
+    tricks = 0
+    def learnTrick(self):
+        tricks = tricks + 1
+    def getTricks(self, out):
+        out = tricks
+
+d = Dog()
+d.birthday()
+d.birthday()
+d.learnTrick()
+result_age = 0
+result_tricks = 0
+d.getAge(result_age)
+d.getTricks(result_tricks)
+del d
+# result_age == 2.0, result_tricks == 1.0
+```
+
+---
+
 ## Unsupported Python Features (Current Limitations):
 
 ### 1. Return with Array Element Access
@@ -647,12 +751,7 @@ while i < 10:  # ✓
 ```
 
 ### 6. Classes and Objects
-Object-oriented programming is not yet supported:
-```python
-# NOT SUPPORTED
-class MyClass:  # ❌
-    pass
-```
+OOP is now supported. See the [OOP section](#object-oriented-programming-oop) below for what is covered and what is not.
 
 ### 7. Boolean Operations in Conditions
 Boolean expressions with `and`/`or`/`not` are **NOT** supported:
@@ -1051,10 +1150,13 @@ Ramanujan now supports a subset of Python syntax through AST-based conversion (s
 ## Python Feature Roadmap:
 Python support is being actively developed on the Ramanujan platform. More and more features are being added continuously to bring the full power of Python to distributed computing:
 
-1. **Coming Shortly**: Object-Oriented Programming (OOP) support
-   - Classes and objects
-   - Inheritance and polymorphism
-   - Methods and properties
+1. **Done**: Object-Oriented Programming (OOP) support
+   - Classes with scalar and array fields
+   - Object instantiation, method calls, and deletion
+   - Recursive and mutually-recursive methods
+   - Objects as function/method arguments
+   - Single and multi-level inheritance
+   - Child objects calling parent methods and accessing inherited fields
 
 2. **Progressive Additions**: We will progressively add all Python features to the Ramanujan platform, including:
    - Boolean operations (`and`, `or`, `not`)
