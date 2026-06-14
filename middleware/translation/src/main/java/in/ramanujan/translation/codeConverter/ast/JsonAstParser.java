@@ -89,6 +89,10 @@ public class JsonAstParser {
                 return parseWhile(node);
             case "FunctionDef":
                 return parseFunctionDef(node);
+            case "ClassDef":
+                return parseClassDef(node);
+            case "Delete":
+                return parseDelete(node);
             case "Return":
                 return parseReturn(node);
             case "Name":
@@ -234,6 +238,46 @@ public class JsonAstParser {
         return funcDef;
     }
     
+    private ClassDefNode parseClassDef(JsonNode node) throws CompilationException {
+        ClassDefNode classDef = new ClassDefNode();
+
+        if (node.has("name")) {
+            classDef.setName(node.get("name").asText());
+        }
+
+        if (node.has("bases")) {
+            List<AstNode> bases = new ArrayList<>();
+            for (JsonNode base : node.get("bases")) {
+                AstNode baseNode = parseNode(base);
+                if (baseNode != null) bases.add(baseNode);
+            }
+            classDef.setBases(bases);
+        }
+
+        if (node.has("body")) {
+            classDef.setBody(parseBody(node.get("body")));
+        }
+
+        setLineInfo(classDef, node);
+        return classDef;
+    }
+
+    private DeleteNode parseDelete(JsonNode node) throws CompilationException {
+        DeleteNode deleteNode = new DeleteNode();
+
+        if (node.has("targets")) {
+            List<AstNode> targets = new ArrayList<>();
+            for (JsonNode target : node.get("targets")) {
+                AstNode targetNode = parseNode(target);
+                if (targetNode != null) targets.add(targetNode);
+            }
+            deleteNode.setTargets(targets);
+        }
+
+        setLineInfo(deleteNode, node);
+        return deleteNode;
+    }
+
     private ArgumentsNode parseArguments(JsonNode node) throws CompilationException {
         ArgumentsNode args = new ArgumentsNode();
         

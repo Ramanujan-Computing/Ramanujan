@@ -2554,6 +2554,234 @@ public class PythonCodeRunTest {
         return ruleEngineInput;
     }
 
+    // ========== OOP TESTS ==========
+
+    /**
+     * Scalar field persists across multiple method calls on the same object.
+     * c.increment() is called 3 times; getValue copies the field into an output arg.
+     * Expected: result == 3.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsScalarFieldPersistsAcrossMethodCalls() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "def increment(self):\n" +
+            "    value = value + 1\n" +
+            "\n" +
+            "def getValue(self, out):\n" +
+            "    out = value\n" +
+            "\n" +
+            "c = Counter()\n" +
+            "c.increment()\n" +
+            "c.increment()\n" +
+            "c.increment()\n" +
+            "result = 0\n" +
+            "c.getValue(result)\n" +
+            "del c\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 3.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Two independent instances of the same class maintain separate field state.
+     * c1.increment() twice, c2.increment() once.
+     * Expected: result1 == 2.0, result2 == 1.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsMultipleInstancesAreIndependent() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "def increment(self):\n" +
+            "    value = value + 1\n" +
+            "\n" +
+            "def getValue(self, out):\n" +
+            "    out = value\n" +
+            "\n" +
+            "c1 = Counter()\n" +
+            "c2 = Counter()\n" +
+            "c1.increment()\n" +
+            "c1.increment()\n" +
+            "c2.increment()\n" +
+            "result1 = 0\n" +
+            "result2 = 0\n" +
+            "c1.getValue(result1)\n" +
+            "c2.getValue(result2)\n" +
+            "del c1\n" +
+            "del c2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result1", 2.0);
+        variablesToAssert.put("result2", 1.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Array field is modified by a method and the updated value is read back.
+     * Expected: r0 == 42.0, r1 == 99.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsArrayFieldModifiedByMethod() throws Exception {
+        String pythonCode =
+            "class Store:\n" +
+            "    data = [0, 0, 0]\n" +
+            "\n" +
+            "def set0(self, v):\n" +
+            "    data[0] = v\n" +
+            "\n" +
+            "def set1(self, v):\n" +
+            "    data[1] = v\n" +
+            "\n" +
+            "def get0(self, out):\n" +
+            "    out = data[0]\n" +
+            "\n" +
+            "def get1(self, out):\n" +
+            "    out = data[1]\n" +
+            "\n" +
+            "s = Store()\n" +
+            "s.set0(42)\n" +
+            "s.set1(99)\n" +
+            "r0 = 0\n" +
+            "r1 = 0\n" +
+            "s.get0(r0)\n" +
+            "s.get1(r1)\n" +
+            "del s\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("r0", 42.0);
+        variablesToAssert.put("r1", 99.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Object with both scalar and array fields; each field type is read back via output args.
+     * Expected: outS == 7.0, outA == 13.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsObjectWithBothScalarAndArrayFields() throws Exception {
+        String pythonCode =
+            "class Pair:\n" +
+            "    scalar = 0\n" +
+            "    arr = [0, 0]\n" +
+            "\n" +
+            "def setScalar(self, v):\n" +
+            "    scalar = v\n" +
+            "\n" +
+            "def setArr0(self, v):\n" +
+            "    arr[0] = v\n" +
+            "\n" +
+            "def getScalar(self, out):\n" +
+            "    out = scalar\n" +
+            "\n" +
+            "def getArr0(self, out):\n" +
+            "    out = arr[0]\n" +
+            "\n" +
+            "p = Pair()\n" +
+            "p.setScalar(7)\n" +
+            "p.setArr0(13)\n" +
+            "outS = 0\n" +
+            "outA = 0\n" +
+            "p.getScalar(outS)\n" +
+            "p.getArr0(outA)\n" +
+            "del p\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("outS", 7.0);
+        variablesToAssert.put("outA", 13.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Delete an object and re-instantiate the same class under the same variable name.
+     * The new instance starts from the class default (0), not the deleted instance's state.
+     * Expected: result == 10.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsDeleteAndRecreate() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "def setValue(self, v):\n" +
+            "    value = v\n" +
+            "\n" +
+            "def getValue(self, out):\n" +
+            "    out = value\n" +
+            "\n" +
+            "c = Counter()\n" +
+            "c.setValue(5)\n" +
+            "del c\n" +
+            "c = Counter()\n" +
+            "c.setValue(10)\n" +
+            "result = 0\n" +
+            "c.getValue(result)\n" +
+            "del c\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 10.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Method that accumulates via a loop, verifying that field state is maintained
+     * across loop iterations and method boundaries.
+     * Expected: result == 5.0 (summed 1+1+1+1+1 via 5 increment calls)
+     */
+    @Test(timeout = 5000)
+    public void testOopsMethodCalledInLoop() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "def increment(self):\n" +
+            "    value = value + 1\n" +
+            "\n" +
+            "def getValue(self, out):\n" +
+            "    out = value\n" +
+            "\n" +
+            "c = Counter()\n" +
+            "i = 0\n" +
+            "while i < 5:\n" +
+            "    c.increment()\n" +
+            "    i = i + 1\n" +
+            "result = 0\n" +
+            "c.getValue(result)\n" +
+            "del c\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 5.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     // ========== GPU KERNEL TESTS ==========
 
     /**

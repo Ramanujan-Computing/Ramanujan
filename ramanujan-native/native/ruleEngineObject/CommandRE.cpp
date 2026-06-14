@@ -9,6 +9,7 @@
 #include "CommandRE.h"
 #include "WhileRE.h"
 #include "Variable.hpp"
+#include "ObjectInstanceStore.h"
 
 #include "OperationRE.h"
 #include "IfRE.h"
@@ -55,6 +56,17 @@ void CommandRE::chooseRuleEngineUnits(std::unordered_map<std::string, RuleEngine
         functionCommandRE = GetFunctionCommandRE(command->functionCall, command->functionCall->id, map);
     }
 
+    if (command->newObjectCommand != nullptr) {
+        newObjectCommandRE = new NewObjectCommandRE(
+            command->newObjectCommand->className,
+            command->newObjectCommand->objectHandleId);
+    }
+
+    if (command->deleteObjectCommand != nullptr) {
+        deleteObjectCommandRE = new DeleteObjectCommandRE(
+            command->deleteObjectCommand->objectHandleId);
+    }
+
     if (command->arrayCommand != nullptr) {
         ArrayCommand *arrayCommand = command->arrayCommand;
         arrayCommandRE = new ArrayCommandRE(dynamic_cast<ArrayRE *>(getFromMap(map, arrayCommand->arrayId)),
@@ -98,6 +110,14 @@ void CommandRE::chooseRuleEngineUnits(std::unordered_map<std::string, RuleEngine
 
     if(functionCommandRE != nullptr) {
         unit = functionCommandRE;
+    }
+
+    if (newObjectCommandRE != nullptr) {
+        unit = newObjectCommandRE;
+    }
+
+    if (deleteObjectCommandRE != nullptr) {
+        unit = deleteObjectCommandRE;
     }
 
     if (redefineArrayCommandRE != nullptr) {
@@ -159,6 +179,15 @@ void CommandRE::setFields(std::unordered_map<std::string, RuleEngineInputUnits *
     if(functionCommandRE != nullptr) {
         functionCommandRE->nextUnit = nextUnit;
         commandTypeProcessingDefinition = new FunctionReProcessing(functionCommandRE);
+    }
+
+    if (newObjectCommandRE != nullptr) {
+        newObjectCommandRE->setFields(map);
+        newObjectCommandRE->nextUnit = nextUnit;
+    }
+
+    if (deleteObjectCommandRE != nullptr) {
+        deleteObjectCommandRE->nextUnit = nextUnit;
     }
 
     if (redefineArrayCommandRE != nullptr) {

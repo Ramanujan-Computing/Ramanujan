@@ -15,6 +15,7 @@
 #include "dataContainer/DataContainerValueFunctionCommandRE.h"
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/array/ArrayValue.h"
+#include "ObjectInstanceStore.h"
 #include <list>
 #include <unordered_map>
 #include <vector>
@@ -842,6 +843,25 @@ public:
 };
 #endif // GPU_ENABLED
 
+// ==================== Class-Based Function Command ====================
+
+/**
+ * Extends FunctionCommandRE for class method calls.
+ * Adds Phase 0 (copy object slot → field var) before the 6 standard phases,
+ * and Phase 7 (copy field var → object slot, then restore field var) after.
+ */
+class ClassBasedFunctionCommandRE : public FunctionCommandRE {
+    std::string objectHandleId;
+    std::vector<VariableRE*> scalarFieldVars;
+    std::vector<ArrayRE*> arrayFieldVars;
+public:
+    ClassBasedFunctionCommandRE(FunctionCall* functionCommand, FunctionCallRE* functionInfo)
+        : FunctionCommandRE(functionCommand, functionInfo) {}
+
+    void setFields(std::unordered_map<std::string, RuleEngineInputUnits*>* map) override;
+    RuleEngineInputUnits* process() override;
+};
+
 // ==================== Factory Function for Function Command Creation
 // ====================
 
@@ -932,6 +952,12 @@ static FunctionCommandRE *GetFunctionCommandRE(
 
   // Default case: user-defined functions.
   FunctionCallRE *funcInfoRE = (FunctionCallRE *)map->at(functionCommand->id);
+
+  // Class method call: objectHandleId is set on the call-site FunctionCall.
+  if (!functionCommand->objectHandleId.empty()) {
+    return new ClassBasedFunctionCommandRE(functionCommand, funcInfoRE);
+  }
+
 #ifdef GPU_ENABLED
   if (funcInfoRE && funcInfoRE->functionCall->isGpu) {
     return new GPUFunctionCommandRE(functionCommand, funcInfoRE);

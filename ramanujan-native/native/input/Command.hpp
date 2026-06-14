@@ -14,6 +14,15 @@
 
 
 
+struct NewObjectCommandInfo {
+    std::string className;
+    std::string objectHandleId;
+};
+
+struct DeleteObjectCommandInfo {
+    std::string objectHandleId;
+};
+
 class Command : public RuleEngineInputUnit {
     public:
         std::string nextId;
@@ -31,6 +40,8 @@ class Command : public RuleEngineInputUnit {
         RedefineArrayCommand* redefineArrayCommand = nullptr;
         bool returnStatement = false;
         std::vector<ReturnAssignmentPair*> returnAssignmentPairs;
+        NewObjectCommandInfo* newObjectCommand = nullptr;
+        DeleteObjectCommandInfo* deleteObjectCommand = nullptr;
 
         Command(Json::Value* value) {
             this->id = (*value)["id"].asString();
@@ -68,9 +79,22 @@ class Command : public RuleEngineInputUnit {
                     this->returnAssignmentPairs.push_back(pair);
                 }
             }
-            
+
             for (int i = 0; i < (*value)["nextDagTriggerIds"].size(); i++) {
                 this->nextDagTriggerIds.push_back((*value)["nextDagTriggerIds"][i].asString());
+            }
+
+            Json::Value newObjectCommandJSON = (*value)["newObjectCommand"];
+            if (!newObjectCommandJSON.isNull()) {
+                this->newObjectCommand = new NewObjectCommandInfo();
+                this->newObjectCommand->className = newObjectCommandJSON["className"].asString();
+                this->newObjectCommand->objectHandleId = newObjectCommandJSON["objectHandleId"].asString();
+            }
+
+            Json::Value deleteObjectCommandJSON = (*value)["deleteObjectCommand"];
+            if (!deleteObjectCommandJSON.isNull()) {
+                this->deleteObjectCommand = new DeleteObjectCommandInfo();
+                this->deleteObjectCommand->objectHandleId = deleteObjectCommandJSON["objectHandleId"].asString();
             }
         }
 

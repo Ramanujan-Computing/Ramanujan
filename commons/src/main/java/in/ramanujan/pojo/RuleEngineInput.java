@@ -6,6 +6,8 @@ import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.RedefineArrayCommand;
 import lombok.Data;
 
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.ClassDefinition;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +26,7 @@ public class RuleEngineInput {
     private List<While> whileBlocks;
     private List<RedefineArrayCommand> redefineArrayCommands = new ArrayList<>();
     private List<ReturnOperation> returnOperations;
+    private List<ClassDefinition> classDefinitions = new ArrayList<>();
 
     public RuleEngineInput() {
         variables = new ArrayList<>();
@@ -59,6 +62,9 @@ public class RuleEngineInput {
         redefineArrayCommands.addAll(ruleEngineInput.getRedefineArrayCommands());
         methodDataTypeAgnosticArgs.addAll(ruleEngineInput.getMethodDataTypeAgnosticArgs());
         returnOperations.addAll(ruleEngineInput.getReturnOperations());
+        if (ruleEngineInput.getClassDefinitions() != null) {
+            classDefinitions.addAll(ruleEngineInput.getClassDefinitions());
+        }
     }
 
 }

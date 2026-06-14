@@ -9,6 +9,7 @@
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
 #include "../ruleEngineObject/FunctionCommandRE.h"
+#include "../ruleEngineObject/ObjectInstanceStore.h"
 #include "../ruleEngineObject/IfRE.h"
 #include "../ruleEngineObject/OperationRE.h"
 #include "../ruleEngineObject/WhileRE.h"
@@ -45,6 +46,13 @@ Processor::process(RuleEngineInput ruleEngineInput,
   // Create memory maintainer for efficient function call memory management
   DataContainerValueFunctionCommandREMemMaintainer *memMaintainer =
       new DataContainerValueFunctionCommandREMemMaintainer();
+
+  // Register class definitions before processing so CommandRE can find them
+  ObjectInstanceStore::clear();
+  ObjectInstanceStore::clearClasses();
+  for (auto* cd : *ruleEngineInput.classDefinitions) {
+    ObjectInstanceStore::registerClass(cd);
+  }
 
   std::unordered_map<std::string, RuleEngineInputUnits *>
       *mapBetweenIdAndRuleInput = createMap(ruleEngineInput);
@@ -115,6 +123,7 @@ Processor::process(RuleEngineInput ruleEngineInput,
   }
 
   delete memMaintainer;
+  ObjectInstanceStore::clear();
   return new std::unordered_map<std::string, ProcessingResult>();
 }
 

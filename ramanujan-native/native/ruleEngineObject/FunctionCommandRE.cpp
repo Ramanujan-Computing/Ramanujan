@@ -1268,6 +1268,71 @@ RuleEngineInputUnits *GPU_SYNC::process() {
   return nextUnit;
 }
 
+// ==================== ClassBasedFunctionCommandRE ====================
+
+void ClassBasedFunctionCommandRE::setFields(
+    std::unordered_map<std::string, RuleEngineInputUnits*>* map) {
+    FunctionCommandRE::setFields(map);
+
+    objectHandleId = functionCommandInfo->objectHandleId;
+    std::string className = functionInfoRE->functionCall->classOwner;
+    ClassDefinition* classDef = ObjectInstanceStore::getClass(className);
+    if (!classDef) return;
+
+    for (const auto& fn : classDef->scalarFieldNames) {
+        std::string varId = "class_" + className + "_" + fn + "_var";
+        auto it = map->find(varId);
+        if (it != map->end()) {
+            scalarFieldVars.push_back(dynamic_cast<VariableRE*>(it->second));
+        }
+    }
+
+    for (const auto& fn : classDef->arrayFieldNames) {
+        std::string arrId = "class_" + className + "_" + fn + "_arr";
+        auto it = map->find(arrId);
+        if (it != map->end()) {
+            arrayFieldVars.push_back(dynamic_cast<ArrayRE*>(it->second));
+        }
+    }
+}
+
+RuleEngineInputUnits* ClassBasedFunctionCommandRE::process() {
+    ObjectInstance* inst = ObjectInstanceStore::get(objectHandleId);
+    if (!inst) return nextUnit;
+
+    // Phase 0: save field var values; wire object slot values → field vars
+    std::vector<double> savedScalars(scalarFieldVars.size());
+    std::vector<ArrayValue*> savedArrayPtrs(arrayFieldVars.size());
+
+    for (int i = 0; i < (int)scalarFieldVars.size(); i++) {
+        savedScalars[i] = static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value;
+        static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value =
+            inst->scalarSlotValues[i];
+    }
+
+    for (int i = 0; i < (int)arrayFieldVars.size(); i++) {
+        savedArrayPtrs[i] = arrayFieldVars[i]->arrayValue.arrayValue;
+        arrayFieldVars[i]->arrayValue.arrayValue = inst->arraySlotValues[i];
+    }
+
+    // Execute parent 6-phase process
+    RuleEngineInputUnits* result = FunctionCommandRE::process();
+
+    // Phase 7: copy back field var values → object slots; restore field vars
+    for (int i = 0; i < (int)scalarFieldVars.size(); i++) {
+        inst->scalarSlotValues[i] =
+            static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value;
+        static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value = savedScalars[i];
+    }
+
+    for (int i = 0; i < (int)arrayFieldVars.size(); i++) {
+        // Slot array was modified in-place; restore field var's original pointer.
+        arrayFieldVars[i]->arrayValue.arrayValue = savedArrayPtrs[i];
+    }
+
+    return result;
+}
+
 RuleEngineInputUnits *GPU_LOAD::process() {
 #ifdef GPU_ENABLED
   if (targetArray != nullptr) {

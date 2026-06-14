@@ -187,7 +187,11 @@ set(SOURCE_FILES
         ruleEngineObject/dataContainer/DataContainerValueFunctionCommandRE.h
         ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h
         ruleEngineObject/dataContainer/ArrayRE.cpp
+        ruleEngineObject/ObjectInstanceStore.h
+        ruleEngineObject/ObjectInstanceStore.cpp
+        input/ClassDefinition.hpp
 )
+
 
 # Normal build target
 add_executable(native ${SOURCE_FILES})

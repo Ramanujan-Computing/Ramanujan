@@ -28,6 +28,9 @@ public class CodeConverter {
     private Map<String, Array> arrayMap;
     private Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap;
     private Map<String, String> csvDataMap;
+    // Maps variable name → [objectHandleId, className] for OOP object tracking
+    private Map<String, String> objectHandleMap = new HashMap<>();
+    private Map<String, String> objectClassMap = new HashMap<>();
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
 //        return variable;
@@ -91,6 +94,23 @@ public class CodeConverter {
 
     public void setArrayMap(Map<String, Array> map) {
         this.arrayMap = map;
+    }
+
+    public void registerObject(String varName, String objectHandleId, String className) {
+        objectHandleMap.put(varName, objectHandleId);
+        objectClassMap.put(varName, className);
+    }
+
+    /** Returns [objectHandleId, className] for the given variable name, or null if not an object. */
+    public String[] getObjectInfo(String varName) {
+        String handleId = objectHandleMap.get(varName);
+        if (handleId == null) return null;
+        return new String[]{handleId, objectClassMap.get(varName)};
+    }
+
+    public void removeObject(String varName) {
+        objectHandleMap.remove(varName);
+        objectClassMap.remove(varName);
     }
 
     public List<Command> interpret(String code, RuleEngineInput ruleEngineInput, List<String> variableScope,
