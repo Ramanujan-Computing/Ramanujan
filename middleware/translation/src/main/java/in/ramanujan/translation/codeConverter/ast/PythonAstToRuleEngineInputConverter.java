@@ -380,7 +380,15 @@ public class PythonAstToRuleEngineInputConverter {
             }
         }
 
-        // 1. Non-function/non-class top-level statements
+        // 1. Class definitions — must run first so classRegistry is populated before
+        //    any instantiation statements (e.g. c1 = Counter()) are processed.
+        //    convertClassDef emits only IR metadata (ClassDefinition, Variable/Array,
+        //    FunctionCall defs), never Command objects, so this is safe.
+        for (AstNode node : classDefNodes) {
+            convertClassDef((ClassDefNode) node, variableScope);
+        }
+
+        // 2. Non-function/non-class top-level statements
         for (AstNode node : nonFunctionDefNodes) {
             Command command = convertStatement(node, variableScope, null, null, null);
             if (command != null) {
@@ -390,11 +398,6 @@ public class PythonAstToRuleEngineInputConverter {
                 }
                 previousCommand = command;
             }
-        }
-
-        // 2. Class definitions (fields emitted before method FunctionCalls)
-        for (AstNode node : classDefNodes) {
-            convertClassDef((ClassDefNode) node, variableScope);
         }
 
         // 3. Standalone function definitions

@@ -27,14 +27,14 @@ Processor::~Processor() {
   // Without this, every JNI kernel call leaks ~1-2 GB of native heap (the
   // weight arrays), causing the JVM to crash after ~20 layers as native memory
   // is exhausted.
-  for (RuleEngineInputUnits *u : arrayREs) {
-    ArrayRE *ar = static_cast<ArrayRE *>(u);
-    ArrayDataContainerValue *adcv =
-        static_cast<ArrayDataContainerValue *>(ar->getVal());
-    if (adcv && adcv->arrayValue) {
-      adcv->arrayValue->destroy();
-    }
-  }
+//  for (RuleEngineInputUnits *u : arrayREs) {
+//    ArrayRE *ar = static_cast<ArrayRE *>(u);
+//    ArrayDataContainerValue *adcv =
+//        static_cast<ArrayDataContainerValue *>(ar->getVal());
+//    if (adcv && adcv->arrayValue) {
+//      adcv->arrayValue->destroy();
+//    }
+//  }
   arrayREs.clear();
   variableREs.clear();
 }

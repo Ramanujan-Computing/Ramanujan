@@ -2567,11 +2567,11 @@ public class PythonCodeRunTest {
             "class Counter:\n" +
             "    value = 0\n" +
             "\n" +
-            "def increment(self):\n" +
-            "    value = value + 1\n" +
+            "    def increment(self):\n" +
+            "        value = value + 1\n" +
             "\n" +
-            "def getValue(self, out):\n" +
-            "    out = value\n" +
+            "    def getValue(self, out):\n" +
+            "        out = value\n" +
             "\n" +
             "c = Counter()\n" +
             "c.increment()\n" +
@@ -2601,11 +2601,11 @@ public class PythonCodeRunTest {
             "class Counter:\n" +
             "    value = 0\n" +
             "\n" +
-            "def increment(self):\n" +
-            "    value = value + 1\n" +
+            "    def increment(self):\n" +
+            "        value = value + 1\n" +
             "\n" +
-            "def getValue(self, out):\n" +
-            "    out = value\n" +
+            "    def getValue(self, out):\n" +
+            "        out = value\n" +
             "\n" +
             "c1 = Counter()\n" +
             "c2 = Counter()\n" +
@@ -2637,19 +2637,19 @@ public class PythonCodeRunTest {
     public void testOopsArrayFieldModifiedByMethod() throws Exception {
         String pythonCode =
             "class Store:\n" +
-            "    data = [0, 0, 0]\n" +
+            "    data = [0 for _ in range(3)]\n" +
             "\n" +
-            "def set0(self, v):\n" +
-            "    data[0] = v\n" +
+            "    def set0(self, v):\n" +
+            "        data[0] = v\n" +
             "\n" +
-            "def set1(self, v):\n" +
-            "    data[1] = v\n" +
+            "    def set1(self, v):\n" +
+            "        data[1] = v\n" +
             "\n" +
-            "def get0(self, out):\n" +
-            "    out = data[0]\n" +
+            "    def get0(self, out):\n" +
+            "        out = data[0]\n" +
             "\n" +
-            "def get1(self, out):\n" +
-            "    out = data[1]\n" +
+            "    def get1(self, out):\n" +
+            "        out = data[1]\n" +
             "\n" +
             "s = Store()\n" +
             "s.set0(42)\n" +
@@ -2679,19 +2679,19 @@ public class PythonCodeRunTest {
         String pythonCode =
             "class Pair:\n" +
             "    scalar = 0\n" +
-            "    arr = [0, 0]\n" +
+            "    arr = [0 for _ in range(2)]\n" +
             "\n" +
-            "def setScalar(self, v):\n" +
-            "    scalar = v\n" +
+            "    def setScalar(self, v):\n" +
+            "        scalar = v\n" +
             "\n" +
-            "def setArr0(self, v):\n" +
-            "    arr[0] = v\n" +
+            "    def setArr0(self, v):\n" +
+            "        arr[0] = v\n" +
             "\n" +
-            "def getScalar(self, out):\n" +
-            "    out = scalar\n" +
+            "    def getScalar(self, out):\n" +
+            "        out = scalar\n" +
             "\n" +
-            "def getArr0(self, out):\n" +
-            "    out = arr[0]\n" +
+            "    def getArr0(self, out):\n" +
+            "        out = arr[0]\n" +
             "\n" +
             "p = Pair()\n" +
             "p.setScalar(7)\n" +
@@ -2723,11 +2723,11 @@ public class PythonCodeRunTest {
             "class Counter:\n" +
             "    value = 0\n" +
             "\n" +
-            "def setValue(self, v):\n" +
-            "    value = v\n" +
+            "    def setValue(self, v):\n" +
+            "        value = v\n" +
             "\n" +
-            "def getValue(self, out):\n" +
-            "    out = value\n" +
+            "    def getValue(self, out):\n" +
+            "        out = value\n" +
             "\n" +
             "c = Counter()\n" +
             "c.setValue(5)\n" +
@@ -2758,11 +2758,11 @@ public class PythonCodeRunTest {
             "class Counter:\n" +
             "    value = 0\n" +
             "\n" +
-            "def increment(self):\n" +
-            "    value = value + 1\n" +
+            "    def increment(self):\n" +
+            "        value = value + 1\n" +
             "\n" +
-            "def getValue(self, out):\n" +
-            "    out = value\n" +
+            "    def getValue(self, out):\n" +
+            "        out = value\n" +
             "\n" +
             "c = Counter()\n" +
             "i = 0\n" +
