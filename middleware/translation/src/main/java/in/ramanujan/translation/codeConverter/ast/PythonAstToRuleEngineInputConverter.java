@@ -1399,16 +1399,27 @@ public class PythonAstToRuleEngineInputConverter {
         
         for (ArgNode arg : funcDef.getArgs().getArgs()) {
             String argStr = arg.getArg();
-            MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
-            methodArg.setName(argStr);
-            methodArg.setFrameCount(counter[0]);
-            methodArg.setId("arg_" + UUID.randomUUID().toString());
-            paramNames.add(arg.getArg());
-            paramIds.add(methodArg.getId());
-
-            ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodArg);
-            codeConverter.setMethodDataTypeAgnosticArgMap(methodArg, variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "");
-            variableFrameMap.put(counter[0]++, methodArg);
+            String scope = variableScope.size() > 0 ? variableScope.get(variableScope.size() - 1) : "";
+            paramNames.add(argStr);
+            if (arg.getAnnotation() != null && classRegistry.containsKey(arg.getAnnotation())) {
+                // Object-typed parameter: goes into allVariablesInMethod but NOT arguments
+                ObjectHandleArg objArg = new ObjectHandleArg();
+                objArg.setClassName(arg.getAnnotation());
+                objArg.setFrameCount(counter[0]);
+                objArg.setId("objarg_" + UUID.randomUUID().toString());
+                ruleEngineInput.getObjectHandleArgs().add(objArg);
+                codeConverter.setObjectHandleArgMap(objArg, argStr, scope);
+                variableFrameMap.put(counter[0]++, objArg);
+            } else {
+                MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
+                methodArg.setName(argStr);
+                methodArg.setFrameCount(counter[0]);
+                methodArg.setId("arg_" + UUID.randomUUID().toString());
+                paramIds.add(methodArg.getId());
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodArg);
+                codeConverter.setMethodDataTypeAgnosticArgMap(methodArg, scope);
+                variableFrameMap.put(counter[0]++, methodArg);
+            }
         }
         debugLevelCodeCreator.concat(String.join(", ", paramNames));
         debugLevelCodeCreator.concat("):");
@@ -1777,21 +1788,17 @@ public class PythonAstToRuleEngineInputConverter {
         
         FunctionCall functionCall = new FunctionCall();
         List<String> argumentIds = new ArrayList<>();
-        
+        List<String> callerObjHandleIds = new ArrayList<>();
+
         // Build debug output: exec functionName(arg1, arg2, ...)
         debugLevelCodeCreator.concat("exec " + functionName + "(");
-        
+
         boolean first = true;
         for (AstNode arg : call.getArgs()) {
             if (!first) {
                 debugLevelCodeCreator.concat(", ");
             }
-            
-            // Get the ID of the argument (variable, array, or methodArg)
-            String argumentId = getArgumentId(arg, variableScope, false);
-            argumentIds.add(argumentId);
-            
-            // Add to debug output
+            collectArg(arg, variableScope, argumentIds, callerObjHandleIds);
             appendValueToDebug(arg);
             first = false;
         }
@@ -1800,10 +1807,13 @@ public class PythonAstToRuleEngineInputConverter {
         
         functionCall.setId(functionName);
         functionCall.setArguments(argumentIds);
-        
+        if (!callerObjHandleIds.isEmpty()) {
+            functionCall.setCallerObjectHandleIds(callerObjHandleIds);
+        }
+
         command.setFunctionCall(functionCall);
     }
-    
+
     /**
      * Converts a function call with return target variables for tuple unpacking.
      * 
@@ -1841,18 +1851,21 @@ public class PythonAstToRuleEngineInputConverter {
         functionCall.setId(functionName);
         
         List<String> argumentIds = new ArrayList<>();
-        
-        // Add regular arguments first
+        List<String> callerObjHandleIds = new ArrayList<>();
+
+        // Add regular arguments first (objects go to callerObjHandleIds, not argumentIds)
         for (AstNode arg : call.getArgs()) {
-            String argumentId = getArgumentId(arg, variableScope, false);
-            argumentIds.add(argumentId);
+            collectArg(arg, variableScope, argumentIds, callerObjHandleIds);
         }
-        
+
         // Add return target variables as additional arguments.
         // The function will receive these as extra parameters to assign return values to.
         argumentIds.addAll(returnTargetIds);
-        
+
         functionCall.setArguments(argumentIds);
+        if (!callerObjHandleIds.isEmpty()) {
+            functionCall.setCallerObjectHandleIds(callerObjHandleIds);
+        }
         
         // Record the expected return count for this function (for case where function is defined later)
         Integer existingCount = functionReturnCounts.get(functionName);
@@ -2892,8 +2905,40 @@ public class PythonAstToRuleEngineInputConverter {
                 return globalArr.getId();
             }
         }
-        
+
+        if (codeConverter.getObjectHandleArg(varName, variableScope) != null) {
+            throw new CompilationException(null, null,
+                "Object parameter '" + varName + "' cannot be passed as a scalar/array argument; use a type-annotated object parameter instead");
+        }
+
         throw new CompilationException(null, null, "Argument " + varName + " not found");
+    }
+
+    /**
+     * Routes a single call-site argument into either the regular argumentIds list (scalars/arrays)
+     * or the callerObjHandleIds list (objects). Object variables are identified by their presence
+     * in the objectHandleMap (top-level instances) or objectHandleArgMap (object-typed params).
+     */
+    private void collectArg(AstNode arg, List<String> variableScope,
+                             List<String> argumentIds, List<String> callerObjHandleIds)
+            throws CompilationException {
+        if (arg instanceof NameNode) {
+            String varName = ((NameNode) arg).getId();
+            // Top-level object instance?
+            String[] objInfo = codeConverter.getObjectInfo(varName);
+            if (objInfo != null) {
+                callerObjHandleIds.add(objInfo[0]);
+                return;
+            }
+            // Object-typed parameter?
+            ObjectHandleArg objArg = codeConverter.getObjectHandleArg(varName, variableScope);
+            if (objArg != null) {
+                // Pass the ObjectHandleArg's ID; the runtime resolves it to the current UUID.
+                callerObjHandleIds.add(objArg.getId());
+                return;
+            }
+        }
+        argumentIds.add(getArgumentId(arg, variableScope, false));
     }
     
     /**
@@ -3078,14 +3123,27 @@ public class PythonAstToRuleEngineInputConverter {
 
         for (ArgNode arg : methodDef.getArgs().getArgs()) {
             if ("self".equals(arg.getArg())) continue;
-            MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
-            methodArg.setName(arg.getArg());
-            methodArg.setFrameCount(counter[0]);
-            methodArg.setId("arg_" + UUID.randomUUID().toString());
-            paramIds.add(methodArg.getId());
-            ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodArg);
-            codeConverter.setMethodDataTypeAgnosticArgMap(methodArg, variableScope.get(variableScope.size() - 1));
-            variableFrameMap.put(counter[0]++, methodArg);
+            String paramName = arg.getArg();
+            String scope = variableScope.get(variableScope.size() - 1);
+            if (arg.getAnnotation() != null && classRegistry.containsKey(arg.getAnnotation())) {
+                // Object-typed parameter: tracked separately, NOT added to paramIds
+                ObjectHandleArg objArg = new ObjectHandleArg();
+                objArg.setClassName(arg.getAnnotation());
+                objArg.setFrameCount(counter[0]);
+                objArg.setId("objarg_" + UUID.randomUUID().toString());
+                ruleEngineInput.getObjectHandleArgs().add(objArg);
+                codeConverter.setObjectHandleArgMap(objArg, paramName, scope);
+                variableFrameMap.put(counter[0]++, objArg);
+            } else {
+                MethodDataTypeAgnosticArg methodArg = new MethodDataTypeAgnosticArg();
+                methodArg.setName(paramName);
+                methodArg.setFrameCount(counter[0]);
+                methodArg.setId("arg_" + UUID.randomUUID().toString());
+                paramIds.add(methodArg.getId());
+                ruleEngineInput.getMethodDataTypeAgnosticArgs().add(methodArg);
+                codeConverter.setMethodDataTypeAgnosticArgMap(methodArg, scope);
+                variableFrameMap.put(counter[0]++, methodArg);
+            }
         }
 
         FunctionCall functionCall = new FunctionCall();
@@ -3128,18 +3186,43 @@ public class PythonAstToRuleEngineInputConverter {
             functionCall.setId(currentClassName + "_" + methodName);
             functionCall.setObjectHandleId("__self__");
             List<String> argumentIds = new ArrayList<>();
+            List<String> callerObjHandleIds = new ArrayList<>();
             for (AstNode arg : call.getArgs()) {
-                argumentIds.add(getArgumentId(arg, variableScope, false));
+                collectArg(arg, variableScope, argumentIds, callerObjHandleIds);
             }
             functionCall.setArguments(argumentIds);
+            if (!callerObjHandleIds.isEmpty()) {
+                functionCall.setCallerObjectHandleIds(callerObjHandleIds);
+            }
             command.setFunctionCall(functionCall);
             debugLevelCodeCreator.concat("self." + methodName + "()");
             return;
         }
 
+        // Check if receiver is a top-level registered object instance
         String[] objInfo = codeConverter.getObjectInfo(objVarName);
         if (objInfo == null) {
-            throw new CompilationException(null, null, "Unknown object variable: " + objVarName);
+            // Check if receiver is an object-typed function parameter
+            ObjectHandleArg objArg = codeConverter.getObjectHandleArg(objVarName, variableScope);
+            if (objArg == null) {
+                throw new CompilationException(null, null, "Unknown object variable: " + objVarName);
+            }
+            // Use the ObjectHandleArg's IR id as the objectHandleId so the runtime resolves it dynamically
+            FunctionCall functionCall = new FunctionCall();
+            functionCall.setId(objArg.getClassName() + "_" + methodName);
+            functionCall.setObjectHandleId(objArg.getId());
+            List<String> argumentIds = new ArrayList<>();
+            List<String> callerObjHandleIds = new ArrayList<>();
+            for (AstNode arg : call.getArgs()) {
+                collectArg(arg, variableScope, argumentIds, callerObjHandleIds);
+            }
+            functionCall.setArguments(argumentIds);
+            if (!callerObjHandleIds.isEmpty()) {
+                functionCall.setCallerObjectHandleIds(callerObjHandleIds);
+            }
+            command.setFunctionCall(functionCall);
+            debugLevelCodeCreator.concat(objVarName + "." + methodName + "()");
+            return;
         }
         String objectHandleId = objInfo[0];
         String className = objInfo[1];
@@ -3149,10 +3232,14 @@ public class PythonAstToRuleEngineInputConverter {
         functionCall.setObjectHandleId(objectHandleId);
 
         List<String> argumentIds = new ArrayList<>();
+        List<String> callerObjHandleIds = new ArrayList<>();
         for (AstNode arg : call.getArgs()) {
-            argumentIds.add(getArgumentId(arg, variableScope, false));
+            collectArg(arg, variableScope, argumentIds, callerObjHandleIds);
         }
         functionCall.setArguments(argumentIds);
+        if (!callerObjHandleIds.isEmpty()) {
+            functionCall.setCallerObjectHandleIds(callerObjHandleIds);
+        }
         command.setFunctionCall(functionCall);
         debugLevelCodeCreator.concat(objVarName + "." + methodName + "()");
     }

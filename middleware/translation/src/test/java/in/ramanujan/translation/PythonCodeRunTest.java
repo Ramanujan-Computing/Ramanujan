@@ -2908,6 +2908,125 @@ public class PythonCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
     }
 
+    // ========== OBJECT-AS-ARGUMENT TESTS ==========
+
+    /**
+     * An object is passed to a free (non-class) function which calls a method on it.
+     * incrementTwice(c) calls c.increment() twice.
+     * Expected: result == 2.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsObjectPassedToFreeFunction() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "    def increment(self):\n" +
+            "        value = value + 1\n" +
+            "\n" +
+            "    def getValue(self, out):\n" +
+            "        out = value\n" +
+            "\n" +
+            "def incrementTwice(c: Counter):\n" +
+            "    c.increment()\n" +
+            "    c.increment()\n" +
+            "\n" +
+            "counter = Counter()\n" +
+            "incrementTwice(counter)\n" +
+            "result = 0\n" +
+            "counter.getValue(result)\n" +
+            "del counter\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 2.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * A class method receives an object param and calls methods on it.
+     * Helper.run(c, times) calls c.increment() 'times' number of times (here 3).
+     * Expected: result == 3.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsObjectPassedToClassMethod() throws Exception {
+        String pythonCode =
+            "class Counter:\n" +
+            "    value = 0\n" +
+            "\n" +
+            "    def increment(self):\n" +
+            "        value = value + 1\n" +
+            "\n" +
+            "    def getValue(self, out):\n" +
+            "        out = value\n" +
+            "\n" +
+            "class Runner:\n" +
+            "    def runOnce(self, c: Counter):\n" +
+            "        c.increment()\n" +
+            "\n" +
+            "counter = Counter()\n" +
+            "runner = Runner()\n" +
+            "runner.runOnce(counter)\n" +
+            "runner.runOnce(counter)\n" +
+            "runner.runOnce(counter)\n" +
+            "result = 0\n" +
+            "counter.getValue(result)\n" +
+            "del counter\n" +
+            "del runner\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 3.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Two independent object instances are each passed to a free function and modified.
+     * Expected: result1 == 5.0, result2 == 3.0
+     */
+    @Test(timeout = 5000)
+    public void testOopsMultipleObjectInstancesPassedToFunction() throws Exception {
+        String pythonCode =
+            "class Accumulator:\n" +
+            "    total = 0\n" +
+            "\n" +
+            "    def add(self, n):\n" +
+            "        total = total + n\n" +
+            "\n" +
+            "    def getTotal(self, out):\n" +
+            "        out = total\n" +
+            "\n" +
+            "def addToAcc(acc: Accumulator, val):\n" +
+            "    acc.add(val)\n" +
+            "\n" +
+            "a1 = Accumulator()\n" +
+            "a2 = Accumulator()\n" +
+            "addToAcc(a1, 2)\n" +
+            "addToAcc(a1, 3)\n" +
+            "addToAcc(a2, 3)\n" +
+            "result1 = 0\n" +
+            "result2 = 0\n" +
+            "a1.getTotal(result1)\n" +
+            "a2.getTotal(result2)\n" +
+            "del a1\n" +
+            "del a2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result1", 5.0);
+        variablesToAssert.put("result2", 3.0);
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
     // ========== GPU KERNEL TESTS ==========
 
     /**

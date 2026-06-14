@@ -51,6 +51,9 @@ public class FunctionCall extends RuleEngineInputUnits {
     /** Non-null at a call-site when this is a class method invocation; identifies the object instance. */
     private String objectHandleId;
 
+    /** Call-site only: objectHandleIds for object-typed parameters, in ObjectHandleArg definition order. */
+    private List<String> callerObjectHandleIds;
+
     public FunctionCall() {
         setClazz(FunctionCall.class);
     }

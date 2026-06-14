@@ -215,6 +215,7 @@ Processor::createMap(RuleEngineInput ruleEngineInput) {
   storeInIdMap(map, ruleEngineInput.commands);
   storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
   storeInIdMap(map, ruleEngineInput.returnOperations);
+  storeInIdMap(map, ruleEngineInput.objectHandleArgs);
   return map;
 }
 
@@ -372,6 +373,14 @@ void Processor::storeInIdMap(
     std::vector<ReturnOperation *> *list1) {
   for (std::vector<ReturnOperation *>::iterator itr = list1->begin();
        itr != list1->end(); itr++) {
+    pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+  }
+}
+
+void Processor::storeInIdMap(
+    std::unordered_map<std::string, RuleEngineInputUnits *> *pMap,
+    std::vector<ObjectHandleArg *> *list1) {
+  for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
     pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
   }
 }

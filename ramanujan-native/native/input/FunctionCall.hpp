@@ -46,6 +46,8 @@ class FunctionCall : public RuleEngineInputUnit {
 
         std::string classOwner;
         std::string objectHandleId;
+        /** Call-site: objectHandleIds for object-typed parameters, in ObjectHandleArg definition order. */
+        std::vector<std::string> callerObjectHandleIds;
 
         FunctionCall(Json::Value* value) {
             this->id = (*value)["id"].asString();
@@ -81,6 +83,11 @@ class FunctionCall : public RuleEngineInputUnit {
             }
             if (!(*value)["objectHandleId"].isNull() && (*value)["objectHandleId"].isString()) {
                 this->objectHandleId = (*value)["objectHandleId"].asString();
+            }
+            if (!(*value)["callerObjectHandleIds"].isNull() && (*value)["callerObjectHandleIds"].isArray()) {
+                for (int i = 0; i < (int)(*value)["callerObjectHandleIds"].size(); i++) {
+                    this->callerObjectHandleIds.push_back((*value)["callerObjectHandleIds"][i].asString());
+                }
             }
         }
 

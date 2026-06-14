@@ -32,6 +32,7 @@ No `__init__` method is needed. Fields get their initial values from the class-b
 | Method FunctionCall definition | `<className>_<methodName>` | `Counter_increment` |
 | ClassDefinition entry | `<className>` (= `className` field) | `Counter` |
 | Object handle | UUID string per instantiation | `"3f7a2b..."`  |
+| ObjectHandleArg entity | `"objarg_<UUID>"` | `"objarg_9c4e1a..."` |
 
 ---
 
@@ -98,6 +99,34 @@ The call-site FunctionCall has `objectHandleId` set.
 }
 ```
 
+### ObjectHandleArg (function parameter entity)
+
+When a function or method declares an object-typed parameter (via Python type annotation), an `ObjectHandleArg` is emitted in `ruleEngineInput.objectHandleArgs[]`. It lives in `allVariablesInMethod` of the function definition but is **not** in `arguments`.
+
+```json
+{
+  "id": "objarg_9c4e1a-...",
+  "className": "Counter",
+  "frameCount": 0
+}
+```
+
+### FunctionCall — object arguments at call sites
+
+When a call passes object-typed arguments, their runtime UUIDs (or `ObjectHandleArg` IDs for forwarded objects) are collected in `callerObjectHandleIds`, in the same order as the `ObjectHandleArg` entries in the definition's `allVariablesInMethod`. Scalar/array arguments remain in `arguments` as before.
+
+```json
+{
+  "functionCall": {
+    "id": "incrementTwice_call_0",
+    "arguments": [],
+    "callerObjectHandleIds": ["3f7a2b-..."]
+  }
+}
+```
+
+When an object parameter is forwarded to another call (callee receives an object param and passes it on), the `ObjectHandleArg`'s own `id` (`"objarg_..."`) is placed in `callerObjectHandleIds`. The runtime detects this ID in the global map as an `ObjectHandleArgRE` and resolves it dynamically to the actual UUID.
+
 ---
 
 ## Java Compiler Layer
@@ -109,6 +138,9 @@ The call-site FunctionCall has `objectHandleId` set.
 - `obj = MyClass()` (`CallNode` whose function name is in `classRegistry`) → emits `Command.newObjectCommand`, registers UUID → `classRegistry` entry in `objectHandleMap`.
 - `obj.method(args)` (`AttributeNode`) → emits `Command.functionCall` with `objectHandleId` looked up from `objectHandleMap`.
 - `DeleteNode` → emits `Command.deleteObjectCommand`.
+- **Object-typed parameters** (see [Objects as Arguments](#objects-as-arguments)): when a parameter carries a type annotation matching a registered class name, an `ObjectHandleArg` is created and registered in `CodeConverter.objectHandleArgMap` under `scope + paramName`. It is added to `allVariablesInMethod` but **not** to `arguments`.
+- **Call sites with object args**: `collectArg()` checks each argument — objects go into `callerObjectHandleIds`, scalar/array values go into `argumentIds`.
+- **Method calls on object params**: `convertMethodCall` checks `objectHandleArgMap` when the receiver is not in `objectHandleMap`, using `ObjectHandleArg.getId()` as `objectHandleId` and `ObjectHandleArg.getClassName()` to resolve the class.
 
 ---
 
@@ -171,6 +203,82 @@ Extends `FunctionCommandRE`. Intercepts method calls on objects.
 Phases 1–6 are handled by `FunctionCommandRE::process()`. Phases 0 and 7 are the class-specific wrapper.
 
 **Factory (`GetFunctionCommandRE`)**: if `functionCall->objectHandleId` is non-empty, returns `ClassBasedFunctionCommandRE`; otherwise falls through to GPU/standard checks.
+
+---
+
+## Objects as Arguments
+
+Functions and class methods can receive object instances as parameters. The callee can then call methods on the passed object, reading and writing its `DataContainerValue` slots exactly as if it were the receiver.
+
+### Python syntax
+
+Use a type annotation matching a registered class name to declare an object-typed parameter:
+
+```python
+class Counter:
+    value = 0
+    def increment(self):
+        value = value + 1
+
+def incrementTwice(c: Counter):
+    c.increment()
+    c.increment()
+```
+
+Class methods work the same way:
+
+```python
+class Runner:
+    def runOnce(self, c: Counter):
+        c.increment()
+```
+
+### New IR entity: `ObjectHandleArgRE`
+
+`ObjectHandleArgRE` is the runtime analogue of `ObjectHandleArg`. It holds a single `currentObjectHandleId` string — the UUID of whichever object is bound to this parameter for the current call frame. It lives in the global map under the `ObjectHandleArg`'s `id`.
+
+```
+currentObjectHandleId  ← set by FunctionCommandRE at Phase 0.5
+                       ← restored by FunctionCommandRE at Phase 5.5
+```
+
+### Extended `FunctionCommandRE::process()` phases
+
+Two new phases are inserted around the existing 6:
+
+| Phase | Action |
+|---|---|
+| 0.5 | For each `ObjectHandleArgRE` in `objectHandleArgREs`: save its current UUID; set it to the caller-supplied UUID (from `callerObjectHandleIds` or a forwarded `ObjectHandleArgRE`) |
+| 1 | Save current locals |
+| 2 | Copy scalar/array arguments in |
+| 3 | Execute function body |
+| 4 | Restore locals |
+| 5 | Copy-back output args |
+| 5.5 | Restore each `ObjectHandleArgRE` to its saved UUID |
+| 6 | Cleanup |
+
+Phase 0.5 resolves the caller-supplied value by checking whether the entry in `callerObjectHandleArgREs` is itself an `ObjectHandleArgRE` (forwarded param) or a literal UUID string (`callerObjectHandleLiteralIds`).
+
+### `ClassBasedFunctionCommandRE` with object params
+
+When a method is called on an object that is itself a parameter (not a locally instantiated object), the compiler sets `objectHandleId` on the call-site `FunctionCall` to the `ObjectHandleArg`'s `id` (`"objarg_..."`).
+
+At `setFields` time, `ClassBasedFunctionCommandRE` checks whether this ID resolves to an `ObjectHandleArgRE` in the global map. If so, it stores the pointer and derives `className` from `ObjectHandleArgRE::getClassName()` (set from the type annotation at compile time).
+
+At `process()` time, the actual UUID is read dynamically:
+
+```
+resolvedHandleId = objectHandleArgRE ? objectHandleArgRE->get() : objectHandleId
+if resolvedHandleId == "__self__": return FunctionCommandRE::process()
+inst = ObjectInstanceStore::get(resolvedHandleId)
+// Phases 0 and 7 proceed with inst
+```
+
+This means all Phases 0 and 7 (slot ↔ field var) operate on whichever object the parameter is bound to at that moment, which can differ across recursive or nested calls.
+
+### Forwarding object params
+
+An object parameter can be forwarded to another function or method call unchanged. The compiler's `collectArg()` detects a `NameNode` that resolves to an `ObjectHandleArg` in `objectHandleArgMap` and places the `ObjectHandleArg`'s `id` into `callerObjectHandleIds`. The receiving `FunctionCommandRE` then follows the same `ObjectHandleArgRE` chain at runtime.
 
 ---
 
@@ -341,6 +449,93 @@ del p
 After execution: `result == 4.0`.
 
 Call chain: `ping(4) → pong(3) → ping(2) → pong(1) → ping(0)` [base]. `steps` is incremented on each non-base call (4 times). The outermost `ClassBasedFunctionCommandRE` for `ping(4)` owns Phases 0 and 7; every `self.pong` / `self.ping` hop inside uses `__self__` and sees the same live `steps` field var.
+
+### Object passed to a free function
+
+```python
+class Counter:
+    value = 0
+
+    def increment(self):
+        value = value + 1
+
+    def getValue(self, out):
+        out = value
+
+def incrementTwice(c: Counter):
+    c.increment()
+    c.increment()
+
+counter = Counter()
+incrementTwice(counter)
+result = 0
+counter.getValue(result)
+del counter
+```
+
+After execution: `result == 2.0`.
+
+`incrementTwice` receives `counter`'s UUID via `callerObjectHandleIds[0]`. Phase 0.5 loads it into `ObjectHandleArgRE` for `c`. Each `c.increment()` call sees `objectHandleId = "objarg_..."`, resolves to `ObjectHandleArgRE.get()` → actual UUID, then runs Phases 0 and 7 against `counter`'s `ObjectInstance`.
+
+### Object passed to a class method
+
+```python
+class Counter:
+    value = 0
+    def increment(self):
+        value = value + 1
+    def getValue(self, out):
+        out = value
+
+class Runner:
+    def runOnce(self, c: Counter):
+        c.increment()
+
+counter = Counter()
+counter.increment()   # value = 1
+runner = Runner()
+runner.runOnce(counter)   # value = 2
+result = 0
+counter.getValue(result)
+del counter
+del runner
+```
+
+After execution: `result == 2.0`.
+
+`Runner.runOnce` carries its own Phase 0/7 for `Runner`'s (empty) fields, while the `c.increment()` call inside it runs Phase 0/7 for `Counter`'s fields. The two sets of field vars are independent and do not interfere.
+
+### Multiple object instances passed to one function
+
+```python
+class Accumulator:
+    total = 0
+    def add(self, n):
+        total = total + n
+    def getTotal(self, out):
+        out = total
+
+def addToAcc(acc: Accumulator, val):
+    acc.add(val)
+
+a1 = Accumulator()
+a2 = Accumulator()
+addToAcc(a1, 3)
+addToAcc(a1, 2)   # a1.total = 5
+addToAcc(a2, 3)   # a2.total = 3
+result1 = 0
+result2 = 0
+a1.getTotal(result1)
+a2.getTotal(result2)
+del a1
+del a2
+```
+
+After execution: `result1 == 5.0`, `result2 == 3.0`.
+
+Each `addToAcc` call binds a different UUID into the same `ObjectHandleArgRE` for `acc` (Phase 0.5 / Phase 5.5). The two `Accumulator` instances accumulate independently.
+
+---
 
 Execution trace for `a.addDown(5)`:
 

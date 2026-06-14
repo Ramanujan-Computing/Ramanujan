@@ -298,11 +298,20 @@ public class JsonAstParser {
     
     private ArgNode parseArg(JsonNode node) throws CompilationException {
         ArgNode arg = new ArgNode();
-        
+
         if (node.has("arg")) {
             arg.setArg(node.get("arg").asText());
         }
-        
+
+        // Parse optional type annotation: `param: ClassName`
+        // Python AST represents this as annotation: {_type: "Name", id: "ClassName"}
+        if (node.has("annotation") && !node.get("annotation").isNull()) {
+            JsonNode ann = node.get("annotation");
+            if (ann.has("id")) {
+                arg.setAnnotation(ann.get("id").asText());
+            }
+        }
+
         // ArgNode doesn't extend AstNode, so skip setLineInfo
         return arg;
     }

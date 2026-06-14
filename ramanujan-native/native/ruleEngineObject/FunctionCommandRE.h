@@ -16,6 +16,7 @@
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/array/ArrayValue.h"
 #include "ObjectInstanceStore.h"
+#include "dataContainer/ObjectHandleArgRE.h"
 #include <list>
 #include <unordered_map>
 #include <vector>
@@ -165,6 +166,15 @@ private:
   DataContainerValue *methodArgDataContainerAddr[maxArgSize];
 
   std::unordered_map<std::string, std::string> dataContainerNameMethodMap;
+
+  // ==================== Object-Param Support ====================
+  // Definition-side ObjectHandleArgRE entries (one per object-typed parameter).
+  std::vector<ObjectHandleArgRE*> objectHandleArgREs;
+  // Per-entry: if the caller ID is itself an ObjectHandleArgRE, store its pointer for
+  // dynamic resolution at process() time; otherwise nullptr means a literal UUID.
+  std::vector<ObjectHandleArgRE*> callerObjectHandleArgREs;
+  // Literal UUIDs for entries where callerObjectHandleArgREs[i] == nullptr.
+  std::vector<std::string> callerObjectHandleLiteralIds;
 
 public:
   // ==================== Constructor and Destructor ====================
@@ -852,6 +862,8 @@ public:
  */
 class ClassBasedFunctionCommandRE : public FunctionCommandRE {
     std::string objectHandleId;
+    // Non-null when objectHandleId is an ObjectHandleArgRE key; resolved dynamically at process().
+    ObjectHandleArgRE* objectHandleArgRE = nullptr;
     std::vector<VariableRE*> scalarFieldVars;
     std::vector<ArrayRE*> arrayFieldVars;
 public:

@@ -346,12 +346,19 @@ void FunctionCommandRE::setFields(
    * LOCAL VARIABLE AND ARRAY ANALYSIS:
    * Analyze all variables and arrays declared within the function scope
    * (including both parameters and local declarations) to set up complete
-   * variable management.
+   * variable management. ObjectHandleArgRE entries are handled separately.
    */
   std::list<DataContainerValue *> methodArgDataContainerAddrList;
 
   for (int i = 0; i < functionInfoRE->functionCall->allVariablesInMethodSize;
        i++) {
+    // ObjectHandleArgRE is not an AbstractDataContainer — skip it here, collect separately.
+    ObjectHandleArgRE* ohar = dynamic_cast<ObjectHandleArgRE*>(functionInfoRE->allVariablesInMethod[i]);
+    if (ohar != nullptr) {
+      objectHandleArgREs.push_back(ohar);
+      continue;
+    }
+
     AbstractDataContainer *dataContainer =
         dynamic_cast<AbstractDataContainer *>(
             functionInfoRE->allVariablesInMethod[i]);
@@ -365,13 +372,31 @@ void FunctionCommandRE::setFields(
     }
   }
 
+  // Pair each definition-side ObjectHandleArgRE with its caller-side handle.
+  // callerObjectHandleIds[i] is either a literal UUID or another ObjectHandleArgRE ID.
+  const auto& callerIds = functionCommandInfo->callerObjectHandleIds;
+  for (int i = 0; i < (int)objectHandleArgREs.size(); i++) {
+    if (i < (int)callerIds.size()) {
+      auto it = map->find(callerIds[i]);
+      if (it != map->end()) {
+        ObjectHandleArgRE* callerRE = dynamic_cast<ObjectHandleArgRE*>(it->second);
+        callerObjectHandleArgREs.push_back(callerRE);   // may be non-null (forwarded param)
+        callerObjectHandleLiteralIds.push_back(callerIds[i]);
+      } else {
+        callerObjectHandleArgREs.push_back(nullptr);    // literal UUID
+        callerObjectHandleLiteralIds.push_back(callerIds[i]);
+      }
+    } else {
+      callerObjectHandleArgREs.push_back(nullptr);
+      callerObjectHandleLiteralIds.push_back("");
+    }
+  }
+
   /**
    * ALLOCATE COMPLETE VARIABLE AND ARRAY MANAGEMENT STRUCTURES:
    * Set up arrays for managing all variables and arrays in function scope.
    */
   totalDataContainerCount = totalVarCount + totalArrCount;
-  // methodArgDataContainerAddr = new
-  // DataContainerValue*[totalDataContainerCount];
 
   /**
    * POPULATE COMPLETE VARIABLE ADDRESS MAPPING:
@@ -423,6 +448,18 @@ RuleEngineInputUnits *FunctionCommandRE::process() {
    * This establishes the parameter passing mechanism while preserving state for
    * restoration.
    */
+
+  // ==================== PHASE 0.5: OBJECT PARAM BINDING ====================
+  // Save current object handle IDs and install the caller's bindings so that
+  // method calls on object parameters (e.g. foo.bar()) see the right instance.
+  std::vector<std::string> savedObjectHandleIds(objectHandleArgREs.size());
+  for (int i = 0; i < (int)objectHandleArgREs.size(); i++) {
+    savedObjectHandleIds[i] = objectHandleArgREs[i]->get();
+    std::string callerId = (callerObjectHandleArgREs[i] != nullptr)
+                           ? callerObjectHandleArgREs[i]->get()   // forwarded object param
+                           : callerObjectHandleLiteralIds[i];      // literal UUID
+    objectHandleArgREs[i]->set(callerId);
+  }
 
   // Allocate pointer ranges from the memory pool
   // No memcpy needed - we get direct pointers into the pool!
@@ -586,6 +623,11 @@ RuleEngineInputUnits *FunctionCommandRE::process() {
     methodCalledOriginalPlaceHolderAddrs[i]->saveRestoreAndPropagate(
         methodCalledDataContainerValueArray[i],
         methodCallingOriginalPlaceHolderAddrs[i]);
+  }
+
+  // ==================== PHASE 5.5: OBJECT PARAM RESTORE ====================
+  for (int i = 0; i < (int)objectHandleArgREs.size(); i++) {
+    objectHandleArgREs[i]->set(savedObjectHandleIds[i]);
   }
 
   // Deallocate the memory pool ranges
@@ -1275,35 +1317,52 @@ void ClassBasedFunctionCommandRE::setFields(
     FunctionCommandRE::setFields(map);
 
     objectHandleId = functionCommandInfo->objectHandleId;
-    std::string className = functionInfoRE->functionCall->classOwner;
+
+    // If objectHandleId refers to an ObjectHandleArgRE (object-typed param), store its pointer
+    // for dynamic UUID resolution at process() time.
+    auto it = map->find(objectHandleId);
+    if (it != map->end()) {
+        objectHandleArgRE = dynamic_cast<ObjectHandleArgRE*>(it->second);
+    }
+
+    // Determine class name: from ObjectHandleArgRE (typed param) or classOwner (direct call)
+    std::string className = objectHandleArgRE
+        ? objectHandleArgRE->getClassName()
+        : functionInfoRE->functionCall->classOwner;
+
     ClassDefinition* classDef = ObjectInstanceStore::getClass(className);
     if (!classDef) return;
 
     for (const auto& fn : classDef->scalarFieldNames) {
         std::string varId = "class_" + className + "_" + fn + "_var";
-        auto it = map->find(varId);
-        if (it != map->end()) {
-            scalarFieldVars.push_back(dynamic_cast<VariableRE*>(it->second));
+        auto mapIt = map->find(varId);
+        if (mapIt != map->end()) {
+            scalarFieldVars.push_back(dynamic_cast<VariableRE*>(mapIt->second));
         }
     }
 
     for (const auto& fn : classDef->arrayFieldNames) {
         std::string arrId = "class_" + className + "_" + fn + "_arr";
-        auto it = map->find(arrId);
-        if (it != map->end()) {
-            arrayFieldVars.push_back(dynamic_cast<ArrayRE*>(it->second));
+        auto mapIt = map->find(arrId);
+        if (mapIt != map->end()) {
+            arrayFieldVars.push_back(dynamic_cast<ArrayRE*>(mapIt->second));
         }
     }
 }
 
 RuleEngineInputUnits* ClassBasedFunctionCommandRE::process() {
+    // Resolve the actual object handle at call time (may be dynamic via ObjectHandleArgRE).
+    std::string resolvedHandleId = objectHandleArgRE
+        ? objectHandleArgRE->get()
+        : objectHandleId;
+
     // Recursive self-call: field vars are already live from the outermost call;
     // skip the slot-swap phases to let the live values flow through unchanged.
-    if (objectHandleId == "__self__") {
+    if (resolvedHandleId == "__self__") {
         return FunctionCommandRE::process();
     }
 
-    ObjectInstance* inst = ObjectInstanceStore::get(objectHandleId);
+    ObjectInstance* inst = ObjectInstanceStore::get(resolvedHandleId);
     if (!inst) return nextUnit;
 
     // Phase 0: save field var values; wire object slot values → field vars

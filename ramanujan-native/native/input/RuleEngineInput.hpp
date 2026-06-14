@@ -17,6 +17,7 @@
 #include "Return.hpp"
 #include "ReturnOperation.hpp"
 #include "ClassDefinition.hpp"
+#include "ObjectHandleArg.hpp"
 
 #include <json/json.h>
 
@@ -37,6 +38,7 @@ class RuleEngineInput {
         std::vector<RedefineArrayCommand*> *redefineArrayCommands = new std::vector<RedefineArrayCommand*>();
         std::vector<ReturnOperation*> *returnOperations = new std::vector<ReturnOperation*>();
         std::vector<ClassDefinition*> *classDefinitions = new std::vector<ClassDefinition*>();
+        std::vector<ObjectHandleArg*> *objectHandleArgs = new std::vector<ObjectHandleArg*>();
 
         RuleEngineInput(Json::Value* value) {
             Json::Value variables = (*value)["variables"];
@@ -101,6 +103,11 @@ class RuleEngineInput {
             Json::Value classDefinitions = (*value)["classDefinitions"];
             for(int i = 0; i < classDefinitions.size(); i++) {
                 this->classDefinitions->push_back(new ClassDefinition(&classDefinitions[i]));
+            }
+
+            Json::Value objectHandleArgs = (*value)["objectHandleArgs"];
+            for(int i = 0; i < (int)objectHandleArgs.size(); i++) {
+                this->objectHandleArgs->push_back(new ObjectHandleArg(&objectHandleArgs[i]));
             }
         }
 };
