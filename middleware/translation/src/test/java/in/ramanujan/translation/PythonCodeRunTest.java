@@ -7,6 +7,7 @@ import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.*;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeProcessor;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogicFactory;
 import in.ramanujan.translation.codeConverter.CodeSnippetElement;
@@ -2202,23 +2203,18 @@ public class PythonCodeRunTest {
         
         // Execute using NativeProcessor
         if (!commands.isEmpty()) {
-                NativeProcessor processor = new NativeProcessor();
-                ObjectMapper mapper = new ObjectMapper();
-                String jsonInput = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
+            NativeProcessor processor = new NativeProcessor();
+            byte[] protoBytes = RuleEngineInputProtoSerializer.serialize(ruleEngineInput);
 
-                // Write combined payload (firstCommandId + ruleEngineInput) to a stable tmp file for native debugging
-                ObjectNode wrapper = mapper.createObjectNode();
-                wrapper.put("firstCommandId", commands.get(0).getId());
-                wrapper.set("ruleEngineInput", mapper.valueToTree(ruleEngineInput));
-                    Path tmpPath = Paths.get("/tmp", "rule_engine_debug.json");
-                    Files.write(tmpPath,
-                        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper)
-                            .getBytes(StandardCharsets.UTF_8));
+            // Write protobuf payload to a stable tmp file for native debugging
+            Path tmpPath = Paths.get("/tmp", "rule_engine_debug.pb");
+            Files.write(tmpPath, protoBytes);
+            Files.write(Paths.get("/tmp", "rule_engine_debug.json"), protoBytes);
 
-                System.out.println("========== Debug payload written to /tmp/rule_engine_debug.json ==========");
-                System.out.flush();
-            processor.process(jsonInput, commands.get(0).getId());
-            
+            System.out.println("========== Debug payload written to /tmp/rule_engine_debug.pb ==========");
+            System.out.flush();
+            processor.process(protoBytes, commands.get(0).getId());
+
             // Resolve variables from native processor result
             resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
         }

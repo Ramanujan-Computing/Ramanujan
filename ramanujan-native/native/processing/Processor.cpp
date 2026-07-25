@@ -29,9 +29,9 @@ Processor::~Processor() {
     ArrayRE *ar = static_cast<ArrayRE *>(u);
     ArrayDataContainerValue *adcv =
         static_cast<ArrayDataContainerValue *>(ar->getVal());
-    if (adcv && adcv->arrayValue) {
-      adcv->arrayValue->destroy();
-    }
+//    if (adcv && adcv->arrayValue) {
+//      adcv->arrayValue->destroy();
+//    }
   }
   arrayREs.clear();
   variableREs.clear();

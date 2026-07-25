@@ -4,6 +4,7 @@ import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeProcessor;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 import in.ramanujan.translation.codeConverter.DagElement;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -343,18 +344,16 @@ public class TranslateServiceTest {
             ObjectMapper mapper = new ObjectMapper();
             String jsonInput = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
 
-            // Write combined payload (firstCommandId + ruleEngineInput) to a stable tmp file for native debugging
-            ObjectNode wrapper = mapper.createObjectNode();
-            wrapper.put("firstCommandId", firstCommandId);
-            wrapper.set("ruleEngineInput", mapper.valueToTree(ruleEngineInput));
-            Path tmpPath = Paths.get("/tmp", "translate_service_debug.json");
-            Files.write(tmpPath,
-                mapper.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper)
-                    .getBytes(StandardCharsets.UTF_8));
+            // Write protobuf byte array payload to a stable tmp file for native debugging
+            byte[] protoBytes = RuleEngineInputProtoSerializer.serialize(ruleEngineInput);
+            Path tmpPath = Paths.get("/tmp", "translate_service_debug.pb");
+            Files.write(tmpPath, protoBytes);
+            Files.write(Paths.get("/tmp", "rule_engine_debug.pb"), protoBytes);
+            Files.write(Paths.get("/tmp", "rule_engine_debug.json"), protoBytes);
 
-            System.out.println("========== Debug payload written to /tmp/translate_service_debug.json ==========");
+            System.out.println("========== Debug payload written to /tmp/rule_engine_debug.pb ==========");
             System.out.flush();
-            processor.process(jsonInput, firstCommandId);
+            processor.process(protoBytes, firstCommandId);
 
             resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
         }
@@ -440,7 +439,7 @@ public class TranslateServiceTest {
         NativeProcessor processor = new NativeProcessor();
         ObjectMapper mapper = new ObjectMapper();
         String jsonInput = mapper.writeValueAsString(ruleEngineInput);
-        processor.process(jsonInput, firstCommandId);
+        processor.process(RuleEngineInputProtoSerializer.serialize(ruleEngineInput), firstCommandId);
 
         resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
     }
