@@ -1735,7 +1735,8 @@ public class PythonCodeRunTest {
             "def vector_add_GPU_1(a, b, c, gid):\n" +
             "    c[gid] = a[gid] + b[gid]\n" +
             "\n" +
-            "vector_add_GPU_1(a, b, c, 4)\n";
+            "vector_add_GPU_1(a, b, c, 4)\n" +
+            "GPU_SYNC(c)\n";
 
         Map<String, Variable> execVarMap1D = new HashMap<>();
         Map<String, Array>    execArrMap1D = new HashMap<>();
@@ -1801,7 +1802,8 @@ public class PythonCodeRunTest {
             "def scale_2d_GPU_2(a, out, row, col):\n" +
             "    out[row] = a[row] * 2\n" +
             "\n" +
-            "scale_2d_GPU_2(a, out, 4, 4)\n";
+            "scale_2d_GPU_2(a, out, 4, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMap2D = new HashMap<>();
         Map<String, Array>    execArrMap2D = new HashMap<>();
@@ -1871,7 +1873,8 @@ public class PythonCodeRunTest {
             "    else:\n" +
             "        out[gid] = 0\n" +
             "\n" +
-            "relu_GPU_1(a, out, 4)\n";
+            "relu_GPU_1(a, out, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMapRelu = new HashMap<>();
         Map<String, Array>    execArrMapRelu = new HashMap<>();
@@ -1942,7 +1945,8 @@ public class PythonCodeRunTest {
             "        k = k + 1\n" +
             "    out[gid] = s\n" +
             "\n" +
-            "prefix_sum_GPU_1(a, out, 4)\n";
+            "prefix_sum_GPU_1(a, out, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMapWhile = new HashMap<>();
         Map<String, Array>    execArrMapWhile = new HashMap<>();
