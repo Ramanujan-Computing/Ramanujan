@@ -14,6 +14,9 @@ include(FetchContent)
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+if(CMAKE_CROSSCOMPILING AND NOT DEFINED protobuf_BUILD_PROTOC_BINARIES)
+    set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
+endif()
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_Declare(
     protobuf
@@ -27,9 +30,15 @@ set(PROTO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../rule-engine/src/main/proto/rul
 set(PROTO_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/proto")
 file(MAKE_DIRECTORY ${PROTO_OUT_DIR})
 
+if(PROTOC_EXECUTABLE)
+    set(PROTOC_COMMAND "${PROTOC_EXECUTABLE}")
+else()
+    set(PROTOC_COMMAND protobuf::protoc)
+endif()
+
 add_custom_command(
     OUTPUT ${PROTO_OUT_DIR}/rule_engine_input.pb.cc ${PROTO_OUT_DIR}/rule_engine_input.pb.h
-    COMMAND protobuf::protoc
+    COMMAND ${PROTOC_COMMAND}
     ARGS --cpp_out=${PROTO_OUT_DIR} --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/../../rule-engine/src/main/proto ${PROTO_FILE}
     DEPENDS ${PROTO_FILE}
     COMMENT "Generating C++ protobuf files"
