@@ -4,6 +4,9 @@
 #include <list>
 #include <string>
 #include <unordered_map>
+#include <cstdio>
+#include <cstdlib>
+#include <unistd.h>
 
 #include "../ruleEngineObject/CommandRE.h"
 #include "../ruleEngineObject/ConditionRE.h"
@@ -32,6 +35,13 @@ Processor::~Processor() {
 //    if (adcv && adcv->arrayValue) {
 //      adcv->arrayValue->destroy();
 //    }
+  }
+
+  for (auto variableRE : variableREs) {
+      variableRE-> destroy();
+  }
+  for (auto arrayRE : arrayREs) {
+    arrayRE->destroy();
   }
   arrayREs.clear();
   variableREs.clear();
@@ -146,16 +156,26 @@ Processor::arrChangeMap() {
 
   for (RuleEngineInputUnits *arrayRE1 : arrayREs) {
     ArrayRE *arrayRE = (ArrayRE *)arrayRE1;
-    if (anyMarked && !arrayRE->markedForReturn) continue;
-    auto snapIt = arraySnapshotMap.find(arrayRE->id);
-    if (snapIt == arraySnapshotMap.end())
-      continue; // large array, not tracked
-    const std::vector<float> &snapshot = snapIt->second;
+
+    if (arrayRE->markedForReturn) {
+      // RETURN()-marked arrays are delivered via binaryReturnArrayFiles()
+      // instead (a raw float32 file dump read directly off arrayValue->val),
+      // since they are commonly far too large (millions of elements) for a
+      // point-value map / JSON payload to be practical. Skip here entirely
+      // so we never build a giant std::unordered_map for them.
+      continue;
+    }
+    if (anyMarked) continue; // RETURN() was called: only marked arrays are returned
 
     ArrayDataContainerValue *pArrayDataContainerValueValue =
         (ArrayDataContainerValue *)(arrayRE->getVal());
     ArrayValue *arrayValue = pArrayDataContainerValueValue->arrayValue;
     int size = arrayValue->totalSize;
+
+    auto snapIt = arraySnapshotMap.find(arrayRE->id);
+    if (snapIt == arraySnapshotMap.end())
+      continue; // large array, not tracked
+    const std::vector<float> &snapshot = snapIt->second;
     int compareSize = (int)snapshot.size() < size ? (int)snapshot.size() : size;
 
     std::unordered_map<std::string, double> *arrChangeMap1 =
@@ -173,6 +193,39 @@ Processor::arrChangeMap() {
       arrChangeMap->insert(std::make_pair(arrayRE->id, arrChangeMap1));
   }
   return arrChangeMap;
+}
+
+std::unordered_map<std::string, std::string> *
+Processor::binaryReturnArrayFiles() {
+  auto *files = new std::unordered_map<std::string, std::string>();
+
+  const char *tmpDirEnv = std::getenv("TMPDIR");
+  std::string tmpDir = (tmpDirEnv != nullptr) ? tmpDirEnv : "/tmp";
+  if (!tmpDir.empty() && tmpDir.back() != '/') tmpDir += '/';
+
+  for (RuleEngineInputUnits *u : arrayREs) {
+    ArrayRE *arrayRE = (ArrayRE *)u;
+    if (!arrayRE->markedForReturn) continue;
+
+    ArrayDataContainerValue *pArrayDataContainerValueValue =
+        (ArrayDataContainerValue *)(arrayRE->getVal());
+    ArrayValue *arrayValue = pArrayDataContainerValueValue->arrayValue;
+
+    // Path is scoped by pid + array id so concurrent worker threads (each in
+    // their own JVM process) never collide; the caller (worker) uploads and
+    // deletes this file immediately after the run, so it is never read back
+    // from this process again.
+    std::string path = tmpDir + "ramanujan_ret_" + std::to_string(getpid()) +
+                        "_" + arrayRE->id + ".bin";
+    FILE *f = fopen(path.c_str(), "wb");
+    if (f == nullptr) continue;
+    fwrite(arrayValue->val, sizeof(float), arrayValue->totalSize, f);
+    fclose(f);
+
+    files->insert(std::make_pair(arrayRE->id, path));
+  }
+
+  return files;
 }
 
 void Processor::fixOperator(

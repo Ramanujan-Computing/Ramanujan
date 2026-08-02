@@ -23,6 +23,10 @@ public class ExecutorImpl implements Operation {
     // Static maps to store variables and arrays for querying after execution
     public static final Map<String, Object> variableStore = new java.util.concurrent.ConcurrentHashMap<>();
     public static final Map<String, Map<String, Object>> arrayStore = new java.util.concurrent.ConcurrentHashMap<>();
+    // Name -> local file path of a raw float32 binary file, for large RETURN()-marked
+    // arrays that were transferred out-of-band (via binary upload) instead of being
+    // built into an in-memory point-value map. Checked first by dump handling.
+    public static final Map<String, String> binaryArrayFileStore = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     public void execute(List<String> args) throws IOException {
@@ -281,6 +285,19 @@ public class ExecutorImpl implements Operation {
         if (variableMap != null) variableStore.putAll(variableMap);
         arrayStore.clear();
         if (arrayMap != null) arrayStore.putAll(arrayMap);
+    }
+
+    /**
+     * Set the binary-file-backed array store (name -> local raw float32 file path).
+     * Deletes files left over from the previous run before replacing the store,
+     * since each run's dump values are only ever needed until the next run starts.
+     */
+    public static void setBinaryArrayFileStore(Map<String, String> binaryArrayMap) {
+        for (String oldPath : binaryArrayFileStore.values()) {
+            try { new java.io.File(oldPath).delete(); } catch (Exception ignored) {}
+        }
+        binaryArrayFileStore.clear();
+        if (binaryArrayMap != null) binaryArrayFileStore.putAll(binaryArrayMap);
     }
 
     public static CodeRunRequest createJson(List<String> args) throws JsonProcessingException {

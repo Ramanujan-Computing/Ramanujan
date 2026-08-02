@@ -77,6 +77,22 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
 
     env->CallObjectMethod(map, putMethod, env->NewStringUTF("arrayIndex"), arrayMapMap);
 
+    // RETURN()-marked arrays are delivered as arrayId -> local temp file path
+    // (raw float32 bytes) instead of point-value maps, since they are commonly
+    // far too large (millions of elements) to ship efficiently as JSON. This is
+    // a small map (just the marked arrays), so no per-element JNI overhead here.
+    std::unordered_map<std::string, std::string> *binaryArrayFiles = processor->binaryReturnArrayFiles();
+    jobject binaryArrayFilesMap = env->NewObject(mapClass, mapConstructor);
+    for (auto const &x : *binaryArrayFiles) {
+        jstring key = env->NewStringUTF(x.first.c_str());
+        jstring value = env->NewStringUTF(x.second.c_str());
+        env->CallObjectMethod(binaryArrayFilesMap, putMethod, key, value);
+        env->DeleteLocalRef(key);
+        env->DeleteLocalRef(value);
+    }
+    env->CallObjectMethod(map, putMethod, env->NewStringUTF("binaryArrayFiles"), binaryArrayFilesMap);
+    delete binaryArrayFiles;
+
     // return map via jni
 
     // Step 1: Get the class reference

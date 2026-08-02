@@ -22,6 +22,10 @@ class Processor {
         ~Processor();
     std::unordered_map<std::string, double>* varChangeMap();
     std::unordered_map<std::string, std::unordered_map<std::string, double>*>* arrChangeMap();
+    // For RETURN()-marked arrays: writes each array's raw float32 contents to a
+    // local temp file and returns arrayId -> filePath. Used instead of arrChangeMap()
+    // for marked arrays, since they are commonly too large for a point-value map.
+    std::unordered_map<std::string, std::string>* binaryReturnArrayFiles();
     std::list<RuleEngineInputUnits*>& getArrayREs() { return arrayREs; }
     std::list<RuleEngineInputUnits*>& getVariableREs() { return variableREs; }
     

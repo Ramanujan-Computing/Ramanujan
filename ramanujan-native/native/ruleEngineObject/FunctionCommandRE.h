@@ -277,6 +277,8 @@ enum BuiltInFunctions {
   EXP,          // Exponential function (e^x)
   GPU_SYNC,     // GPU explicit sync (GPU → CPU)
   GPU_LOAD,     // GPU explicit load (CPU → GPU)
+  RELEASE_MEM_ENUM, // GPU explicit buffer release
+  LOAD_MEM_ENUM,    // GPU explicit buffer (re)allocation + upload
   RETURN_ARRAYS_ENUM, // Selective array return
 };
 
@@ -786,6 +788,76 @@ public:
 };
 
 /**
+ * GPU Memory Release Function.
+ * Releases the GPU-side buffer (cl_mem) backing an array, freeing GPU/unified
+ * memory immediately. Intended for immutable arrays (e.g. 4-bit packed
+ * weights, scale tables) that are not needed again until explicitly reloaded.
+ *
+ * Usage:
+ * - RELEASE_MEM(array) - Frees the array's GPU buffer. The array's host-side
+ *   (CPU) data is untouched, so it can be re-uploaded later with LOAD_MEM (or
+ *   lazily re-created the next time a GPU kernel uses it as an argument).
+ *   GPU_LOAD is NOT sufficient to bring it back — GPU_LOAD only writes into
+ *   an already-existing buffer, it does not allocate one.
+ *
+ * IMPORTANT: Only call this for an array once it is truly done being used on
+ * the GPU for the remainder of the run (or at least until the next
+ * LOAD_MEM). Calling RELEASE_MEM + LOAD_MEM repeatedly on the same array
+ * inside a hot loop (e.g. once per decode step) trades memory for a reload
+ * every iteration and can be slower than just keeping the buffer resident -
+ * prefer releasing once, near the end of execution, for weights that will
+ * not be touched again.
+ */
+class RELEASE_MEM : public BuiltInFunctionsImpl {
+  ArrayRE *targetArray = nullptr;
+public:
+  RELEASE_MEM(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+  void setFields(
+      std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+    if (functionCommandInfo->argumentsSize >= 1) {
+      targetArray =
+          dynamic_cast<ArrayRE *>(map->at(functionCommandInfo->arguments[0]));
+    }
+  }
+
+  RuleEngineInputUnits *process() override;
+};
+
+/**
+ * GPU Memory (Re)Load Function.
+ * Forcibly (re)creates the GPU buffer for an array from its current host
+ * data, uploading synchronously. Unlike GPU_LOAD (which only writes into an
+ * already-existing cl_mem), LOAD_MEM allocates a brand-new buffer, so it is
+ * the correct counterpart to RELEASE_MEM for bringing a released array back
+ * onto the GPU before it is needed again.
+ *
+ * Usage:
+ * - LOAD_MEM(array) - Allocates a GPU buffer for the array (if one doesn't
+ *   already exist) and uploads the current host-side data into it.
+ *
+ * Note: calling a GPU kernel with this array as an argument will also lazily
+ * recreate the buffer if needed, so an explicit LOAD_MEM call is only
+ * required when you want the upload to happen eagerly (e.g. to overlap it
+ * with other work) rather than right before the next kernel dispatch.
+ */
+class LOAD_MEM : public BuiltInFunctionsImpl {
+  ArrayRE *targetArray = nullptr;
+public:
+  LOAD_MEM(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+  void setFields(
+      std::unordered_map<std::string, RuleEngineInputUnits *> *map) override {
+    if (functionCommandInfo->argumentsSize >= 1) {
+      targetArray =
+          dynamic_cast<ArrayRE *>(map->at(functionCommandInfo->arguments[0]));
+    }
+  }
+
+  RuleEngineInputUnits *process() override;
+};
+
+/**
  * Selective Array Return Directive.
  * Marks specified arrays so that Processor::arrChangeMap() returns only those
  * arrays instead of all modified arrays.
@@ -849,6 +921,7 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
   bool gpuBufferError = false;
   bool gpuZeroWorkSize = false;
   bool gpuBufferReallocated = false;
+  bool gpuSharedBufferReleased = false;
   size_t gpuNeeded = 0;
   cl_int gpuSetErr = CL_SUCCESS;
 
@@ -868,7 +941,15 @@ public:
     }
     for (int _i = 0; _i < maxArgSize; _i++) {
       if (gpuBuffers[_i]) {
-        clReleaseMemObject(gpuBuffers[_i]);
+        // If RELEASE_MEM already released this array's shared buffer, our
+        // local handle is stale — releasing it again would double-free.
+        bool stillOwnedByArray =
+            (_i < gpuDataArgCount) && (gpuAvCache[_i] != nullptr) &&
+            (gpuAvCache[_i]->gpuBuffer == (void *)gpuBuffers[_i]);
+        if (stillOwnedByArray || _i >= gpuDataArgCount ||
+            gpuAvCache[_i] == nullptr) {
+          clReleaseMemObject(gpuBuffers[_i]);
+        }
         gpuBuffers[_i] = nullptr;
       }
     }
@@ -964,6 +1045,10 @@ static FunctionCommandRE *GetFunctionCommandRE(
     return new class GPU_SYNC(functionCommand);
   } else if (id == "GPU_LOAD") {
     return new class GPU_LOAD(functionCommand);
+  } else if (id == "RELEASE_MEM") {
+    return new class RELEASE_MEM(functionCommand);
+  } else if (id == "LOAD_MEM") {
+    return new class LOAD_MEM(functionCommand);
   } else if (id == "RETURN") {
     return new RETURN_ARRAYS(functionCommand);
   }

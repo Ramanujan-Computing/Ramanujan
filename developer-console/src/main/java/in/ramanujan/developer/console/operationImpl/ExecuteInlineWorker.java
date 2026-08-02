@@ -139,6 +139,27 @@ public class ExecuteInlineWorker implements Operation {
                             + "  result keys=" + results.keySet());
                 }
 
+                // RETURN()-marked arrays too large for a JSON point-value map arrive here
+                // as arrayId -> local temp file path (raw little-endian float32 bytes).
+                // Upload each one's bytes directly, then strip the (worker-local, otherwise
+                // meaningless) paths out of the JSON payload before reporting completion.
+                Object binaryFilesObj = results.remove("binaryArrayFiles");
+                if (binaryFilesObj instanceof Map) {
+                    Map<String, String> binaryFiles = (Map<String, String>) binaryFilesObj;
+                    for (Map.Entry<String, String> be : binaryFiles.entrySet()) {
+                        String arrayId  = be.getKey();
+                        String filePath = be.getValue();
+                        try {
+                            uploadBinaryFile(serverUrl, uuid, arrayId, filePath);
+                        } catch (Exception uploadEx) {
+                            System.err.println("[Worker] failed to upload binary array " + arrayId
+                                    + " for task " + uuid + ": " + uploadEx.getMessage());
+                        } finally {
+                            new File(filePath).delete();
+                        }
+                    }
+                }
+
                 // Submit results back to homelab server
                 Map<String, Object> payload = new LinkedHashMap<>();
                 payload.put("uuid",   uuid);
@@ -149,9 +170,49 @@ public class ExecuteInlineWorker implements Operation {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
-            } catch (Exception e) {
-                System.err.println("[Worker] error: " + e.getMessage());
+            } catch (Throwable t) {
+                // Catch Throwable (not just Exception) so fatal errors like OutOfMemoryError
+                // are logged instead of silently killing this thread: workerLoop() runs
+                // inside pool.submit(), whose returned Future is never .get()'d, so an
+                // uncaught Error here would otherwise vanish with no diagnostic output.
+                System.err.println("[Worker] error: " + t);
+                t.printStackTrace();
             }
+        }
+    }
+
+    /** Uploads the full contents of a RETURN()-marked array as raw bytes (not JSON). */
+    private void uploadBinaryFile(String serverUrl, String uuid, String arrayId, String filePath) throws Exception {
+        byte[] data = readAllBytes(filePath);
+        String url = serverUrl + "/orchestrator/uploadBinary?uuid=" + URLEncoder.encode(uuid, "UTF-8")
+                + "&arrayId=" + URLEncoder.encode(arrayId, "UTF-8");
+
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/octet-stream");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(120_000);
+        conn.setFixedLengthStreamingMode(data.length);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(data);
+        }
+
+        int code = conn.getResponseCode();
+        InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
+        if (is != null) is.close();
+        if (code >= 400) {
+            throw new IOException("uploadBinary for arrayId=" + arrayId + " failed with HTTP " + code);
+        }
+    }
+
+    private static byte[] readAllBytes(String filePath) throws IOException {
+        try (InputStream is = new FileInputStream(filePath)) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+            return baos.toByteArray();
         }
     }
 

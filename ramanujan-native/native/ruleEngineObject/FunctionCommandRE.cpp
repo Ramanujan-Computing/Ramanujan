@@ -698,14 +698,23 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
       continue;
     }
 
+    // The shared ArrayValue buffer is absent — either never allocated, or
+    // released externally via RELEASE_MEM. In the latter case this kernel's
+    // locally cached gpuBuffers[di] handle is stale and was already
+    // destroyed by whoever cleared gpuAvCache[di]->gpuBuffer, so it must NOT
+    // be released again here (that would be a double-free).
+    gpuSharedBufferReleased = (gpuAvCache[di]->gpuBuffer == nullptr);
+
     // Normal path: allocate buffer or re-upload host data.
     gpuBufferReallocated = false;
-    if (!gpuBuffers[di] || gpuBufferSizes[di] != gpuNeeded) {
-      if (gpuBuffers[di]) {
+    if (!gpuBuffers[di] || gpuBufferSizes[di] != gpuNeeded ||
+        gpuSharedBufferReleased) {
+      if (gpuBuffers[di] && !gpuSharedBufferReleased) {
         clReleaseMemObject(gpuBuffers[di]);
-        gpuBuffers[di] = nullptr;
       }
-      
+      gpuBuffers[di] = nullptr;
+      gpuBufferSizes[di] = 0;
+
       cl_mem_flags flags = CL_MEM_READ_WRITE;
       if (gpuAvCache[di]->isBinaryLoaded) {
           flags |= CL_MEM_USE_HOST_PTR; // ZERO-COPY for weights
@@ -1284,6 +1293,54 @@ RuleEngineInputUnits *GPU_LOAD::process() {
     } else {
       fprintf(stderr, "[GPU_LOAD] no gpuBuffer yet (val[0]=%.1f), skipped\n",
               arrayValue ? arrayValue->val[0] : -999.0f);
+    }
+  }
+#endif
+  return nextUnit;
+}
+
+RuleEngineInputUnits *RELEASE_MEM::process() {
+#ifdef GPU_ENABLED
+  if (targetArray != nullptr) {
+    ArrayValue *arrayValue = targetArray->arrayValue.arrayValue;
+    if (arrayValue != nullptr && arrayValue->gpuBuffer != nullptr) {
+      // GPU kernel dispatch is async/non-blocking (see GPU_SYNC design), so
+      // the kernels that read this buffer may still be in flight. Drain the
+      // queue first — releasing an in-use buffer here would free memory the
+      // GPU is still reading, corrupting results (e.g. garbage output).
+      clFinish(s_clCtx.queue);
+      clReleaseMemObject((cl_mem)arrayValue->gpuBuffer);
+      arrayValue->gpuBuffer = nullptr;
+      arrayValue->gpuBufferBytes = 0;
+    }
+  }
+#endif
+  return nextUnit;
+}
+
+RuleEngineInputUnits *LOAD_MEM::process() {
+#ifdef GPU_ENABLED
+  if (targetArray != nullptr) {
+    ArrayValue *arrayValue = targetArray->arrayValue.arrayValue;
+    if (arrayValue != nullptr && arrayValue->gpuBuffer == nullptr) {
+      s_clCtx.init();
+      if (!s_clCtx.available) {
+        fprintf(stderr, "[LOAD_MEM] OpenCL unavailable – skipped\n");
+        return nextUnit;
+      }
+      size_t needed = (size_t)arrayValue->totalSize * sizeof(float);
+      cl_mem_flags flags = CL_MEM_READ_WRITE;
+      flags |= arrayValue->isBinaryLoaded ? CL_MEM_USE_HOST_PTR
+                                          : CL_MEM_COPY_HOST_PTR;
+      cl_int err;
+      cl_mem buf = clCreateBuffer(s_clCtx.context, flags, needed,
+                                  arrayValue->val, &err);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "[LOAD_MEM] clCreateBuffer failed: %d\n", err);
+        return nextUnit;
+      }
+      arrayValue->gpuBuffer = buf;
+      arrayValue->gpuBufferBytes = needed;
     }
   }
 #endif
