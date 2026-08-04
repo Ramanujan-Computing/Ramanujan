@@ -44,6 +44,11 @@ class FunctionCall : public RuleEngineInputUnit {
          */
         int gpuWorkDimArgIndex = -1;
 
+        std::string classOwner;
+        std::string objectHandleId;
+        /** Call-site: objectHandleIds for object-typed parameters, in ObjectHandleArg definition order. */
+        std::vector<std::string> callerObjectHandleIds;
+
         FunctionCall(Json::Value* value) {
             this->id = (*value)["id"].asString();
             this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
@@ -72,6 +77,17 @@ class FunctionCall : public RuleEngineInputUnit {
             }
             if (!(*value)["gpuWorkDimArgIndex"].isNull() && (*value)["gpuWorkDimArgIndex"].isInt()) {
                 this->gpuWorkDimArgIndex = (*value)["gpuWorkDimArgIndex"].asInt();
+            }
+            if (!(*value)["classOwner"].isNull() && (*value)["classOwner"].isString()) {
+                this->classOwner = (*value)["classOwner"].asString();
+            }
+            if (!(*value)["objectHandleId"].isNull() && (*value)["objectHandleId"].isString()) {
+                this->objectHandleId = (*value)["objectHandleId"].asString();
+            }
+            if (!(*value)["callerObjectHandleIds"].isNull() && (*value)["callerObjectHandleIds"].isArray()) {
+                for (int i = 0; i < (int)(*value)["callerObjectHandleIds"].size(); i++) {
+                    this->callerObjectHandleIds.push_back((*value)["callerObjectHandleIds"][i].asString());
+                }
             }
         }
 

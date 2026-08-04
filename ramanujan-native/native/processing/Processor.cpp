@@ -9,6 +9,7 @@
 #include "../ruleEngineObject/ConditionRE.h"
 #include "../ruleEngineObject/DataContainerValueFunctionCommandREMemMaintainer.h"
 #include "../ruleEngineObject/FunctionCommandRE.h"
+#include "../ruleEngineObject/ObjectInstanceStore.h"
 #include "../ruleEngineObject/IfRE.h"
 #include "../ruleEngineObject/OperationRE.h"
 #include "../ruleEngineObject/WhileRE.h"
@@ -26,14 +27,14 @@ Processor::~Processor() {
   // Without this, every JNI kernel call leaks ~1-2 GB of native heap (the
   // weight arrays), causing the JVM to crash after ~20 layers as native memory
   // is exhausted.
-  for (RuleEngineInputUnits *u : arrayREs) {
-    ArrayRE *ar = static_cast<ArrayRE *>(u);
-    ArrayDataContainerValue *adcv =
-        static_cast<ArrayDataContainerValue *>(ar->getVal());
-    if (adcv && adcv->arrayValue) {
-      adcv->arrayValue->destroy();
-    }
-  }
+//  for (RuleEngineInputUnits *u : arrayREs) {
+//    ArrayRE *ar = static_cast<ArrayRE *>(u);
+//    ArrayDataContainerValue *adcv =
+//        static_cast<ArrayDataContainerValue *>(ar->getVal());
+//    if (adcv && adcv->arrayValue) {
+//      adcv->arrayValue->destroy();
+//    }
+//  }
   arrayREs.clear();
   variableREs.clear();
 }
@@ -45,6 +46,13 @@ Processor::process(RuleEngineInput ruleEngineInput,
   // Create memory maintainer for efficient function call memory management
   DataContainerValueFunctionCommandREMemMaintainer *memMaintainer =
       new DataContainerValueFunctionCommandREMemMaintainer();
+
+  // Register class definitions before processing so CommandRE can find them
+  ObjectInstanceStore::clear();
+  ObjectInstanceStore::clearClasses();
+  for (auto* cd : *ruleEngineInput.classDefinitions) {
+    ObjectInstanceStore::registerClass(cd);
+  }
 
   std::unordered_map<std::string, RuleEngineInputUnits *>
       *mapBetweenIdAndRuleInput = createMap(ruleEngineInput);
@@ -115,6 +123,7 @@ Processor::process(RuleEngineInput ruleEngineInput,
   }
 
   delete memMaintainer;
+  ObjectInstanceStore::clear();
   return new std::unordered_map<std::string, ProcessingResult>();
 }
 
@@ -206,6 +215,7 @@ Processor::createMap(RuleEngineInput ruleEngineInput) {
   storeInIdMap(map, ruleEngineInput.commands);
   storeInIdMap(map, ruleEngineInput.redefineArrayCommands);
   storeInIdMap(map, ruleEngineInput.returnOperations);
+  storeInIdMap(map, ruleEngineInput.objectHandleArgs);
   return map;
 }
 
@@ -363,6 +373,14 @@ void Processor::storeInIdMap(
     std::vector<ReturnOperation *> *list1) {
   for (std::vector<ReturnOperation *>::iterator itr = list1->begin();
        itr != list1->end(); itr++) {
+    pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
+  }
+}
+
+void Processor::storeInIdMap(
+    std::unordered_map<std::string, RuleEngineInputUnits *> *pMap,
+    std::vector<ObjectHandleArg *> *list1) {
+  for (auto itr = list1->begin(); itr != list1->end(); ++itr) {
     pMap->insert(std::make_pair((*itr)->id, (*itr)->getInternalAnalogy()));
   }
 }

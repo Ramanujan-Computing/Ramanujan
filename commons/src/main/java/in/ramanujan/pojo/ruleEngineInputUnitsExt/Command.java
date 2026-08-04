@@ -28,6 +28,19 @@ public class Command extends RuleEngineInputUnits {
     private List<String> returnTargetIds;
     private String returnOperation;
     private List<ReturnAssignmentPair> returnAssignmentPairs;
+    private NewObjectCommand newObjectCommand;
+    private DeleteObjectCommand deleteObjectCommand;
+
+    @Data
+    public static class NewObjectCommand {
+        private String className;
+        private String objectHandleId;
+    }
+
+    @Data
+    public static class DeleteObjectCommand {
+        private String objectHandleId;
+    }
 
     public Command() {
         setClazz(Command.class);

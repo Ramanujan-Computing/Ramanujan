@@ -20,6 +20,8 @@ class ReturnRE;
 class Command;
 class FunctionCommandRE;
 class ConditionRE;
+class NewObjectCommandRE;
+class DeleteObjectCommandRE;
 
 class CommandRE : public RuleEngineInputUnits {
 private:
@@ -47,6 +49,8 @@ private:
 public:
     bool returnStatement = false;  // Made public for If/While blocks to check
     FunctionCommandRE* functionCommandRE = nullptr;
+    NewObjectCommandRE* newObjectCommandRE = nullptr;
+    DeleteObjectCommandRE* deleteObjectCommandRE = nullptr;
     //TODO: can we save all variables in an array and variableVal be nothing but just an index to that array?
 
 

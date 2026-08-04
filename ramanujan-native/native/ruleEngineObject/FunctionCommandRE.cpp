@@ -346,12 +346,17 @@ void FunctionCommandRE::setFields(
    * LOCAL VARIABLE AND ARRAY ANALYSIS:
    * Analyze all variables and arrays declared within the function scope
    * (including both parameters and local declarations) to set up complete
-   * variable management.
+   * variable management. ObjectHandleArgRE entries are handled separately.
    */
   std::list<DataContainerValue *> methodArgDataContainerAddrList;
 
   for (int i = 0; i < functionInfoRE->functionCall->allVariablesInMethodSize;
        i++) {
+    // ObjectHandleArgRE is not an AbstractDataContainer — skip it here.
+    if (dynamic_cast<ObjectHandleArgRE*>(functionInfoRE->allVariablesInMethod[i]) != nullptr) {
+      continue;
+    }
+
     AbstractDataContainer *dataContainer =
         dynamic_cast<AbstractDataContainer *>(
             functionInfoRE->allVariablesInMethod[i]);
@@ -370,8 +375,6 @@ void FunctionCommandRE::setFields(
    * Set up arrays for managing all variables and arrays in function scope.
    */
   totalDataContainerCount = totalVarCount + totalArrCount;
-  // methodArgDataContainerAddr = new
-  // DataContainerValue*[totalDataContainerCount];
 
   /**
    * POPULATE COMPLETE VARIABLE ADDRESS MAPPING:
@@ -381,6 +384,59 @@ void FunctionCommandRE::setFields(
     methodArgDataContainerAddr[i] = methodArgDataContainerAddrList.front();
     methodArgDataContainerAddrList.pop_front();
   }
+}
+
+// ==================== ObjectArgFunctionCommandRE ====================
+
+void ObjectArgFunctionCommandRE::setFields(
+    std::unordered_map<std::string, RuleEngineInputUnits*>* map) {
+  FunctionCommandRE::setFields(map);
+
+  for (int i = 0; i < functionInfoRE->functionCall->allVariablesInMethodSize; i++) {
+    ObjectHandleArgRE* ohar = dynamic_cast<ObjectHandleArgRE*>(functionInfoRE->allVariablesInMethod[i]);
+    if (ohar != nullptr) {
+      objectHandleArgREs.push_back(ohar);
+    }
+  }
+
+  const auto& callerIds = functionCommandInfo->callerObjectHandleIds;
+  for (int i = 0; i < (int)objectHandleArgREs.size(); i++) {
+    if (i < (int)callerIds.size()) {
+      auto it = map->find(callerIds[i]);
+      if (it != map->end()) {
+        ObjectHandleArgRE* callerRE = dynamic_cast<ObjectHandleArgRE*>(it->second);
+        callerObjectHandleArgREs.push_back(callerRE);
+        callerObjectHandleLiteralIds.push_back(callerIds[i]);
+      } else {
+        callerObjectHandleArgREs.push_back(nullptr);
+        callerObjectHandleLiteralIds.push_back(callerIds[i]);
+      }
+    } else {
+      callerObjectHandleArgREs.push_back(nullptr);
+      callerObjectHandleLiteralIds.push_back("");
+    }
+  }
+}
+
+RuleEngineInputUnits* ObjectArgFunctionCommandRE::process() {
+  // Phase 0.5: save current object handle IDs and install caller's bindings.
+  std::vector<std::string> savedObjectHandleIds(objectHandleArgREs.size());
+  for (int i = 0; i < (int)objectHandleArgREs.size(); i++) {
+    savedObjectHandleIds[i] = objectHandleArgREs[i]->get();
+    std::string callerId = (callerObjectHandleArgREs[i] != nullptr)
+                           ? callerObjectHandleArgREs[i]->get()
+                           : callerObjectHandleLiteralIds[i];
+    objectHandleArgREs[i]->set(callerId);
+  }
+
+  RuleEngineInputUnits* result = FunctionCommandRE::process();
+
+  // Phase 5.5: restore object handle IDs.
+  for (int i = 0; i < (int)objectHandleArgREs.size(); i++) {
+    objectHandleArgREs[i]->set(savedObjectHandleIds[i]);
+  }
+
+  return result;
 }
 
 /**
@@ -1266,6 +1322,93 @@ RuleEngineInputUnits *GPU_SYNC::process() {
   }
 #endif
   return nextUnit;
+}
+
+// ==================== ClassBasedFunctionCommandRE ====================
+
+void ClassBasedFunctionCommandRE::setFields(
+    std::unordered_map<std::string, RuleEngineInputUnits*>* map) {
+    ObjectArgFunctionCommandRE::setFields(map);
+
+    objectHandleId = functionCommandInfo->objectHandleId;
+
+    // If objectHandleId refers to an ObjectHandleArgRE (object-typed param), store its pointer
+    // for dynamic UUID resolution at process() time.
+    auto it = map->find(objectHandleId);
+    if (it != map->end()) {
+        objectHandleArgRE = dynamic_cast<ObjectHandleArgRE*>(it->second);
+    }
+
+    // Always use classOwner from the method definition to select field vars.
+    // With inheritance, the receiver's declared type may differ from the defining class.
+    std::string className = functionInfoRE->functionCall->classOwner;
+
+    ClassDefinition* classDef = ObjectInstanceStore::getClass(className);
+    if (!classDef) return;
+
+    for (const auto& fn : classDef->scalarFieldNames) {
+        std::string varId = "class_" + className + "_" + fn + "_var";
+        auto mapIt = map->find(varId);
+        if (mapIt != map->end()) {
+            scalarFieldVars.push_back(dynamic_cast<VariableRE*>(mapIt->second));
+        }
+    }
+
+    for (const auto& fn : classDef->arrayFieldNames) {
+        std::string arrId = "class_" + className + "_" + fn + "_arr";
+        auto mapIt = map->find(arrId);
+        if (mapIt != map->end()) {
+            arrayFieldVars.push_back(dynamic_cast<ArrayRE*>(mapIt->second));
+        }
+    }
+}
+
+RuleEngineInputUnits* ClassBasedFunctionCommandRE::process() {
+    // Resolve the actual object handle at call time (may be dynamic via ObjectHandleArgRE).
+    std::string resolvedHandleId = objectHandleArgRE
+        ? objectHandleArgRE->get()
+        : objectHandleId;
+
+    // Recursive self-call: field vars are already live from the outermost call;
+    // skip the slot-swap phases to let the live values flow through unchanged.
+    if (resolvedHandleId == "__self__") {
+        return ObjectArgFunctionCommandRE::process();
+    }
+
+    ObjectInstance* inst = ObjectInstanceStore::get(resolvedHandleId);
+    if (!inst) return nextUnit;
+
+    // Phase 0: save field var values; wire object slot values → field vars
+    std::vector<double> savedScalars(scalarFieldVars.size());
+    std::vector<ArrayValue*> savedArrayPtrs(arrayFieldVars.size());
+
+    for (int i = 0; i < (int)scalarFieldVars.size(); i++) {
+        savedScalars[i] = static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value;
+        static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value =
+            inst->scalarSlotValues[i];
+    }
+
+    for (int i = 0; i < (int)arrayFieldVars.size(); i++) {
+        savedArrayPtrs[i] = arrayFieldVars[i]->arrayValue.arrayValue;
+        arrayFieldVars[i]->arrayValue.arrayValue = inst->arraySlotValues[i];
+    }
+
+    // Execute ObjectArgFunctionCommandRE (phases 0.5, 1-6, 5.5)
+    RuleEngineInputUnits* result = ObjectArgFunctionCommandRE::process();
+
+    // Phase 7: copy back field var values → object slots; restore field vars
+    for (int i = 0; i < (int)scalarFieldVars.size(); i++) {
+        inst->scalarSlotValues[i] =
+            static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value;
+        static_cast<DoublePtr*>(scalarFieldVars[i]->valPtr)->value = savedScalars[i];
+    }
+
+    for (int i = 0; i < (int)arrayFieldVars.size(); i++) {
+        // Slot array was modified in-place; restore field var's original pointer.
+        arrayFieldVars[i]->arrayValue.arrayValue = savedArrayPtrs[i];
+    }
+
+    return result;
 }
 
 RuleEngineInputUnits *GPU_LOAD::process() {

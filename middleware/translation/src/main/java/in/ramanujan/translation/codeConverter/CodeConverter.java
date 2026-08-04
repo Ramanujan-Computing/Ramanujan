@@ -6,6 +6,7 @@ import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Command;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.MethodDataTypeAgnosticArg;
+import in.ramanujan.pojo.ruleEngineInputUnitsExt.ObjectHandleArg;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.translation.codeConverter.constants.CodeToken;
@@ -28,6 +29,11 @@ public class CodeConverter {
     private Map<String, Array> arrayMap;
     private Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap;
     private Map<String, String> csvDataMap;
+    // Maps variable name → [objectHandleId, className] for OOP object tracking
+    private Map<String, String> objectHandleMap = new HashMap<>();
+    private Map<String, String> objectClassMap = new HashMap<>();
+    // Maps scoped param name → ObjectHandleArg for object-typed function parameters
+    private Map<String, ObjectHandleArg> objectHandleArgMap = new HashMap<>();
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
 //        return variable;
@@ -91,6 +97,41 @@ public class CodeConverter {
 
     public void setArrayMap(Map<String, Array> map) {
         this.arrayMap = map;
+    }
+
+    public void registerObject(String varName, String objectHandleId, String className) {
+        objectHandleMap.put(varName, objectHandleId);
+        objectClassMap.put(varName, className);
+    }
+
+    /** Returns [objectHandleId, className] for the given variable name, or null if not an object. */
+    public String[] getObjectInfo(String varName) {
+        String handleId = objectHandleMap.get(varName);
+        if (handleId == null) return null;
+        return new String[]{handleId, objectClassMap.get(varName)};
+    }
+
+    public void removeObject(String varName) {
+        objectHandleMap.remove(varName);
+        objectClassMap.remove(varName);
+    }
+
+    public Map<String, ObjectHandleArg> getObjectHandleArgMap() {
+        return objectHandleArgMap;
+    }
+
+    /** Register an object-typed param under scope+paramName (mirrors setMethodDataTypeAgnosticArgMap). */
+    public void setObjectHandleArgMap(ObjectHandleArg arg, String paramName, String scope) {
+        objectHandleArgMap.put(scope + paramName, arg);
+    }
+
+    /** Looks up an object-typed param by name across all scopes. Returns null if not found. */
+    public ObjectHandleArg getObjectHandleArg(String paramName, List<String> variableScope) {
+        for (int i = variableScope.size() - 1; i >= 0; i--) {
+            ObjectHandleArg arg = objectHandleArgMap.get(variableScope.get(i) + paramName);
+            if (arg != null) return arg;
+        }
+        return objectHandleArgMap.get(paramName);
     }
 
     public List<Command> interpret(String code, RuleEngineInput ruleEngineInput, List<String> variableScope,

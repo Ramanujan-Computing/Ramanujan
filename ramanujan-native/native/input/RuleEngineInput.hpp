@@ -16,6 +16,8 @@
 #include "RedefineArrayCommand.hpp"
 #include "Return.hpp"
 #include "ReturnOperation.hpp"
+#include "ClassDefinition.hpp"
+#include "ObjectHandleArg.hpp"
 
 #include <json/json.h>
 
@@ -35,6 +37,8 @@ class RuleEngineInput {
         std::vector<While*> *whileBlocks = new std::vector<While*>();
         std::vector<RedefineArrayCommand*> *redefineArrayCommands = new std::vector<RedefineArrayCommand*>();
         std::vector<ReturnOperation*> *returnOperations = new std::vector<ReturnOperation*>();
+        std::vector<ClassDefinition*> *classDefinitions = new std::vector<ClassDefinition*>();
+        std::vector<ObjectHandleArg*> *objectHandleArgs = new std::vector<ObjectHandleArg*>();
 
         RuleEngineInput(Json::Value* value) {
             Json::Value variables = (*value)["variables"];
@@ -94,6 +98,16 @@ class RuleEngineInput {
             Json::Value returnOperations = (*value)["returnOperations"];
             for(int i = 0; i < returnOperations.size(); i++) {
                 this->returnOperations->push_back(new ReturnOperation(&returnOperations[i]));
+            }
+
+            Json::Value classDefinitions = (*value)["classDefinitions"];
+            for(int i = 0; i < classDefinitions.size(); i++) {
+                this->classDefinitions->push_back(new ClassDefinition(&classDefinitions[i]));
+            }
+
+            Json::Value objectHandleArgs = (*value)["objectHandleArgs"];
+            for(int i = 0; i < (int)objectHandleArgs.size(); i++) {
+                this->objectHandleArgs->push_back(new ObjectHandleArg(&objectHandleArgs[i]));
             }
         }
 };

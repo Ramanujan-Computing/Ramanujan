@@ -50,15 +50,25 @@ package in.ramanujan.translation.codeConverter.ast;
  */
 public class ArgNode {
     private String arg;
-    
-    public String getArg() { 
-        return arg; 
+    /** Optional type annotation class name (e.g. "Foo" from `param: Foo`). Null if absent. */
+    private String annotation;
+
+    public String getArg() {
+        return arg;
     }
-    
-    public void setArg(String arg) { 
-        this.arg = arg; 
+
+    public void setArg(String arg) {
+        this.arg = arg;
     }
-    
+
+    public String getAnnotation() {
+        return annotation;
+    }
+
+    public void setAnnotation(String annotation) {
+        this.annotation = annotation;
+    }
+
     @Override
     public String toString() {
         return "arg(arg='" + arg + "')";

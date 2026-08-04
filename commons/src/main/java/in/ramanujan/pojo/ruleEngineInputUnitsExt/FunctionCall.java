@@ -45,6 +45,15 @@ public class FunctionCall extends RuleEngineInputUnits {
      */
     private Integer gpuWorkDimArgIndex;
 
+    /** Non-null when this FunctionCall is a class method definition; value is the owning class name. */
+    private String classOwner;
+
+    /** Non-null at a call-site when this is a class method invocation; identifies the object instance. */
+    private String objectHandleId;
+
+    /** Call-site only: objectHandleIds for object-typed parameters, in ObjectHandleArg definition order. */
+    private List<String> callerObjectHandleIds;
+
     public FunctionCall() {
         setClazz(FunctionCall.class);
     }
