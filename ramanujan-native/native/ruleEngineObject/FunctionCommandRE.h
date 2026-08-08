@@ -926,6 +926,8 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
   size_t gpuNeeded = 0;
   cl_int gpuSetErr = CL_SUCCESS;
 
+  void runDispatchDiagnostics();
+
 public:
   GPUFunctionCommandRE(FunctionCall *functionCommand,
                        FunctionCallRE *functionInfo)

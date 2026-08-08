@@ -9,15 +9,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstdio>
-
-#ifdef __ANDROID__
-#include <android/log.h>
-#define RJ_ARR_LOG(...) \
-  __android_log_print(ANDROID_LOG_ERROR, "RamanujanGPU", __VA_ARGS__)
-#else
-#define RJ_ARR_LOG(...) fprintf(stderr, __VA_ARGS__)
-#endif
 
 
 // Global cache: binaryFilePath -> {float* data, int count}
@@ -67,11 +58,6 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
                 size_t fileSize = st.st_size;
                 fcount = (int)(fileSize / sizeof(float));
                 if (fcount > totalSize) fcount = totalSize;
-
-                // Confirms rebuild took effect AND reveals a truncated on-device .bin:
-                // if fcount < totalSize the file is short and the tail loads as zeros.
-                RJ_ARR_LOG("[ArrayValue] LOAD %s fileSize=%zu fcount=%d totalSize=%d\n",
-                           key.c_str(), fileSize, fcount, totalSize);
 
                 size_t mapSize = totalSize * sizeof(float);
                 if (mapSize == 0) mapSize = sizeof(float);

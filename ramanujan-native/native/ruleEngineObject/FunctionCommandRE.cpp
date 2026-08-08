@@ -89,6 +89,39 @@ static std::string gpuInfoString(cl_device_id deviceId,
   return value;
 }
 
+[[maybe_unused]] static void
+rjGpuLogDeviceInfo(cl_platform_id platform, cl_device_id device,
+                   cl_uint numPlatforms) {
+  std::string platformName = gpuInfoString(platform, CL_PLATFORM_NAME);
+  std::string deviceName = gpuInfoString(device, CL_DEVICE_NAME);
+  std::string deviceVendor = gpuInfoString(device, CL_DEVICE_VENDOR);
+  RJ_GPU_LOG("[GPU] OpenCL context initialised successfully "
+             "(platforms found: %u)\n",
+             numPlatforms);
+  RJ_GPU_LOG("[GPU] Selected platform: %s\n", platformName.c_str());
+  RJ_GPU_LOG("[GPU] Selected device: %s (%s)\n", deviceName.c_str(),
+             deviceVendor.c_str());
+}
+
+[[maybe_unused]] static void rjGpuLogDispatchState(bool zeroWorkSize,
+                                                   bool bufferError) {
+  if (zeroWorkSize)
+    RJ_GPU_LOG("[GPU-DBG] SKIPPING dispatch: zeroWorkSize\n");
+  if (bufferError)
+    RJ_GPU_LOG("[GPU-DBG] SKIPPING dispatch: bufferError\n");
+}
+
+[[maybe_unused]] static void
+rjGpuLogLoadDiagnostics(ArrayValue *arrayValue, bool attempted, cl_int err) {
+  if (attempted) {
+    RJ_GPU_LOG("[GPU_LOAD] uploaded %zu bytes, val[0]=%.1f, err=%d\n",
+               arrayValue->gpuBufferBytes, arrayValue->val[0], err);
+  } else {
+    RJ_GPU_LOG("[GPU_LOAD] no gpuBuffer yet (val[0]=%.1f), skipped\n",
+               arrayValue ? arrayValue->val[0] : -999.0f);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Logs the device memory/work-group limits and probes the single largest buffer
 // the Phi-3 kernel needs: logits_partial = 32064*3072 floats = 394 MB in ONE
@@ -96,7 +129,8 @@ static std::string gpuInfoString(cl_device_id deviceId,
 // below that, so this single clCreateBuffer can fail on-device while succeeding
 // on desktop — leaving the logits buffer unallocated/garbage → fixed argmax.
 // ---------------------------------------------------------------------------
-static void rjGpuLogDeviceLimits(cl_context ctx, cl_device_id dev) {
+[[maybe_unused]] static void rjGpuLogDeviceLimits(cl_context ctx,
+                                                  cl_device_id dev) {
   cl_ulong maxAlloc = 0, globalMem = 0;
   size_t maxWg = 0;
   clGetDeviceInfo(dev, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(maxAlloc), &maxAlloc,
@@ -129,8 +163,9 @@ static void rjGpuLogDeviceLimits(cl_context ctx, cl_device_id dev) {
 // logs both to logcat so the divide path can be compared against the exact one.
 // Remove once the dequant divergence is resolved.
 // ---------------------------------------------------------------------------
-static void rjGpuDequantSelfTest(cl_context ctx, cl_device_id dev,
-                                 cl_command_queue q) {
+[[maybe_unused]] static void rjGpuDequantSelfTest(cl_context ctx,
+                                                  cl_device_id dev,
+                                                  cl_command_queue q) {
   // Stresses the exact dequant recurrence used by the 4-bit matmul kernels,
   // against adversarial packed values that mirror the real down-projection
   // weights: large magnitudes (near 2^24) and exact nibble-boundary multiples
@@ -324,18 +359,10 @@ struct GpuContext {
     }
 
     available = true;
-    std::string platformName = gpuInfoString(platform, CL_PLATFORM_NAME);
-    std::string deviceName = gpuInfoString(device, CL_DEVICE_NAME);
-    std::string deviceVendor = gpuInfoString(device, CL_DEVICE_VENDOR);
-    RJ_GPU_LOG(
-            "[GPU] OpenCL context initialised successfully "
-            "(platforms found: %u)\n",
-            numPlatforms);
-    RJ_GPU_LOG("[GPU] Selected platform: %s\n", platformName.c_str());
-    RJ_GPU_LOG("[GPU] Selected device: %s (%s)\n", deviceName.c_str(),
-            deviceVendor.c_str());
-    rjGpuLogDeviceLimits(context, device);
-    rjGpuDequantSelfTest(context, device, queue);
+    // Optional startup diagnostics; enable when investigating GPU devices.
+    // rjGpuLogDeviceInfo(platform, device, numPlatforms);
+    // rjGpuLogDeviceLimits(context, device);
+    // rjGpuDequantSelfTest(context, device, queue);
   }
 
   ~GpuContext() {
@@ -844,6 +871,141 @@ void GPUFunctionCommandRE::setFields(
   }
 }
 
+void GPUFunctionCommandRE::runDispatchDiagnostics() {
+  if (gpuErr != CL_SUCCESS)
+    return;
+
+  static std::atomic<int> rjDispatchCounter{0};
+  int rjDisp = rjDispatchCounter.fetch_add(1);
+  const char *kn = gpuKernelName.c_str();
+  bool rjFull = rjDisp <= 12; // layer 0 (+ first kernel of layer 1)
+  bool rjResidual =
+      (strstr(kn, "rmsnorm") || strstr(kn, "residual")) && rjDisp < 400;
+  if (!rjFull && !rjResidual)
+    return;
+
+  clFinish(s_clCtx.queue);
+  // Read each ENTIRE buffer (chunked) and compute a bit-exact FNV-1a hash
+  // over the raw bytes plus sum/maxabs/zeros.
+  static std::vector<float> rjChunk(1u << 16); // 64K floats = 256 KB
+  for (int di = 0; di < gpuDataArgCount; di++) {
+    if (!rjFull && di != 0)
+      break; // residual trace: only arg0
+    if (!gpuBuffers[di] || gpuBufferSizes[di] == 0)
+      continue;
+    size_t nFloats = gpuBufferSizes[di] / sizeof(float);
+    if (nFloats == 0)
+      continue;
+    uint32_t rjHash = 2166136261u; // FNV-1a offset basis
+    double rjSum = 0.0;
+    float rjMax = 0.0f, rjS0 = 0.0f;
+    size_t rjZeros = 0;
+    int rjNan = 0;
+    bool rjReadOk = true;
+    for (size_t off = 0; off < nFloats; off += rjChunk.size()) {
+      size_t n = nFloats - off;
+      if (n > rjChunk.size())
+        n = rjChunk.size();
+      if (clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[di], CL_TRUE,
+                              off * sizeof(float), n * sizeof(float),
+                              rjChunk.data(), 0, nullptr,
+                              nullptr) != CL_SUCCESS) {
+        rjReadOk = false;
+        break;
+      }
+      const unsigned char *bytes =
+          reinterpret_cast<const unsigned char *>(rjChunk.data());
+      size_t nBytes = n * sizeof(float);
+      for (size_t b = 0; b < nBytes; b++) {
+        rjHash ^= bytes[b];
+        rjHash *= 16777619u;
+      }
+      for (size_t j = 0; j < n; j++) {
+        float v = rjChunk[j];
+        if (off == 0 && j == 0)
+          rjS0 = v;
+        if (std::isnan(v) || std::isinf(v)) {
+          rjNan = 1;
+          continue;
+        }
+        if (v == 0.0f)
+          rjZeros++;
+        rjSum += v;
+        float a = std::fabs(v);
+        if (a > rjMax)
+          rjMax = a;
+      }
+    }
+    if (!rjReadOk)
+      continue;
+    RJ_GPU_LOG("[GPU-CHK] disp=%d k=%s arg=%d n=%zu hash=%08x sum=%.9g "
+               "maxabs=%g zeros=%zu s0=%g nan=%d\n",
+               rjDisp, kn, di, nFloats, rjHash, rjSum, rjMax, rjZeros, rjS0,
+               rjNan);
+  }
+
+  // Recompute C[row=0,col=0] in double precision from the GPU's own inputs
+  // and compare it to the kernel output.
+  if (rjFull && strstr(kn, "matmul") && gpuDataArgCount >= 5 &&
+      gpuBuffers[0] && gpuBuffers[1] && gpuBuffers[2] && gpuBuffers[3] &&
+      gpuBuffers[4]) {
+    float kpar[3] = {0, 0, 0};
+    bool ok = clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[4], CL_TRUE, 0,
+                                  3 * sizeof(float), kpar, 0, nullptr,
+                                  nullptr) == CL_SUCCESS;
+    int Kpack = (int)kpar[2];
+    size_t needA = (size_t)Kpack * 6;
+    size_t haveA = gpuBufferSizes[0] / sizeof(float);
+    size_t haveW = gpuBufferSizes[1] / sizeof(float);
+    if (ok && Kpack > 0 && (size_t)Kpack <= haveW && needA <= haveA) {
+      float sc = 0.0f, gpuC0 = 0.0f;
+      std::vector<float> Wv(Kpack), Av(needA);
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[2], CL_TRUE, 0,
+                                sizeof(float), &sc, 0, nullptr,
+                                nullptr) == CL_SUCCESS;
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[1], CL_TRUE, 0,
+                                Kpack * sizeof(float), Wv.data(), 0, nullptr,
+                                nullptr) == CL_SUCCESS;
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[0], CL_TRUE, 0,
+                                needA * sizeof(float), Av.data(), 0, nullptr,
+                                nullptr) == CL_SUCCESS;
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[3], CL_TRUE, 0,
+                                sizeof(float), &gpuC0, 0, nullptr,
+                                nullptr) == CL_SUCCESS;
+      if (ok) {
+        double scale = sc;
+        double s = 0.0;
+        for (int kp = 0; kp < Kpack; kp++) {
+          double packed = Wv[kp];
+          double w5 = std::floor(packed / 1048576.0);
+          packed -= w5 * 1048576.0;
+          double w4 = std::floor(packed / 65536.0);
+          packed -= w4 * 65536.0;
+          double w3 = std::floor(packed / 4096.0);
+          packed -= w3 * 4096.0;
+          double w2 = std::floor(packed / 256.0);
+          packed -= w2 * 256.0;
+          double w1 = std::floor(packed / 16.0);
+          packed -= w1 * 16.0;
+          double w0 = packed;
+          w0 = (w0 - 8.0) * scale;
+          w1 = (w1 - 8.0) * scale;
+          w2 = (w2 - 8.0) * scale;
+          w3 = (w3 - 8.0) * scale;
+          w4 = (w4 - 8.0) * scale;
+          w5 = (w5 - 8.0) * scale;
+          size_t ab = (size_t)kp * 6;
+          s += Av[ab] * w0 + Av[ab + 1] * w1 + Av[ab + 2] * w2 +
+               Av[ab + 3] * w3 + Av[ab + 4] * w4 + Av[ab + 5] * w5;
+        }
+        RJ_GPU_LOG("[GPU-REF] disp=%d k=%s Kpack=%d C0_gpu=%g C0_ref=%g "
+                   "diff=%g\n",
+                   rjDisp, kn, Kpack, gpuC0, (double)s, (double)s - gpuC0);
+      }
+    }
+  }
+}
+
 RuleEngineInputUnits *GPUFunctionCommandRE::process() {
   // -- global_work_size from calling-context scalar values at parallelism arg
   // positions --
@@ -949,10 +1111,9 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
       break;
     }
   }
-  if (gpuZeroWorkSize)
-    RJ_GPU_LOG("[GPU-DBG] SKIPPING dispatch: zeroWorkSize\n");
-  if (gpuBufferError)
-    RJ_GPU_LOG("[GPU-DBG] SKIPPING dispatch: bufferError\n");
+  // Optional dispatch-state diagnostics; enable when investigating skipped
+  // kernels.
+  // rjGpuLogDispatchState(gpuZeroWorkSize, gpuBufferError);
 
   if (!gpuBufferError && !gpuZeroWorkSize) {
     gpuErr =
@@ -963,152 +1124,8 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
       RJ_GPU_LOG("[GPU] clEnqueueNDRangeKernel failed: %d\n", gpuErr);
     }
 
-    // -------- DIAGNOSTIC: layer-0 full trace + residual trace --------
-    // Curves are bit-identical through disp 7 then split at disp 11 (MLP
-    // residual_add), so the bug is in disp 8 (gate_up matmul) / 9 (silu) /
-    // 10 (down matmul).  For layer 0 (disp<=12) log EVERY arg of EVERY kernel;
-    // afterwards keep only the residual carriers.  Diff macOS vs Android to see
-    // which kernel's output first differs, and on which arg.  Remove once fixed.
-    if (gpuErr == CL_SUCCESS) {
-      static std::atomic<int> rjDispatchCounter{0};
-      int rjDisp = rjDispatchCounter.fetch_add(1);
-      const char *kn = gpuKernelName.c_str();
-      bool rjFull = rjDisp <= 12; // layer 0 (+ first kernel of layer 1)
-      bool rjResidual = (strstr(kn, "rmsnorm") || strstr(kn, "residual")) &&
-                        rjDisp < 400;
-      if (rjFull || rjResidual) {
-        clFinish(s_clCtx.queue);
-        // Read each ENTIRE buffer (chunked) and compute a bit-exact FNV-1a hash
-        // over the raw bytes plus sum/maxabs/zeros.  A 256-float sample can look
-        // identical across platforms while the tail of a weight .bin differs;
-        // the hash catches ANY byte difference in the full buffer, proving
-        // whether the .bin reached the device intact.
-        static std::vector<float> rjChunk(1u << 16); // 64K floats = 256 KB
-        for (int di = 0; di < gpuDataArgCount; di++) {
-          if (!rjFull && di != 0)
-            break; // residual trace: only arg0
-          if (!gpuBuffers[di] || gpuBufferSizes[di] == 0)
-            continue;
-          size_t nFloats = gpuBufferSizes[di] / sizeof(float);
-          if (nFloats == 0)
-            continue;
-          uint32_t rjHash = 2166136261u; // FNV-1a offset basis
-          double rjSum = 0.0;
-          float rjMax = 0.0f, rjS0 = 0.0f;
-          size_t rjZeros = 0;
-          int rjNan = 0;
-          bool rjReadOk = true;
-          for (size_t off = 0; off < nFloats; off += rjChunk.size()) {
-            size_t n = nFloats - off;
-            if (n > rjChunk.size())
-              n = rjChunk.size();
-            if (clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[di], CL_TRUE,
-                                    off * sizeof(float), n * sizeof(float),
-                                    rjChunk.data(), 0, nullptr,
-                                    nullptr) != CL_SUCCESS) {
-              rjReadOk = false;
-              break;
-            }
-            const unsigned char *bytes =
-                reinterpret_cast<const unsigned char *>(rjChunk.data());
-            size_t nBytes = n * sizeof(float);
-            for (size_t b = 0; b < nBytes; b++) {
-              rjHash ^= bytes[b];
-              rjHash *= 16777619u;
-            }
-            for (size_t j = 0; j < n; j++) {
-              float v = rjChunk[j];
-              if (off == 0 && j == 0)
-                rjS0 = v;
-              if (std::isnan(v) || std::isinf(v)) {
-                rjNan = 1;
-                continue;
-              }
-              if (v == 0.0f)
-                rjZeros++;
-              rjSum += v;
-              float a = std::fabs(v);
-              if (a > rjMax)
-                rjMax = a;
-            }
-          }
-          if (!rjReadOk)
-            continue;
-          RJ_GPU_LOG("[GPU-CHK] disp=%d k=%s arg=%d n=%zu hash=%08x sum=%.9g "
-                     "maxabs=%g zeros=%zu s0=%g nan=%d\n",
-                     rjDisp, kn, di, nFloats, rjHash, rjSum, rjMax, rjZeros,
-                     rjS0, rjNan);
-        }
-
-        // -------- On-device ORACLE for 4-bit matmul output element C[0] -----
-        // Recompute C[row=0,col=0] in double precision from the GPU's OWN
-        // inputs (args: 0=A, 1=W_packed, 2=W_scales, 3=C, 4=kparams) and
-        // compare to what the kernel wrote.  If ref != C0_gpu the Adreno kernel
-        // arithmetic is wrong (identical inputs -> wrong output); if ref ==
-        // C0_gpu the inputs themselves differ from the correct platform.
-        if (rjFull && strstr(kn, "matmul") && gpuDataArgCount >= 5 &&
-            gpuBuffers[0] && gpuBuffers[1] && gpuBuffers[2] && gpuBuffers[3] &&
-            gpuBuffers[4]) {
-          float kpar[3] = {0, 0, 0};
-          bool ok = clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[4], CL_TRUE, 0,
-                                        3 * sizeof(float), kpar, 0, nullptr,
-                                        nullptr) == CL_SUCCESS;
-          int Kpack = (int)kpar[2];
-          size_t needA = (size_t)Kpack * 6;
-          size_t haveA = gpuBufferSizes[0] / sizeof(float);
-          size_t haveW = gpuBufferSizes[1] / sizeof(float);
-          if (ok && Kpack > 0 && (size_t)Kpack <= haveW && needA <= haveA) {
-            float sc = 0.0f, gpuC0 = 0.0f;
-            std::vector<float> Wv(Kpack), Av(needA);
-            ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[2], CL_TRUE, 0,
-                                      sizeof(float), &sc, 0, nullptr,
-                                      nullptr) == CL_SUCCESS;
-            ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[1], CL_TRUE, 0,
-                                      Kpack * sizeof(float), Wv.data(), 0,
-                                      nullptr, nullptr) == CL_SUCCESS;
-            ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[0], CL_TRUE, 0,
-                                      needA * sizeof(float), Av.data(), 0,
-                                      nullptr, nullptr) == CL_SUCCESS;
-            ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[3], CL_TRUE, 0,
-                                      sizeof(float), &gpuC0, 0, nullptr,
-                                      nullptr) == CL_SUCCESS;
-            if (ok) {
-              double scale = sc;
-              double s = 0.0;
-              for (int kp = 0; kp < Kpack; kp++) {
-                double packed = Wv[kp];
-                double w5 = std::floor(packed / 1048576.0);
-                packed -= w5 * 1048576.0;
-                double w4 = std::floor(packed / 65536.0);
-                packed -= w4 * 65536.0;
-                double w3 = std::floor(packed / 4096.0);
-                packed -= w3 * 4096.0;
-                double w2 = std::floor(packed / 256.0);
-                packed -= w2 * 256.0;
-                double w1 = std::floor(packed / 16.0);
-                packed -= w1 * 16.0;
-                double w0 = packed;
-                w0 = (w0 - 8.0) * scale;
-                w1 = (w1 - 8.0) * scale;
-                w2 = (w2 - 8.0) * scale;
-                w3 = (w3 - 8.0) * scale;
-                w4 = (w4 - 8.0) * scale;
-                w5 = (w5 - 8.0) * scale;
-                size_t ab = (size_t)kp * 6;
-                s += Av[ab] * w0 + Av[ab + 1] * w1 + Av[ab + 2] * w2 +
-                     Av[ab + 3] * w3 + Av[ab + 4] * w4 + Av[ab + 5] * w5;
-              }
-              RJ_GPU_LOG("[GPU-REF] disp=%d k=%s Kpack=%d C0_gpu=%g C0_ref=%g "
-                         "diff=%g\n",
-                         rjDisp, kn, Kpack, gpuC0, (double)s,
-                         (double)s - gpuC0);
-            }
-          }
-        }
-        // -------- END ORACLE --------
-      }
-    }
-    // -------- END DIAGNOSTIC --------
+    // Optional full-buffer trace and matmul oracle; enable for GPU debugging.
+    // runDispatchDiagnostics();
   }
 
   return nextUnit;
@@ -1615,15 +1632,16 @@ RuleEngineInputUnits *GPU_LOAD::process() {
     if (arrayValue != nullptr && arrayValue->gpuBuffer != nullptr) {
       // Upload host array → GPU buffer (blocking write ensures visibility
       // to all subsequent GPU kernels in the same command queue).
-      RJ_GPU_LOG("[GPU_LOAD] uploading %zu bytes, val[0]=%.1f\n",
-              arrayValue->gpuBufferBytes, arrayValue->val[0]);
-      cl_int err = clEnqueueWriteBuffer(s_clCtx.queue, (cl_mem)arrayValue->gpuBuffer,
-                           CL_TRUE, 0, arrayValue->gpuBufferBytes,
-                           arrayValue->val, 0, nullptr, nullptr);
-      RJ_GPU_LOG("[GPU_LOAD] write done, err=%d\n", err);
+        cl_int err = clEnqueueWriteBuffer(
+          s_clCtx.queue, (cl_mem)arrayValue->gpuBuffer, CL_TRUE, 0,
+          arrayValue->gpuBufferBytes, arrayValue->val, 0, nullptr, nullptr);
+      if (err != CL_SUCCESS)
+        RJ_GPU_LOG("[GPU_LOAD] write failed: %d\n", err);
+      // Optional transfer diagnostics; enable when investigating GPU_LOAD.
+      // rjGpuLogLoadDiagnostics(arrayValue, true, err);
     } else {
-      RJ_GPU_LOG("[GPU_LOAD] no gpuBuffer yet (val[0]=%.1f), skipped\n",
-              arrayValue ? arrayValue->val[0] : -999.0f);
+      // Optional transfer diagnostics; enable when investigating GPU_LOAD.
+      // rjGpuLogLoadDiagnostics(arrayValue, false, CL_SUCCESS);
     }
   }
 #endif
