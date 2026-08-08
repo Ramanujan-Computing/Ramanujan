@@ -904,6 +904,7 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
   std::vector<int> gpuDataArgIndices;
   cl_program gpuProgram = nullptr;
   cl_kernel gpuKernel = nullptr;
+  std::string gpuKernelName; // diagnostic: kernel name for NaN-scan logging
   cl_mem gpuBuffers[maxArgSize] = {};
   size_t gpuBufferSizes[maxArgSize] = {};
 
