@@ -814,11 +814,17 @@ void GPUFunctionCommandRE::setFields(
       // accumulation loop the Adreno compiler may pick a fast reciprocal that
       // lands just under an integer boundary -> floor() drops a nibble ->
       // corrupt weights (seen only in the deepest-accumulation down matmul).
-      // Force IEEE correctly-rounded divide; fall back if the device lacks it.
+      // Force IEEE correctly-rounded divide only for legacy floor-based
+      // kernels. Shift/mask dequantization has no such requirement.
+      bool needsCorrectlyRoundedDivide =
+          kernelSrc.find("floor(") != std::string::npos;
+      const char *buildOptions = needsCorrectlyRoundedDivide
+                                     ? "-cl-std=CL1.2 "
+                                       "-cl-fp32-correctly-rounded-divide-sqrt"
+                                     : "-cl-std=CL1.2";
       err = clBuildProgram(gpuProgram, 1, &s_clCtx.device,
-                           "-cl-std=CL1.2 -cl-fp32-correctly-rounded-divide-sqrt",
-                           nullptr, nullptr);
-      if (err != CL_SUCCESS) {
+                           buildOptions, nullptr, nullptr);
+      if (err != CL_SUCCESS && needsCorrectlyRoundedDivide) {
         RJ_GPU_LOG("[GPU] correctly-rounded-divide build failed (err=%d), "
                    "retrying without it\n",
                    err);
@@ -1605,6 +1611,19 @@ RuleEngineInputUnits *POW::process() {
     DoublePtr *doublePtr2 =
         static_cast<DoublePtr *>(methodArgDataContainerAddr[1]);
     doublePtr1->value = std::pow(doublePtr1->value, doublePtr2->value);
+  }
+  return nextUnit;
+}
+
+RuleEngineInputUnits *PACKED_NIBBLE::process() {
+  if (functionCommandInfo->argumentsSize >= 2) {
+    DoublePtr *packedPtr =
+        static_cast<DoublePtr *>(methodArgDataContainerAddr[0]);
+    DoublePtr *indexPtr =
+        static_cast<DoublePtr *>(methodArgDataContainerAddr[1]);
+    unsigned int packed = static_cast<unsigned int>(packedPtr->value);
+    unsigned int index = static_cast<unsigned int>(indexPtr->value);
+    packedPtr->value = static_cast<double>((packed >> (index * 4U)) & 15U);
   }
   return nextUnit;
 }

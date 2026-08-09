@@ -721,6 +721,13 @@ public:
   RuleEngineInputUnits *process() override;
 };
 
+class PACKED_NIBBLE : public BuiltInFunctionsImpl {
+public:
+  PACKED_NIBBLE(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+
+  RuleEngineInputUnits *process() override;
+};
+
 /**
  * GPU Synchronization Function.
  * Reads the GPU buffer back to the host CPU synchronously.
@@ -1044,6 +1051,8 @@ static FunctionCommandRE *GetFunctionCommandRE(
     return new class SQRT(functionCommand);
   } else if (id == "POW") {
     return new class POW(functionCommand);
+  } else if (id == "PACKED_NIBBLE") {
+    return new class PACKED_NIBBLE(functionCommand);
   } else if (id == "GPU_SYNC") {
     return new class GPU_SYNC(functionCommand);
   } else if (id == "GPU_LOAD") {

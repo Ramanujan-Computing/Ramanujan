@@ -2767,6 +2767,29 @@ public class PythonCodeRunTest {
         assertTrue("v should be __global float*", kernel.contains("__global float* v"));
     }
 
+        @Test
+        public void testGpuPackedNibbleUsesIntegerBitExtraction() throws Exception {
+        String pythonCode =
+            "def unpack_GPU_1(packed_values, output, gid):\n" +
+            "    packed = packed_values[gid]\n" +
+            "    output[gid] = PACKED_NIBBLE(packed, 4)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "unpack_GPU_1");
+
+        assertNotNull(fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("packed float should be converted numerically to uint",
+            kernel.contains("((uint)(packed)"));
+        assertTrue("nibble extraction should use an integer shift and mask",
+            kernel.contains(">>") && kernel.contains("& 15u"));
+        assertFalse("nibble extraction must not use floating-point division",
+            kernel.contains("packed /"));
+        assertFalse("nibble extraction must not use floor",
+            kernel.contains("floor("));
+        }
+
     /**
      * Finds the first {@link FunctionCall} in {@code rei} whose {@code isGpu} flag is true and
      * whose ID contains the given {@code functionName}.

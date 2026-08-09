@@ -444,6 +444,12 @@ public class GpuFunctionBodyConverter {
             if (call.getFunc() instanceof NameNode) {
                 calledName = ((NameNode) call.getFunc()).getId();
             }
+            if ("PACKED_NIBBLE".equals(calledName) && call.getArgs().size() == 2) {
+                String packedExpr = convertExpr(call.getArgs().get(0));
+                String nibbleExpr = convertExpr(call.getArgs().get(1));
+                return "((float)(((uint)(" + packedExpr + ") >> "
+                        + "((uint)(" + nibbleExpr + ") * 4u)) & 15u))";
+            }
             // Guard: self-recursion is not permitted in GPU kernel or device-function code.
             if (calledName != null && calledName.equals(currentGeneratingFuncName)) {
                 throw new IllegalArgumentException(

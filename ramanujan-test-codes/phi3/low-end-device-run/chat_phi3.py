@@ -24,7 +24,9 @@ import numpy as np
 with contextlib.redirect_stderr(io.StringIO()):
     from transformers import AutoTokenizer
 
-N_TOKENS = 5
+N_TOKENS = 50
+MAX_SEQUENCE_TOKENS = 128
+PACKED_LAYOUT_VERSION = "k_major_v1"
 
 
 # ---------------------------------------------------------------------------
@@ -93,20 +95,64 @@ def read_flat_csv(path):
     return [float(t) for t in text.split(",") if t]
 
 
+def require_weight_layout(weights_dir):
+    layout_path = os.path.join(weights_dir, "packed_layout.txt")
+    try:
+        with open(layout_path, encoding="utf-8") as layout_file:
+            actual_layout = layout_file.read().strip()
+    except FileNotFoundError:
+        actual_layout = ""
+
+    if actual_layout != PACKED_LAYOUT_VERSION:
+        converter = os.path.join(os.path.dirname(__file__),
+                                 "convert_to_csv_4bit.py")
+        raise RuntimeError(
+            "Low-end packed weights are missing or use the old layout. "
+            f"Regenerate them with: python3 {converter}"
+        )
+
+
+def require_binary_sidecars(weights_dir, csv_paths):
+    missing = []
+    weights_dir = os.path.abspath(weights_dir)
+    for csv_path in csv_paths:
+        if os.path.dirname(os.path.abspath(csv_path)) != weights_dir:
+            continue
+        bin_path = os.path.splitext(csv_path)[0] + ".bin"
+        if (not os.path.isfile(bin_path)
+                or os.path.getsize(bin_path) == 0
+                or os.path.getmtime(bin_path) < os.path.getmtime(csv_path)):
+            missing.append(os.path.basename(bin_path))
+
+    if missing:
+        generator = os.path.join(os.path.dirname(__file__),
+                                 "generate_bin_sidecars.py")
+        raise RuntimeError(
+            f"Missing or stale binary sidecars for {len(missing)} weight files. "
+            f"Run: python3 {generator} --weights-dir {weights_dir}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Single generation call
 # ---------------------------------------------------------------------------
 
 def generate_turn(messages, weights_dir, homelab_url, tokenizer):
     """Send `messages` (full history) to homelab, return decoded reply string."""
+    require_weight_layout(weights_dir)
     formatted = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
     input_ids = tokenizer.encode(formatted, add_special_tokens=False)
     n_seq = len(input_ids)
+    if n_seq + N_TOKENS > MAX_SEQUENCE_TOKENS:
+        raise ValueError(
+            f"Low-end mode supports at most {MAX_SEQUENCE_TOKENS} prompt + "
+            f"generated tokens; requested {n_seq} + {N_TOKENS}."
+        )
 
     kernel_path = os.path.join(
-        os.path.dirname(__file__), "..", "phi3_transformer_stack_4bit.py"
+        os.path.dirname(__file__), "phi3_transformer_stack_4bit.py"
     )
     kernel_path = os.path.abspath(kernel_path)
     work_dir = tempfile.mkdtemp(prefix="phi3_chat_")
@@ -131,8 +177,12 @@ def generate_turn(messages, weights_dir, homelab_url, tokenizer):
             os.path.join(work_dir, "step_arr.csv"),
             os.path.join(weights_dir, "wte_1.csv"),
             os.path.join(weights_dir, "wte_2.csv"),
+            os.path.join(weights_dir, "wte_3.csv"),
+            os.path.join(weights_dir, "wte_4.csv"),
             os.path.join(weights_dir, "lm_head_1.csv"),
             os.path.join(weights_dir, "lm_head_2.csv"),
+            os.path.join(weights_dir, "lm_head_3.csv"),
+            os.path.join(weights_dir, "lm_head_4.csv"),
             os.path.join(weights_dir, "ln_f_g.csv"),
             os.path.join(weights_dir, "cos_cache.csv"),
             os.path.join(weights_dir, "sin_cache.csv"),
@@ -147,6 +197,8 @@ def generate_turn(messages, weights_dir, homelab_url, tokenizer):
         for i in range(32):
             for stem in per_layer_stems:
                 csv_args.append(os.path.join(weights_dir, f"l{i}_{stem}.csv"))
+
+        require_binary_sidecars(weights_dir, csv_args[4:])
 
         out_csv = os.path.join(work_dir, "generated_tokens.csv")
         dump_vars = {"generated_tokens": out_csv}
@@ -208,7 +260,9 @@ def chat(weights_dir, homelab_url):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Interactive Phi-3 chat via homelab")
-    parser.add_argument("--weights-dir", default="../phi3_weights_csv",
+    parser.add_argument("--weights-dir",
+                        default=os.path.join(os.path.dirname(__file__),
+                                             "phi3_weights_csv"),
                         help="Path to phi3_weights_csv directory")
     parser.add_argument("--homelab-url", default="http://localhost:8888",
                         help="Homelab server base URL")

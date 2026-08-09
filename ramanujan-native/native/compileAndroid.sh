@@ -93,7 +93,7 @@ if [ -z "$HOST_PROTOC" ]; then
 fi
 echo "Using host protoc compiler: $HOST_PROTOC"
 
-for ABI in arm64-v8a x86_64; do  #armeabi-v7a x86 x86_64; do
+for ABI in arm64-v8a; do  # armeabi-v7a x86 x86_64
   JSONCPP_INCLUDE_DIRS=/Users/pranav/Library/Android/sdk/ndk/26.1.10909125/includes/jsoncpp/build/$ABI/include
   JSONCPP_LIBRARY_DIRS=/Users/pranav/Library/Android/sdk/ndk/26.1.10909125/includes/jsoncpp/build/$ABI/lib
   JSONCPP_LIBRARIES=$JSONCPP_LIBRARY_DIRS/libjsoncpp.so

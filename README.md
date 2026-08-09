@@ -924,6 +924,26 @@ def p2g_GPU_1(positions, params, gid):
     i0 = gxp                     # integer grid index (stored as float)
 ```
 
+### Packed 4-bit extraction (2 arguments)
+
+```python
+nibble = PACKED_NIBBLE(packed, index)
+```
+
+`PACKED_NIBBLE` numerically converts an exact integer-valued packed `float` to
+OpenCL `uint`, shifts by `index * 4`, masks with `0xF`, and returns the nibble as
+a `float`. Valid nibble indexes are 0 through 5 for Ramanujan's six-weights-per-
+float Phi-3 format. Packed values must not exceed `0xFFFFFF`, which is exactly
+representable in `float32`.
+
+```c
+((float)(((uint)packed >> ((uint)index * 4u)) & 15u))
+```
+
+This avoids floating-point divide and `floor()` during 4-bit dequantization.
+It is an expression intrinsic and may be used on the right-hand side of an
+assignment inside `_GPU_N` functions.
+
 ### Atomic float add (3 arguments)
 
 ```python
