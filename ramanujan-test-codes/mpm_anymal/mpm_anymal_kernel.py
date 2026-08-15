@@ -228,6 +228,16 @@ def integrate_GPU_1(positions, velocities, dt_buf, gid):
 # num_particles from params drives the GPU work-item count dynamically.
 n = num_particles
 if frame_num > 0.5:
+    # Each frame is its own interpreter invocation, so none of these arrays
+    # have a GPU buffer yet in this run — LOAD_MEM is mandatory before the
+    # first kernel that uses them (see README.md "Explicit GPU memory
+    # release" section).
+    LOAD_MEM(velocities)
+    LOAD_MEM(gravity_buf)
+    LOAD_MEM(positions)
+    LOAD_MEM(feet)
+    LOAD_MEM(foot_params)
+    LOAD_MEM(dt_buf)
     apply_gravity_GPU_1(velocities, gravity_buf, n)
     apply_feet_GPU_1(positions, velocities, feet, foot_params, n)
     integrate_GPU_1(positions, velocities, dt_buf, n)

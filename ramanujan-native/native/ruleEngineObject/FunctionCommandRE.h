@@ -843,10 +843,11 @@ public:
  * - LOAD_MEM(array) - Allocates a GPU buffer for the array (if one doesn't
  *   already exist) and uploads the current host-side data into it.
  *
- * Note: calling a GPU kernel with this array as an argument will also lazily
- * recreate the buffer if needed, so an explicit LOAD_MEM call is only
- * required when you want the upload to happen eagerly (e.g. to overlap it
- * with other work) rather than right before the next kernel dispatch.
+ * REQUIRED before first use: a GPU kernel dispatch no longer allocates or
+ * uploads buffers on its own — every array passed as a data argument to a
+ * `_GPU_N` kernel must have `LOAD_MEM(array)` called on it at least once
+ * beforehand (and again after any `RELEASE_MEM(array)`). A kernel call whose
+ * argument has no GPU buffer yet logs an error and skips dispatch.
  */
 class LOAD_MEM : public BuiltInFunctionsImpl {
   ArrayRE *targetArray = nullptr;
@@ -912,8 +913,6 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
   cl_program gpuProgram = nullptr;
   cl_kernel gpuKernel = nullptr;
   std::string gpuKernelName; // diagnostic: kernel name for NaN-scan logging
-  cl_mem gpuBuffers[maxArgSize] = {};
-  size_t gpuBufferSizes[maxArgSize] = {};
 
   // GPU parallelism configuration (computed once in setFields, reused in
   // process)
@@ -922,17 +921,26 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
   size_t gpuGlobalWorkSize[3] = {}; // OpenCL supports up to 3 dimensions
   size_t gpuLocalWorkSize[3] = {1, 1, 1};
   size_t *gpuLocalWorkSizePtr = nullptr;
+  // Queried once in setFields() via clGetKernelWorkGroupInfo: the actual
+  // CL_KERNEL_WORK_GROUP_SIZE cap for this specific kernel/device pair, used
+  // by the Android wave-size heuristic so it never picks a local size the
+  // kernel can't actually run with.
+  size_t gpuMaxWorkGroupSize = 0;
+
+  // Resolved once in setFields(): direct pointer to each rangeDim arg's
+  // DataContainerValue::value, so process() can skip the
+  // gpuParallelismIdxs -> methodCallingOriginalPlaceHolderAddrs -> cast chain.
+  double *gpuWorkSizeValuePtr[3] = {};
 
   int gpuDataArgCount = 0;
+  // Buffers live on the ArrayValue itself (owned/managed by LOAD_MEM,
+  // GPU_LOAD, RELEASE_MEM) — this kernel object only borrows the handle.
   ArrayValue *gpuAvCache[maxArgSize] = {};
 
   // process() working state (fields to avoid stack allocation on each call)
   cl_int gpuErr = CL_SUCCESS;
   bool gpuBufferError = false;
   bool gpuZeroWorkSize = false;
-  bool gpuBufferReallocated = false;
-  bool gpuSharedBufferReleased = false;
-  size_t gpuNeeded = 0;
   cl_int gpuSetErr = CL_SUCCESS;
 
   void runDispatchDiagnostics();
@@ -951,20 +959,8 @@ public:
       clReleaseKernel(gpuKernel);
       gpuKernel = nullptr;
     }
-    for (int _i = 0; _i < maxArgSize; _i++) {
-      if (gpuBuffers[_i]) {
-        // If RELEASE_MEM already released this array's shared buffer, our
-        // local handle is stale — releasing it again would double-free.
-        bool stillOwnedByArray =
-            (_i < gpuDataArgCount) && (gpuAvCache[_i] != nullptr) &&
-            (gpuAvCache[_i]->gpuBuffer == (void *)gpuBuffers[_i]);
-        if (stillOwnedByArray || _i >= gpuDataArgCount ||
-            gpuAvCache[_i] == nullptr) {
-          clReleaseMemObject(gpuBuffers[_i]);
-        }
-        gpuBuffers[_i] = nullptr;
-      }
-    }
+    // No cl_mem cleanup here: this object never owns a buffer — RELEASE_MEM
+    // (or process exit) is solely responsible for freeing ArrayValue buffers.
   }
 
   RuleEngineInputUnits *process() override;

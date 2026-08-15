@@ -858,8 +858,22 @@ void GPUFunctionCommandRE::setFields(
     exit(1);
   }
 
+#ifdef __ANDROID__
+  // Query the kernel's real work-group-size cap once so the Android wave-size
+  // heuristic in process() never forces a local size the driver would reject.
+  clGetKernelWorkGroupInfo(gpuKernel, s_clCtx.device, CL_KERNEL_WORK_GROUP_SIZE,
+                           sizeof(gpuMaxWorkGroupSize), &gpuMaxWorkGroupSize,
+                           nullptr);
+#endif
+
   gpuParallelismIdxs = functionInfoRE->gpuParallelismArgIndices;
   gpuWorkDim = (cl_uint)gpuParallelismIdxs.size();
+  for (cl_uint pi = 0; pi < gpuWorkDim; pi++) {
+    gpuWorkSizeValuePtr[pi] =
+        &static_cast<DoublePtr *>(
+             methodCallingOriginalPlaceHolderAddrs[gpuParallelismIdxs[pi]])
+             ->value;
+  }
 
   std::set<int> parallelismSet(gpuParallelismIdxs.begin(),
                                gpuParallelismIdxs.end());
@@ -897,9 +911,11 @@ void GPUFunctionCommandRE::runDispatchDiagnostics() {
   for (int di = 0; di < gpuDataArgCount; di++) {
     if (!rjFull && di != 0)
       break; // residual trace: only arg0
-    if (!gpuBuffers[di] || gpuBufferSizes[di] == 0)
+    cl_mem buf = (cl_mem)gpuAvCache[di]->gpuBuffer;
+    size_t bufBytes = gpuAvCache[di]->gpuBufferBytes;
+    if (!buf || bufBytes == 0)
       continue;
-    size_t nFloats = gpuBufferSizes[di] / sizeof(float);
+    size_t nFloats = bufBytes / sizeof(float);
     if (nFloats == 0)
       continue;
     uint32_t rjHash = 2166136261u; // FNV-1a offset basis
@@ -912,7 +928,7 @@ void GPUFunctionCommandRE::runDispatchDiagnostics() {
       size_t n = nFloats - off;
       if (n > rjChunk.size())
         n = rjChunk.size();
-      if (clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[di], CL_TRUE,
+      if (clEnqueueReadBuffer(s_clCtx.queue, buf, CL_TRUE,
                               off * sizeof(float), n * sizeof(float),
                               rjChunk.data(), 0, nullptr,
                               nullptr) != CL_SUCCESS) {
@@ -953,30 +969,32 @@ void GPUFunctionCommandRE::runDispatchDiagnostics() {
   // Recompute C[row=0,col=0] in double precision from the GPU's own inputs
   // and compare it to the kernel output.
   if (rjFull && strstr(kn, "matmul") && gpuDataArgCount >= 5 &&
-      gpuBuffers[0] && gpuBuffers[1] && gpuBuffers[2] && gpuBuffers[3] &&
-      gpuBuffers[4]) {
+      gpuAvCache[0]->gpuBuffer && gpuAvCache[1]->gpuBuffer &&
+      gpuAvCache[2]->gpuBuffer && gpuAvCache[3]->gpuBuffer &&
+      gpuAvCache[4]->gpuBuffer) {
     float kpar[3] = {0, 0, 0};
-    bool ok = clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[4], CL_TRUE, 0,
+    bool ok = clEnqueueReadBuffer(s_clCtx.queue,
+                                  (cl_mem)gpuAvCache[4]->gpuBuffer, CL_TRUE, 0,
                                   3 * sizeof(float), kpar, 0, nullptr,
                                   nullptr) == CL_SUCCESS;
     int Kpack = (int)kpar[2];
     size_t needA = (size_t)Kpack * 6;
-    size_t haveA = gpuBufferSizes[0] / sizeof(float);
-    size_t haveW = gpuBufferSizes[1] / sizeof(float);
+    size_t haveA = gpuAvCache[0]->gpuBufferBytes / sizeof(float);
+    size_t haveW = gpuAvCache[1]->gpuBufferBytes / sizeof(float);
     if (ok && Kpack > 0 && (size_t)Kpack <= haveW && needA <= haveA) {
       float sc = 0.0f, gpuC0 = 0.0f;
       std::vector<float> Wv(Kpack), Av(needA);
-      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[2], CL_TRUE, 0,
-                                sizeof(float), &sc, 0, nullptr,
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, (cl_mem)gpuAvCache[2]->gpuBuffer,
+                                CL_TRUE, 0, sizeof(float), &sc, 0, nullptr,
                                 nullptr) == CL_SUCCESS;
-      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[1], CL_TRUE, 0,
-                                Kpack * sizeof(float), Wv.data(), 0, nullptr,
-                                nullptr) == CL_SUCCESS;
-      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[0], CL_TRUE, 0,
-                                needA * sizeof(float), Av.data(), 0, nullptr,
-                                nullptr) == CL_SUCCESS;
-      ok &= clEnqueueReadBuffer(s_clCtx.queue, gpuBuffers[3], CL_TRUE, 0,
-                                sizeof(float), &gpuC0, 0, nullptr,
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, (cl_mem)gpuAvCache[1]->gpuBuffer,
+                                CL_TRUE, 0, Kpack * sizeof(float), Wv.data(), 0,
+                                nullptr, nullptr) == CL_SUCCESS;
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, (cl_mem)gpuAvCache[0]->gpuBuffer,
+                                CL_TRUE, 0, needA * sizeof(float), Av.data(), 0,
+                                nullptr, nullptr) == CL_SUCCESS;
+      ok &= clEnqueueReadBuffer(s_clCtx.queue, (cl_mem)gpuAvCache[3]->gpuBuffer,
+                                CL_TRUE, 0, sizeof(float), &gpuC0, 0, nullptr,
                                 nullptr) == CL_SUCCESS;
       if (ok) {
         double scale = sc;
@@ -1014,132 +1032,71 @@ void GPUFunctionCommandRE::runDispatchDiagnostics() {
 
 RuleEngineInputUnits *GPUFunctionCommandRE::process() {
   // -- global_work_size from calling-context scalar values at parallelism arg
-  // positions --
-  for (int pi = 0; pi < gpuWorkDim; pi++) {
-    gpuGlobalWorkSize[pi] =
-        (size_t)(static_cast<DoublePtr *>(methodCallingOriginalPlaceHolderAddrs
-                                              [gpuParallelismIdxs[pi]])
-                     ->value);
+  // positions -- read via pointers cached once in setFields().
+  gpuZeroWorkSize = false;
+  for (cl_uint pi = 0; pi < gpuWorkDim; pi++) {
+    gpuGlobalWorkSize[pi] = (size_t)(*gpuWorkSizeValuePtr[pi]);
+    if (gpuGlobalWorkSize[pi] == 0) {
+      gpuZeroWorkSize = true;
+    }
   }
 
-  // -- Upload float* arrays directly to GPU (no staging, no conversion) --
-  gpuErr = CL_SUCCESS;
+  // Bind each data argument's existing GPU buffer. Allocation/upload is no
+  // longer this function's job — it belongs entirely to LOAD_MEM (first
+  // upload / re-upload after RELEASE_MEM) and GPU_LOAD (re-upload after the
+  // host mutates an already-resident array). A null buffer here means the
+  // script is missing a required LOAD_MEM(array) call.
   gpuBufferError = false;
 
   for (int di = 0; di < gpuDataArgCount; di++) {
-    gpuNeeded = (size_t)gpuAvCache[di]->totalSize * sizeof(float);
-
-    // Fast path: buffer already on GPU from an earlier kernel in this
-    // execution. gpuBuffer is set on the ArrayValue by whichever kernel first
-    // uploaded it. All kernels that share the same ArrayValue* automatically
-    // see it.
-    if (gpuAvCache[di]->gpuBuffer != nullptr &&
-        gpuAvCache[di]->gpuBufferBytes == gpuNeeded) {
-      gpuBuffers[di] = (cl_mem)gpuAvCache[di]->gpuBuffer;
-      gpuBufferSizes[di] = gpuNeeded;
-      clSetKernelArg(gpuKernel, (cl_uint)di, sizeof(cl_mem), &gpuBuffers[di]);
-      continue;
-    }
-
-    // The shared ArrayValue buffer is absent — either never allocated, or
-    // released externally via RELEASE_MEM. In the latter case this kernel's
-    // locally cached gpuBuffers[di] handle is stale and was already
-    // destroyed by whoever cleared gpuAvCache[di]->gpuBuffer, so it must NOT
-    // be released again here (that would be a double-free).
-    gpuSharedBufferReleased = (gpuAvCache[di]->gpuBuffer == nullptr);
-
-    // Normal path: allocate buffer or re-upload host data.
-    gpuBufferReallocated = false;
-    if (!gpuBuffers[di] || gpuBufferSizes[di] != gpuNeeded ||
-        gpuSharedBufferReleased) {
-      if (gpuBuffers[di] && !gpuSharedBufferReleased) {
-        clReleaseMemObject(gpuBuffers[di]);
-      }
-      gpuBuffers[di] = nullptr;
-      gpuBufferSizes[di] = 0;
-
-      cl_mem_flags flags = CL_MEM_READ_WRITE;
-#ifdef __ANDROID__
-      // On Android (Adreno/Mali), CL_MEM_USE_HOST_PTR is not true zero-copy:
-      // the driver keeps a live shadow VRAM copy AND a reference to the host
-      // mmap pages ("dual residency"), which goes stale/corrupt once we
-      // release + recreate the buffer for the next layer (the "Bis" bug).
-      // Always do a real copy into VRAM here instead.
-      flags |= CL_MEM_COPY_HOST_PTR;
-#else
-      if (gpuAvCache[di]->isBinaryLoaded) {
-          flags |= CL_MEM_USE_HOST_PTR; // ZERO-COPY for weights (unified memory)
-      } else {
-          flags |= CL_MEM_COPY_HOST_PTR;
-      }
-#endif
-      
-      gpuBuffers[di] = clCreateBuffer(s_clCtx.context,
-                                      flags,
-                                      gpuNeeded, gpuAvCache[di]->val, &gpuErr);
-      if (gpuErr == CL_SUCCESS) {
-        gpuBufferSizes[di] = gpuNeeded;
-        gpuBufferReallocated = true;
-      }
-    } else if (!gpuAvCache[di]->isBinaryLoaded) {
-      gpuErr = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0,
-                                    gpuNeeded, gpuAvCache[di]->val, 0, nullptr,
-                                    nullptr);
-    }
-
-    if (gpuErr != CL_SUCCESS) {
-      RJ_GPU_LOG("[GPU] buffer setup failed (arg %d): error %d\n", di,
-              gpuErr);
-      gpuBufferError = true;
-      break;
-    }
-    if (gpuBufferReallocated) {
-      gpuSetErr = clSetKernelArg(gpuKernel, (cl_uint)di, sizeof(cl_mem),
-                                 &gpuBuffers[di]);
-      if (gpuSetErr != CL_SUCCESS) {
-        RJ_GPU_LOG("[GPU-DBG] clSetKernelArg arg=%d failed err=%d\n", di,
-                gpuSetErr);
-      }
-    }
-    // Publish this buffer so subsequent kernels accessing the same ArrayValue
-    // can reuse it.
-    gpuAvCache[di]->gpuBuffer = gpuBuffers[di];
-    gpuAvCache[di]->gpuBufferBytes = gpuNeeded;
+    cl_mem buf = (cl_mem)gpuAvCache[di]->gpuBuffer;
+    // if (buf == nullptr) {
+    //   RJ_GPU_LOG("[GPU] arg %d has no GPU buffer for kernel '%s' — missing "
+    //              "LOAD_MEM(array) before first use\n",
+    //              di, gpuKernelName.c_str());
+    //   gpuBufferError = true;
+    //   break;
+    // }
+    //gpuSetErr =
+        clSetKernelArg(gpuKernel, (cl_uint)di, sizeof(cl_mem), &buf);
+    // if (gpuSetErr != CL_SUCCESS) {
+    //   RJ_GPU_LOG("[GPU] clSetKernelArg arg=%d failed err=%d\n", di, gpuSetErr);
+    //   gpuBufferError = true;
+    //   break;
+    // }
   }
 
-  // Skip dispatch when any globalWorkSize dimension is 0
-  gpuZeroWorkSize = false;
-  for (cl_uint wi = 0; wi < gpuWorkDim; wi++) {
-    if (gpuGlobalWorkSize[wi] == 0) {
-      gpuZeroWorkSize = true;
-      break;
-    }
-  }
   // Optional dispatch-state diagnostics; enable when investigating skipped
   // kernels.
   // rjGpuLogDispatchState(gpuZeroWorkSize, gpuBufferError);
 
   if (!gpuBufferError && !gpuZeroWorkSize) {
 #ifdef __ANDROID__
-    // Adreno optimization: pick a wave size (64) that divides the global size.
-    // Apple/desktop OpenCL drivers pick a better default themselves — forcing
-    // a fixed local size there can exceed a register-heavy dequant kernel's
-    // actual CL_KERNEL_WORK_GROUP_SIZE and fall back to a much slower path.
+    // Adreno optimization: only for 1-D kernels. Start from wave=64 (a good
+    // Adreno wavefront size) and halve it until it both divides evenly into
+    // gpuGlobalWorkSize[0] and fits within this kernel's real
+    // CL_KERNEL_WORK_GROUP_SIZE cap (gpuMaxWorkGroupSize, queried once in
+    // setFields() so we never force a group size the driver would reject).
+    // Apple/desktop drivers already pick a good default (nullptr local size),
+    // so this whole block is Android-only.
     if (gpuWorkDim == 1) {
-        if (gpuGlobalWorkSize[0] % 64 == 0) gpuLocalWorkSize[0] = 64;
-        else if (gpuGlobalWorkSize[0] % 32 == 0) gpuLocalWorkSize[0] = 32;
-        else gpuLocalWorkSize[0] = 1;
+        size_t cap = gpuMaxWorkGroupSize > 0 ? gpuMaxWorkGroupSize : 1;
+        size_t wave = 64;
+        while (wave > 1 && (wave > cap || gpuGlobalWorkSize[0] % wave != 0)) {
+            wave >>= 1;
+        }
+        gpuLocalWorkSize[0] = wave;
         gpuLocalWorkSizePtr = gpuLocalWorkSize;
     }
 #endif
 
-    gpuErr =
+    // gpuErr =
         clEnqueueNDRangeKernel(s_clCtx.queue, gpuKernel, gpuWorkDim, nullptr,
                                gpuGlobalWorkSize, gpuLocalWorkSizePtr, 0, nullptr, nullptr);
 
-    if (gpuErr != CL_SUCCESS) {
-      RJ_GPU_LOG("[GPU] clEnqueueNDRangeKernel failed: %d\n", gpuErr);
-    }
+    // if (gpuErr != CL_SUCCESS) {
+    //   RJ_GPU_LOG("[GPU] clEnqueueNDRangeKernel failed: %d\n", gpuErr);
+    // }
 
     // Optional full-buffer trace and matmul oracle; enable for GPU debugging.
     // runDispatchDiagnostics();

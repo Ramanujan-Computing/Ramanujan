@@ -1129,9 +1129,20 @@ LOAD_MEM(array)       # (Re)allocates the GPU buffer and uploads the current hos
 - **`LOAD_MEM(array)`** allocates a fresh GPU buffer for the array from its current host data.
   It is the correct counterpart to `RELEASE_MEM` — plain `GPU_LOAD` only writes into an
   *already-existing* buffer, so it cannot bring back an array that has been released.
-  You do not have to call `LOAD_MEM` explicitly before reusing an array in a kernel — the next
-  `_GPU_N` call that references it will lazily recreate the buffer on its own — but `LOAD_MEM`
-  is useful when you want the upload to happen eagerly (e.g. to overlap it with other work).
+
+> **Mandatory, not optional.** A `_GPU_N` kernel dispatch performs **no** implicit buffer
+> allocation or upload of its own — it only does `clSetKernelArg` + `clEnqueueNDRangeKernel`
+> against whatever GPU buffer the array already has. This means:
+> - **`LOAD_MEM(array)` is required** before the *first* time an array is passed as a data
+>   argument to any `_GPU_N` kernel, and again after any `RELEASE_MEM(array)` on it. Skipping
+>   this is not silently "slow" — it is a hard error: the kernel logs
+>   `missing LOAD_MEM(array) before first use` and the dispatch is skipped entirely (the
+>   kernel's outputs are left unchanged).
+> - **`GPU_LOAD(array)` is required** any time host (CPU) code mutates an array that already has
+>   a live GPU buffer (e.g. `l_idx_arr[0] = l_idx`) and the *next* kernel dispatch needs to see
+>   that new value. `GPU_LOAD` only writes into an existing buffer — it never allocates one — so
+>   it must not be used as a substitute for `LOAD_MEM` on an array that hasn't been loaded yet
+>   (or was just released).
 
 ### When to use these
 
@@ -1142,7 +1153,7 @@ buffers, KV caches, etc.) without first reading its current value back with `GPU
 GPU hasn't yet written back to the host copy.
 
 > **Release/reload has a cost — every call is buffer churn.** `RELEASE_MEM` +
-> `LOAD_MEM` (or lazy recreation) on the same array is a `clReleaseMemObject` +
+> `LOAD_MEM` on the same array is a `clReleaseMemObject` +
 > `clCreateBuffer` pair, not a full data copy, for weight arrays uploaded with
 > `CL_MEM_USE_HOST_PTR` (see `isBinaryLoaded` in the "Direct CSV Population" section above) —
 > on unified-memory devices (e.g. Apple Silicon) this is cheap since no bytes actually move.

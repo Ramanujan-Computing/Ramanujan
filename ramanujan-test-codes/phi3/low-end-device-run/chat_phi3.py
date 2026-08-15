@@ -24,7 +24,7 @@ import numpy as np
 with contextlib.redirect_stderr(io.StringIO()):
     from transformers import AutoTokenizer
 
-N_TOKENS = 50
+N_TOKENS = 100
 MAX_SEQUENCE_TOKENS = 128
 PACKED_LAYOUT_VERSION = "k_major_v1"
 

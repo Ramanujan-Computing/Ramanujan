@@ -1735,6 +1735,9 @@ public class PythonCodeRunTest {
             "def vector_add_GPU_1(a, b, c, gid):\n" +
             "    c[gid] = a[gid] + b[gid]\n" +
             "\n" +
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(b)\n" +
+            "LOAD_MEM(c)\n" +
             "vector_add_GPU_1(a, b, c, 4)\n" +
             "GPU_SYNC(c)\n";
 
@@ -1802,6 +1805,8 @@ public class PythonCodeRunTest {
             "def scale_2d_GPU_2(a, out, row, col):\n" +
             "    out[row] = a[row] * 2\n" +
             "\n" +
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(out)\n" +
             "scale_2d_GPU_2(a, out, 4, 4)\n" +
             "GPU_SYNC(out)\n";
 
@@ -1873,6 +1878,8 @@ public class PythonCodeRunTest {
             "    else:\n" +
             "        out[gid] = 0\n" +
             "\n" +
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(out)\n" +
             "relu_GPU_1(a, out, 4)\n" +
             "GPU_SYNC(out)\n";
 
@@ -1945,6 +1952,8 @@ public class PythonCodeRunTest {
             "        k = k + 1\n" +
             "    out[gid] = s\n" +
             "\n" +
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(out)\n" +
             "prefix_sum_GPU_1(a, out, 4)\n" +
             "GPU_SYNC(out)\n";
 
