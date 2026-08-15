@@ -920,6 +920,8 @@ class GPUFunctionCommandRE : public FunctionCommandRE {
   std::vector<int> gpuParallelismIdxs;
   cl_uint gpuWorkDim = 0;
   size_t gpuGlobalWorkSize[3] = {}; // OpenCL supports up to 3 dimensions
+  size_t gpuLocalWorkSize[3] = {1, 1, 1};
+  size_t *gpuLocalWorkSizePtr = nullptr;
 
   int gpuDataArgCount = 0;
   ArrayValue *gpuAvCache[maxArgSize] = {};

@@ -107,6 +107,7 @@ for ABI in arm64-v8a; do  # armeabi-v7a x86 x86_64
   rm -f build/$ABI/CMakeCache.txt
 
   cmake -H. -Bbuild/$ABI \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ABI \
     -DANDROID_PLATFORM=android-21 \

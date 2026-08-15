@@ -3,6 +3,16 @@ project(native)
 
 set(CMAKE_CXX_STANDARD 14)
 
+if(NOT CMAKE_BUILD_TYPE)
+  # CACHE FORCE is required here: a plain set() only affects this configure
+  # run's in-memory value and does not persist CMAKE_BUILD_TYPE into
+  # CMakeCache.txt, so a Makefile-generator build silently compiles with no
+  # per-config flags at all (no -O3/-DNDEBUG) even though this line "sets"
+  # Release. That left the interpreter running at debug speed.
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+
 include_directories(input)
 include_directories(processing)
 

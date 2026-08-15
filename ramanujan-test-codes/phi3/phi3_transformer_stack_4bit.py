@@ -796,10 +796,6 @@ matmul_4bit_GPU_2(h_ln2, l0_gate_up_packed, l0_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l0_down_packed, l0_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l0_qkv_packed)
-RELEASE_MEM(l0_o_packed)
-RELEASE_MEM(l0_gate_up_packed)
-RELEASE_MEM(l0_down_packed)
 
 # ── Layer 1 ──
 LOAD_MEM(l1_qkv_packed)
@@ -817,10 +813,6 @@ matmul_4bit_GPU_2(h_ln2, l1_gate_up_packed, l1_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l1_down_packed, l1_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l1_qkv_packed)
-RELEASE_MEM(l1_o_packed)
-RELEASE_MEM(l1_gate_up_packed)
-RELEASE_MEM(l1_down_packed)
 
 # ── Layer 2 ──
 LOAD_MEM(l2_qkv_packed)
@@ -838,10 +830,6 @@ matmul_4bit_GPU_2(h_ln2, l2_gate_up_packed, l2_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l2_down_packed, l2_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l2_qkv_packed)
-RELEASE_MEM(l2_o_packed)
-RELEASE_MEM(l2_gate_up_packed)
-RELEASE_MEM(l2_down_packed)
 
 # ── Layer 3 ──
 LOAD_MEM(l3_qkv_packed)
@@ -859,10 +847,6 @@ matmul_4bit_GPU_2(h_ln2, l3_gate_up_packed, l3_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l3_down_packed, l3_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l3_qkv_packed)
-RELEASE_MEM(l3_o_packed)
-RELEASE_MEM(l3_gate_up_packed)
-RELEASE_MEM(l3_down_packed)
 
 # ── Layer 4 ──
 LOAD_MEM(l4_qkv_packed)
@@ -880,10 +864,6 @@ matmul_4bit_GPU_2(h_ln2, l4_gate_up_packed, l4_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l4_down_packed, l4_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l4_qkv_packed)
-RELEASE_MEM(l4_o_packed)
-RELEASE_MEM(l4_gate_up_packed)
-RELEASE_MEM(l4_down_packed)
 
 # ── Layer 5 ──
 LOAD_MEM(l5_qkv_packed)
@@ -901,10 +881,6 @@ matmul_4bit_GPU_2(h_ln2, l5_gate_up_packed, l5_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l5_down_packed, l5_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l5_qkv_packed)
-RELEASE_MEM(l5_o_packed)
-RELEASE_MEM(l5_gate_up_packed)
-RELEASE_MEM(l5_down_packed)
 
 # ── Layer 6 ──
 LOAD_MEM(l6_qkv_packed)
@@ -922,10 +898,6 @@ matmul_4bit_GPU_2(h_ln2, l6_gate_up_packed, l6_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l6_down_packed, l6_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l6_qkv_packed)
-RELEASE_MEM(l6_o_packed)
-RELEASE_MEM(l6_gate_up_packed)
-RELEASE_MEM(l6_down_packed)
 
 # ── Layer 7 ──
 LOAD_MEM(l7_qkv_packed)
@@ -943,10 +915,6 @@ matmul_4bit_GPU_2(h_ln2, l7_gate_up_packed, l7_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l7_down_packed, l7_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l7_qkv_packed)
-RELEASE_MEM(l7_o_packed)
-RELEASE_MEM(l7_gate_up_packed)
-RELEASE_MEM(l7_down_packed)
 
 # ── Layer 8 ──
 LOAD_MEM(l8_qkv_packed)
@@ -964,10 +932,6 @@ matmul_4bit_GPU_2(h_ln2, l8_gate_up_packed, l8_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l8_down_packed, l8_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l8_qkv_packed)
-RELEASE_MEM(l8_o_packed)
-RELEASE_MEM(l8_gate_up_packed)
-RELEASE_MEM(l8_down_packed)
 
 # ── Layer 9 ──
 LOAD_MEM(l9_qkv_packed)
@@ -985,10 +949,6 @@ matmul_4bit_GPU_2(h_ln2, l9_gate_up_packed, l9_gate_up_scales, h_ff_buf, kp_fc, 
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l9_down_packed, l9_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l9_qkv_packed)
-RELEASE_MEM(l9_o_packed)
-RELEASE_MEM(l9_gate_up_packed)
-RELEASE_MEM(l9_down_packed)
 
 # ── Layer 10 ──
 LOAD_MEM(l10_qkv_packed)
@@ -1006,10 +966,6 @@ matmul_4bit_GPU_2(h_ln2, l10_gate_up_packed, l10_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l10_down_packed, l10_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l10_qkv_packed)
-RELEASE_MEM(l10_o_packed)
-RELEASE_MEM(l10_gate_up_packed)
-RELEASE_MEM(l10_down_packed)
 
 # ── Layer 11 ──
 LOAD_MEM(l11_qkv_packed)
@@ -1027,10 +983,6 @@ matmul_4bit_GPU_2(h_ln2, l11_gate_up_packed, l11_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l11_down_packed, l11_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l11_qkv_packed)
-RELEASE_MEM(l11_o_packed)
-RELEASE_MEM(l11_gate_up_packed)
-RELEASE_MEM(l11_down_packed)
 
 # ── Layer 12 ──
 LOAD_MEM(l12_qkv_packed)
@@ -1048,10 +1000,6 @@ matmul_4bit_GPU_2(h_ln2, l12_gate_up_packed, l12_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l12_down_packed, l12_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l12_qkv_packed)
-RELEASE_MEM(l12_o_packed)
-RELEASE_MEM(l12_gate_up_packed)
-RELEASE_MEM(l12_down_packed)
 
 # ── Layer 13 ──
 LOAD_MEM(l13_qkv_packed)
@@ -1069,10 +1017,6 @@ matmul_4bit_GPU_2(h_ln2, l13_gate_up_packed, l13_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l13_down_packed, l13_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l13_qkv_packed)
-RELEASE_MEM(l13_o_packed)
-RELEASE_MEM(l13_gate_up_packed)
-RELEASE_MEM(l13_down_packed)
 
 # ── Layer 14 ──
 LOAD_MEM(l14_qkv_packed)
@@ -1090,10 +1034,6 @@ matmul_4bit_GPU_2(h_ln2, l14_gate_up_packed, l14_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l14_down_packed, l14_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l14_qkv_packed)
-RELEASE_MEM(l14_o_packed)
-RELEASE_MEM(l14_gate_up_packed)
-RELEASE_MEM(l14_down_packed)
 
 # ── Layer 15 ──
 LOAD_MEM(l15_qkv_packed)
@@ -1111,10 +1051,6 @@ matmul_4bit_GPU_2(h_ln2, l15_gate_up_packed, l15_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l15_down_packed, l15_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l15_qkv_packed)
-RELEASE_MEM(l15_o_packed)
-RELEASE_MEM(l15_gate_up_packed)
-RELEASE_MEM(l15_down_packed)
 
 # ── Layer 16 ──
 LOAD_MEM(l16_qkv_packed)
@@ -1132,10 +1068,6 @@ matmul_4bit_GPU_2(h_ln2, l16_gate_up_packed, l16_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l16_down_packed, l16_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l16_qkv_packed)
-RELEASE_MEM(l16_o_packed)
-RELEASE_MEM(l16_gate_up_packed)
-RELEASE_MEM(l16_down_packed)
 
 # ── Layer 17 ──
 LOAD_MEM(l17_qkv_packed)
@@ -1153,10 +1085,6 @@ matmul_4bit_GPU_2(h_ln2, l17_gate_up_packed, l17_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l17_down_packed, l17_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l17_qkv_packed)
-RELEASE_MEM(l17_o_packed)
-RELEASE_MEM(l17_gate_up_packed)
-RELEASE_MEM(l17_down_packed)
 
 # ── Layer 18 ──
 LOAD_MEM(l18_qkv_packed)
@@ -1174,10 +1102,6 @@ matmul_4bit_GPU_2(h_ln2, l18_gate_up_packed, l18_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l18_down_packed, l18_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l18_qkv_packed)
-RELEASE_MEM(l18_o_packed)
-RELEASE_MEM(l18_gate_up_packed)
-RELEASE_MEM(l18_down_packed)
 
 # ── Layer 19 ──
 LOAD_MEM(l19_qkv_packed)
@@ -1195,10 +1119,6 @@ matmul_4bit_GPU_2(h_ln2, l19_gate_up_packed, l19_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l19_down_packed, l19_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l19_qkv_packed)
-RELEASE_MEM(l19_o_packed)
-RELEASE_MEM(l19_gate_up_packed)
-RELEASE_MEM(l19_down_packed)
 
 # ── Layer 20 ──
 LOAD_MEM(l20_qkv_packed)
@@ -1216,10 +1136,6 @@ matmul_4bit_GPU_2(h_ln2, l20_gate_up_packed, l20_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l20_down_packed, l20_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l20_qkv_packed)
-RELEASE_MEM(l20_o_packed)
-RELEASE_MEM(l20_gate_up_packed)
-RELEASE_MEM(l20_down_packed)
 
 # ── Layer 21 ──
 LOAD_MEM(l21_qkv_packed)
@@ -1237,10 +1153,6 @@ matmul_4bit_GPU_2(h_ln2, l21_gate_up_packed, l21_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l21_down_packed, l21_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l21_qkv_packed)
-RELEASE_MEM(l21_o_packed)
-RELEASE_MEM(l21_gate_up_packed)
-RELEASE_MEM(l21_down_packed)
 
 # ── Layer 22 ──
 LOAD_MEM(l22_qkv_packed)
@@ -1258,10 +1170,6 @@ matmul_4bit_GPU_2(h_ln2, l22_gate_up_packed, l22_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l22_down_packed, l22_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l22_qkv_packed)
-RELEASE_MEM(l22_o_packed)
-RELEASE_MEM(l22_gate_up_packed)
-RELEASE_MEM(l22_down_packed)
 
 # ── Layer 23 ──
 LOAD_MEM(l23_qkv_packed)
@@ -1279,10 +1187,6 @@ matmul_4bit_GPU_2(h_ln2, l23_gate_up_packed, l23_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l23_down_packed, l23_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l23_qkv_packed)
-RELEASE_MEM(l23_o_packed)
-RELEASE_MEM(l23_gate_up_packed)
-RELEASE_MEM(l23_down_packed)
 
 # ── Layer 24 ──
 LOAD_MEM(l24_qkv_packed)
@@ -1300,10 +1204,6 @@ matmul_4bit_GPU_2(h_ln2, l24_gate_up_packed, l24_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l24_down_packed, l24_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l24_qkv_packed)
-RELEASE_MEM(l24_o_packed)
-RELEASE_MEM(l24_gate_up_packed)
-RELEASE_MEM(l24_down_packed)
 
 # ── Layer 25 ──
 LOAD_MEM(l25_qkv_packed)
@@ -1321,10 +1221,6 @@ matmul_4bit_GPU_2(h_ln2, l25_gate_up_packed, l25_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l25_down_packed, l25_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l25_qkv_packed)
-RELEASE_MEM(l25_o_packed)
-RELEASE_MEM(l25_gate_up_packed)
-RELEASE_MEM(l25_down_packed)
 
 # ── Layer 26 ──
 LOAD_MEM(l26_qkv_packed)
@@ -1342,10 +1238,6 @@ matmul_4bit_GPU_2(h_ln2, l26_gate_up_packed, l26_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l26_down_packed, l26_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l26_qkv_packed)
-RELEASE_MEM(l26_o_packed)
-RELEASE_MEM(l26_gate_up_packed)
-RELEASE_MEM(l26_down_packed)
 
 # ── Layer 27 ──
 LOAD_MEM(l27_qkv_packed)
@@ -1363,10 +1255,6 @@ matmul_4bit_GPU_2(h_ln2, l27_gate_up_packed, l27_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l27_down_packed, l27_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l27_qkv_packed)
-RELEASE_MEM(l27_o_packed)
-RELEASE_MEM(l27_gate_up_packed)
-RELEASE_MEM(l27_down_packed)
 
 # ── Layer 28 ──
 LOAD_MEM(l28_qkv_packed)
@@ -1384,10 +1272,6 @@ matmul_4bit_GPU_2(h_ln2, l28_gate_up_packed, l28_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l28_down_packed, l28_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l28_qkv_packed)
-RELEASE_MEM(l28_o_packed)
-RELEASE_MEM(l28_gate_up_packed)
-RELEASE_MEM(l28_down_packed)
 
 # ── Layer 29 ──
 LOAD_MEM(l29_qkv_packed)
@@ -1405,10 +1289,6 @@ matmul_4bit_GPU_2(h_ln2, l29_gate_up_packed, l29_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l29_down_packed, l29_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l29_qkv_packed)
-RELEASE_MEM(l29_o_packed)
-RELEASE_MEM(l29_gate_up_packed)
-RELEASE_MEM(l29_down_packed)
 
 # ── Layer 30 ──
 LOAD_MEM(l30_qkv_packed)
@@ -1426,10 +1306,6 @@ matmul_4bit_GPU_2(h_ln2, l30_gate_up_packed, l30_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l30_down_packed, l30_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l30_qkv_packed)
-RELEASE_MEM(l30_o_packed)
-RELEASE_MEM(l30_gate_up_packed)
-RELEASE_MEM(l30_down_packed)
 
 # ── Layer 31 ──
 LOAD_MEM(l31_qkv_packed)
@@ -1447,10 +1323,6 @@ matmul_4bit_GPU_2(h_ln2, l31_gate_up_packed, l31_gate_up_scales, h_ff_buf, kp_fc
 silu_GPU_2(h_ff_buf, n_seq, 8192)
 matmul_4bit_GPU_2(h_ff_buf, l31_down_packed, l31_down_scales, h_out_buf, kp_fcp, n_seq, 3072)
 residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
-RELEASE_MEM(l31_qkv_packed)
-RELEASE_MEM(l31_o_packed)
-RELEASE_MEM(l31_gate_up_packed)
-RELEASE_MEM(l31_down_packed)
 
 # Final norm + logits + argmax + store + embed_next + inc_counters
 rmsnorm_GPU_1(h_state, ln_f_g, h_ln1, n_seq)
@@ -1464,10 +1336,6 @@ inc_counters_GPU_1(step_arr, cur_n_seq_arr, 1)
 _step = 1.0
 while _step < n_tokens:
     # ── Layer 0 ──
-    LOAD_MEM(l0_qkv_packed)
-    LOAD_MEM(l0_o_packed)
-    LOAD_MEM(l0_gate_up_packed)
-    LOAD_MEM(l0_down_packed)
     rmsnorm_decode_GPU_1(h_state, l0_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l0_qkv_packed, l0_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l0_k_cache, l0_v_cache, cur_n_seq_arr, 32)
@@ -1481,16 +1349,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l0_down_packed, l0_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l0_qkv_packed)
-    RELEASE_MEM(l0_o_packed)
-    RELEASE_MEM(l0_gate_up_packed)
-    RELEASE_MEM(l0_down_packed)
 
     # ── Layer 1 ──
-    LOAD_MEM(l1_qkv_packed)
-    LOAD_MEM(l1_o_packed)
-    LOAD_MEM(l1_gate_up_packed)
-    LOAD_MEM(l1_down_packed)
     rmsnorm_decode_GPU_1(h_state, l1_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l1_qkv_packed, l1_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l1_k_cache, l1_v_cache, cur_n_seq_arr, 32)
@@ -1504,16 +1364,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l1_down_packed, l1_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l1_qkv_packed)
-    RELEASE_MEM(l1_o_packed)
-    RELEASE_MEM(l1_gate_up_packed)
-    RELEASE_MEM(l1_down_packed)
 
     # ── Layer 2 ──
-    LOAD_MEM(l2_qkv_packed)
-    LOAD_MEM(l2_o_packed)
-    LOAD_MEM(l2_gate_up_packed)
-    LOAD_MEM(l2_down_packed)
     rmsnorm_decode_GPU_1(h_state, l2_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l2_qkv_packed, l2_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l2_k_cache, l2_v_cache, cur_n_seq_arr, 32)
@@ -1527,16 +1379,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l2_down_packed, l2_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l2_qkv_packed)
-    RELEASE_MEM(l2_o_packed)
-    RELEASE_MEM(l2_gate_up_packed)
-    RELEASE_MEM(l2_down_packed)
 
     # ── Layer 3 ──
-    LOAD_MEM(l3_qkv_packed)
-    LOAD_MEM(l3_o_packed)
-    LOAD_MEM(l3_gate_up_packed)
-    LOAD_MEM(l3_down_packed)
     rmsnorm_decode_GPU_1(h_state, l3_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l3_qkv_packed, l3_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l3_k_cache, l3_v_cache, cur_n_seq_arr, 32)
@@ -1550,16 +1394,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l3_down_packed, l3_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l3_qkv_packed)
-    RELEASE_MEM(l3_o_packed)
-    RELEASE_MEM(l3_gate_up_packed)
-    RELEASE_MEM(l3_down_packed)
 
     # ── Layer 4 ──
-    LOAD_MEM(l4_qkv_packed)
-    LOAD_MEM(l4_o_packed)
-    LOAD_MEM(l4_gate_up_packed)
-    LOAD_MEM(l4_down_packed)
     rmsnorm_decode_GPU_1(h_state, l4_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l4_qkv_packed, l4_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l4_k_cache, l4_v_cache, cur_n_seq_arr, 32)
@@ -1573,16 +1409,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l4_down_packed, l4_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l4_qkv_packed)
-    RELEASE_MEM(l4_o_packed)
-    RELEASE_MEM(l4_gate_up_packed)
-    RELEASE_MEM(l4_down_packed)
 
     # ── Layer 5 ──
-    LOAD_MEM(l5_qkv_packed)
-    LOAD_MEM(l5_o_packed)
-    LOAD_MEM(l5_gate_up_packed)
-    LOAD_MEM(l5_down_packed)
     rmsnorm_decode_GPU_1(h_state, l5_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l5_qkv_packed, l5_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l5_k_cache, l5_v_cache, cur_n_seq_arr, 32)
@@ -1596,16 +1424,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l5_down_packed, l5_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l5_qkv_packed)
-    RELEASE_MEM(l5_o_packed)
-    RELEASE_MEM(l5_gate_up_packed)
-    RELEASE_MEM(l5_down_packed)
 
     # ── Layer 6 ──
-    LOAD_MEM(l6_qkv_packed)
-    LOAD_MEM(l6_o_packed)
-    LOAD_MEM(l6_gate_up_packed)
-    LOAD_MEM(l6_down_packed)
     rmsnorm_decode_GPU_1(h_state, l6_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l6_qkv_packed, l6_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l6_k_cache, l6_v_cache, cur_n_seq_arr, 32)
@@ -1619,16 +1439,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l6_down_packed, l6_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l6_qkv_packed)
-    RELEASE_MEM(l6_o_packed)
-    RELEASE_MEM(l6_gate_up_packed)
-    RELEASE_MEM(l6_down_packed)
 
     # ── Layer 7 ──
-    LOAD_MEM(l7_qkv_packed)
-    LOAD_MEM(l7_o_packed)
-    LOAD_MEM(l7_gate_up_packed)
-    LOAD_MEM(l7_down_packed)
     rmsnorm_decode_GPU_1(h_state, l7_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l7_qkv_packed, l7_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l7_k_cache, l7_v_cache, cur_n_seq_arr, 32)
@@ -1642,16 +1454,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l7_down_packed, l7_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l7_qkv_packed)
-    RELEASE_MEM(l7_o_packed)
-    RELEASE_MEM(l7_gate_up_packed)
-    RELEASE_MEM(l7_down_packed)
 
     # ── Layer 8 ──
-    LOAD_MEM(l8_qkv_packed)
-    LOAD_MEM(l8_o_packed)
-    LOAD_MEM(l8_gate_up_packed)
-    LOAD_MEM(l8_down_packed)
     rmsnorm_decode_GPU_1(h_state, l8_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l8_qkv_packed, l8_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l8_k_cache, l8_v_cache, cur_n_seq_arr, 32)
@@ -1665,16 +1469,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l8_down_packed, l8_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l8_qkv_packed)
-    RELEASE_MEM(l8_o_packed)
-    RELEASE_MEM(l8_gate_up_packed)
-    RELEASE_MEM(l8_down_packed)
 
     # ── Layer 9 ──
-    LOAD_MEM(l9_qkv_packed)
-    LOAD_MEM(l9_o_packed)
-    LOAD_MEM(l9_gate_up_packed)
-    LOAD_MEM(l9_down_packed)
     rmsnorm_decode_GPU_1(h_state, l9_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l9_qkv_packed, l9_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l9_k_cache, l9_v_cache, cur_n_seq_arr, 32)
@@ -1688,16 +1484,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l9_down_packed, l9_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l9_qkv_packed)
-    RELEASE_MEM(l9_o_packed)
-    RELEASE_MEM(l9_gate_up_packed)
-    RELEASE_MEM(l9_down_packed)
 
     # ── Layer 10 ──
-    LOAD_MEM(l10_qkv_packed)
-    LOAD_MEM(l10_o_packed)
-    LOAD_MEM(l10_gate_up_packed)
-    LOAD_MEM(l10_down_packed)
     rmsnorm_decode_GPU_1(h_state, l10_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l10_qkv_packed, l10_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l10_k_cache, l10_v_cache, cur_n_seq_arr, 32)
@@ -1711,16 +1499,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l10_down_packed, l10_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l10_qkv_packed)
-    RELEASE_MEM(l10_o_packed)
-    RELEASE_MEM(l10_gate_up_packed)
-    RELEASE_MEM(l10_down_packed)
 
     # ── Layer 11 ──
-    LOAD_MEM(l11_qkv_packed)
-    LOAD_MEM(l11_o_packed)
-    LOAD_MEM(l11_gate_up_packed)
-    LOAD_MEM(l11_down_packed)
     rmsnorm_decode_GPU_1(h_state, l11_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l11_qkv_packed, l11_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l11_k_cache, l11_v_cache, cur_n_seq_arr, 32)
@@ -1734,16 +1514,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l11_down_packed, l11_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l11_qkv_packed)
-    RELEASE_MEM(l11_o_packed)
-    RELEASE_MEM(l11_gate_up_packed)
-    RELEASE_MEM(l11_down_packed)
 
     # ── Layer 12 ──
-    LOAD_MEM(l12_qkv_packed)
-    LOAD_MEM(l12_o_packed)
-    LOAD_MEM(l12_gate_up_packed)
-    LOAD_MEM(l12_down_packed)
     rmsnorm_decode_GPU_1(h_state, l12_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l12_qkv_packed, l12_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l12_k_cache, l12_v_cache, cur_n_seq_arr, 32)
@@ -1757,16 +1529,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l12_down_packed, l12_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l12_qkv_packed)
-    RELEASE_MEM(l12_o_packed)
-    RELEASE_MEM(l12_gate_up_packed)
-    RELEASE_MEM(l12_down_packed)
 
     # ── Layer 13 ──
-    LOAD_MEM(l13_qkv_packed)
-    LOAD_MEM(l13_o_packed)
-    LOAD_MEM(l13_gate_up_packed)
-    LOAD_MEM(l13_down_packed)
     rmsnorm_decode_GPU_1(h_state, l13_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l13_qkv_packed, l13_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l13_k_cache, l13_v_cache, cur_n_seq_arr, 32)
@@ -1780,16 +1544,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l13_down_packed, l13_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l13_qkv_packed)
-    RELEASE_MEM(l13_o_packed)
-    RELEASE_MEM(l13_gate_up_packed)
-    RELEASE_MEM(l13_down_packed)
 
     # ── Layer 14 ──
-    LOAD_MEM(l14_qkv_packed)
-    LOAD_MEM(l14_o_packed)
-    LOAD_MEM(l14_gate_up_packed)
-    LOAD_MEM(l14_down_packed)
     rmsnorm_decode_GPU_1(h_state, l14_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l14_qkv_packed, l14_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l14_k_cache, l14_v_cache, cur_n_seq_arr, 32)
@@ -1803,16 +1559,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l14_down_packed, l14_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l14_qkv_packed)
-    RELEASE_MEM(l14_o_packed)
-    RELEASE_MEM(l14_gate_up_packed)
-    RELEASE_MEM(l14_down_packed)
 
     # ── Layer 15 ──
-    LOAD_MEM(l15_qkv_packed)
-    LOAD_MEM(l15_o_packed)
-    LOAD_MEM(l15_gate_up_packed)
-    LOAD_MEM(l15_down_packed)
     rmsnorm_decode_GPU_1(h_state, l15_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l15_qkv_packed, l15_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l15_k_cache, l15_v_cache, cur_n_seq_arr, 32)
@@ -1826,16 +1574,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l15_down_packed, l15_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l15_qkv_packed)
-    RELEASE_MEM(l15_o_packed)
-    RELEASE_MEM(l15_gate_up_packed)
-    RELEASE_MEM(l15_down_packed)
 
     # ── Layer 16 ──
-    LOAD_MEM(l16_qkv_packed)
-    LOAD_MEM(l16_o_packed)
-    LOAD_MEM(l16_gate_up_packed)
-    LOAD_MEM(l16_down_packed)
     rmsnorm_decode_GPU_1(h_state, l16_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l16_qkv_packed, l16_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l16_k_cache, l16_v_cache, cur_n_seq_arr, 32)
@@ -1849,16 +1589,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l16_down_packed, l16_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l16_qkv_packed)
-    RELEASE_MEM(l16_o_packed)
-    RELEASE_MEM(l16_gate_up_packed)
-    RELEASE_MEM(l16_down_packed)
 
     # ── Layer 17 ──
-    LOAD_MEM(l17_qkv_packed)
-    LOAD_MEM(l17_o_packed)
-    LOAD_MEM(l17_gate_up_packed)
-    LOAD_MEM(l17_down_packed)
     rmsnorm_decode_GPU_1(h_state, l17_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l17_qkv_packed, l17_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l17_k_cache, l17_v_cache, cur_n_seq_arr, 32)
@@ -1872,16 +1604,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l17_down_packed, l17_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l17_qkv_packed)
-    RELEASE_MEM(l17_o_packed)
-    RELEASE_MEM(l17_gate_up_packed)
-    RELEASE_MEM(l17_down_packed)
 
     # ── Layer 18 ──
-    LOAD_MEM(l18_qkv_packed)
-    LOAD_MEM(l18_o_packed)
-    LOAD_MEM(l18_gate_up_packed)
-    LOAD_MEM(l18_down_packed)
     rmsnorm_decode_GPU_1(h_state, l18_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l18_qkv_packed, l18_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l18_k_cache, l18_v_cache, cur_n_seq_arr, 32)
@@ -1895,16 +1619,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l18_down_packed, l18_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l18_qkv_packed)
-    RELEASE_MEM(l18_o_packed)
-    RELEASE_MEM(l18_gate_up_packed)
-    RELEASE_MEM(l18_down_packed)
 
     # ── Layer 19 ──
-    LOAD_MEM(l19_qkv_packed)
-    LOAD_MEM(l19_o_packed)
-    LOAD_MEM(l19_gate_up_packed)
-    LOAD_MEM(l19_down_packed)
     rmsnorm_decode_GPU_1(h_state, l19_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l19_qkv_packed, l19_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l19_k_cache, l19_v_cache, cur_n_seq_arr, 32)
@@ -1918,16 +1634,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l19_down_packed, l19_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l19_qkv_packed)
-    RELEASE_MEM(l19_o_packed)
-    RELEASE_MEM(l19_gate_up_packed)
-    RELEASE_MEM(l19_down_packed)
 
     # ── Layer 20 ──
-    LOAD_MEM(l20_qkv_packed)
-    LOAD_MEM(l20_o_packed)
-    LOAD_MEM(l20_gate_up_packed)
-    LOAD_MEM(l20_down_packed)
     rmsnorm_decode_GPU_1(h_state, l20_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l20_qkv_packed, l20_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l20_k_cache, l20_v_cache, cur_n_seq_arr, 32)
@@ -1941,16 +1649,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l20_down_packed, l20_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l20_qkv_packed)
-    RELEASE_MEM(l20_o_packed)
-    RELEASE_MEM(l20_gate_up_packed)
-    RELEASE_MEM(l20_down_packed)
 
     # ── Layer 21 ──
-    LOAD_MEM(l21_qkv_packed)
-    LOAD_MEM(l21_o_packed)
-    LOAD_MEM(l21_gate_up_packed)
-    LOAD_MEM(l21_down_packed)
     rmsnorm_decode_GPU_1(h_state, l21_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l21_qkv_packed, l21_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l21_k_cache, l21_v_cache, cur_n_seq_arr, 32)
@@ -1964,16 +1664,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l21_down_packed, l21_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l21_qkv_packed)
-    RELEASE_MEM(l21_o_packed)
-    RELEASE_MEM(l21_gate_up_packed)
-    RELEASE_MEM(l21_down_packed)
 
     # ── Layer 22 ──
-    LOAD_MEM(l22_qkv_packed)
-    LOAD_MEM(l22_o_packed)
-    LOAD_MEM(l22_gate_up_packed)
-    LOAD_MEM(l22_down_packed)
     rmsnorm_decode_GPU_1(h_state, l22_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l22_qkv_packed, l22_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l22_k_cache, l22_v_cache, cur_n_seq_arr, 32)
@@ -1987,16 +1679,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l22_down_packed, l22_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l22_qkv_packed)
-    RELEASE_MEM(l22_o_packed)
-    RELEASE_MEM(l22_gate_up_packed)
-    RELEASE_MEM(l22_down_packed)
 
     # ── Layer 23 ──
-    LOAD_MEM(l23_qkv_packed)
-    LOAD_MEM(l23_o_packed)
-    LOAD_MEM(l23_gate_up_packed)
-    LOAD_MEM(l23_down_packed)
     rmsnorm_decode_GPU_1(h_state, l23_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l23_qkv_packed, l23_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l23_k_cache, l23_v_cache, cur_n_seq_arr, 32)
@@ -2010,16 +1694,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l23_down_packed, l23_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l23_qkv_packed)
-    RELEASE_MEM(l23_o_packed)
-    RELEASE_MEM(l23_gate_up_packed)
-    RELEASE_MEM(l23_down_packed)
 
     # ── Layer 24 ──
-    LOAD_MEM(l24_qkv_packed)
-    LOAD_MEM(l24_o_packed)
-    LOAD_MEM(l24_gate_up_packed)
-    LOAD_MEM(l24_down_packed)
     rmsnorm_decode_GPU_1(h_state, l24_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l24_qkv_packed, l24_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l24_k_cache, l24_v_cache, cur_n_seq_arr, 32)
@@ -2033,16 +1709,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l24_down_packed, l24_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l24_qkv_packed)
-    RELEASE_MEM(l24_o_packed)
-    RELEASE_MEM(l24_gate_up_packed)
-    RELEASE_MEM(l24_down_packed)
 
     # ── Layer 25 ──
-    LOAD_MEM(l25_qkv_packed)
-    LOAD_MEM(l25_o_packed)
-    LOAD_MEM(l25_gate_up_packed)
-    LOAD_MEM(l25_down_packed)
     rmsnorm_decode_GPU_1(h_state, l25_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l25_qkv_packed, l25_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l25_k_cache, l25_v_cache, cur_n_seq_arr, 32)
@@ -2056,16 +1724,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l25_down_packed, l25_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l25_qkv_packed)
-    RELEASE_MEM(l25_o_packed)
-    RELEASE_MEM(l25_gate_up_packed)
-    RELEASE_MEM(l25_down_packed)
 
     # ── Layer 26 ──
-    LOAD_MEM(l26_qkv_packed)
-    LOAD_MEM(l26_o_packed)
-    LOAD_MEM(l26_gate_up_packed)
-    LOAD_MEM(l26_down_packed)
     rmsnorm_decode_GPU_1(h_state, l26_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l26_qkv_packed, l26_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l26_k_cache, l26_v_cache, cur_n_seq_arr, 32)
@@ -2079,16 +1739,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l26_down_packed, l26_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l26_qkv_packed)
-    RELEASE_MEM(l26_o_packed)
-    RELEASE_MEM(l26_gate_up_packed)
-    RELEASE_MEM(l26_down_packed)
 
     # ── Layer 27 ──
-    LOAD_MEM(l27_qkv_packed)
-    LOAD_MEM(l27_o_packed)
-    LOAD_MEM(l27_gate_up_packed)
-    LOAD_MEM(l27_down_packed)
     rmsnorm_decode_GPU_1(h_state, l27_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l27_qkv_packed, l27_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l27_k_cache, l27_v_cache, cur_n_seq_arr, 32)
@@ -2102,16 +1754,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l27_down_packed, l27_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l27_qkv_packed)
-    RELEASE_MEM(l27_o_packed)
-    RELEASE_MEM(l27_gate_up_packed)
-    RELEASE_MEM(l27_down_packed)
 
     # ── Layer 28 ──
-    LOAD_MEM(l28_qkv_packed)
-    LOAD_MEM(l28_o_packed)
-    LOAD_MEM(l28_gate_up_packed)
-    LOAD_MEM(l28_down_packed)
     rmsnorm_decode_GPU_1(h_state, l28_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l28_qkv_packed, l28_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l28_k_cache, l28_v_cache, cur_n_seq_arr, 32)
@@ -2125,16 +1769,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l28_down_packed, l28_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l28_qkv_packed)
-    RELEASE_MEM(l28_o_packed)
-    RELEASE_MEM(l28_gate_up_packed)
-    RELEASE_MEM(l28_down_packed)
 
     # ── Layer 29 ──
-    LOAD_MEM(l29_qkv_packed)
-    LOAD_MEM(l29_o_packed)
-    LOAD_MEM(l29_gate_up_packed)
-    LOAD_MEM(l29_down_packed)
     rmsnorm_decode_GPU_1(h_state, l29_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l29_qkv_packed, l29_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l29_k_cache, l29_v_cache, cur_n_seq_arr, 32)
@@ -2148,16 +1784,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l29_down_packed, l29_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l29_qkv_packed)
-    RELEASE_MEM(l29_o_packed)
-    RELEASE_MEM(l29_gate_up_packed)
-    RELEASE_MEM(l29_down_packed)
 
     # ── Layer 30 ──
-    LOAD_MEM(l30_qkv_packed)
-    LOAD_MEM(l30_o_packed)
-    LOAD_MEM(l30_gate_up_packed)
-    LOAD_MEM(l30_down_packed)
     rmsnorm_decode_GPU_1(h_state, l30_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l30_qkv_packed, l30_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l30_k_cache, l30_v_cache, cur_n_seq_arr, 32)
@@ -2171,16 +1799,8 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l30_down_packed, l30_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l30_qkv_packed)
-    RELEASE_MEM(l30_o_packed)
-    RELEASE_MEM(l30_gate_up_packed)
-    RELEASE_MEM(l30_down_packed)
 
     # ── Layer 31 ──
-    LOAD_MEM(l31_qkv_packed)
-    LOAD_MEM(l31_o_packed)
-    LOAD_MEM(l31_gate_up_packed)
-    LOAD_MEM(l31_down_packed)
     rmsnorm_decode_GPU_1(h_state, l31_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l31_qkv_packed, l31_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l31_k_cache, l31_v_cache, cur_n_seq_arr, 32)
@@ -2194,10 +1814,6 @@ while _step < n_tokens:
     silu_decode_GPU_1(h_ff_buf, cur_n_seq_arr, 8192)
     matmul_4bit_decode_GPU_1(h_ff_buf, l31_down_packed, l31_down_scales, h_out_buf, kp_fcp, cur_n_seq_arr, 3072)
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
-    RELEASE_MEM(l31_qkv_packed)
-    RELEASE_MEM(l31_o_packed)
-    RELEASE_MEM(l31_gate_up_packed)
-    RELEASE_MEM(l31_down_packed)
 
     rmsnorm_decode_GPU_1(h_state, ln_f_g, h_ln1, cur_n_seq_arr, 3072)
     logits_compute_GPU_1(h_ln1, lm_head_1, lm_head_2, logits, cur_n_seq_arr, 32064)
@@ -2209,12 +1825,136 @@ while _step < n_tokens:
     _step = _step + 1.0
 
 # ══════════════ RELEASE GPU MEMORY ══════════════
-# The 4 heavy packed-weight arrays per layer are already cycled with
-# LOAD_MEM/RELEASE_MEM around each layer's own use above (they are >99.8%
-# of per-layer weight memory). The small scale/gamma arrays below were left
-# GPU-resident for the whole run (releasing/reloading them saves negligible
-# memory but still costs a clFinish stall), so release them here once,
-# alongside the KV caches, embeddings, and shared scratch buffers.
+# Packed layer weights remain resident after prefill and are released here
+# once generation completes. Small scale/gamma arrays follow the same lifetime.
+RELEASE_MEM(l0_qkv_packed)
+RELEASE_MEM(l0_o_packed)
+RELEASE_MEM(l0_gate_up_packed)
+RELEASE_MEM(l0_down_packed)
+RELEASE_MEM(l1_qkv_packed)
+RELEASE_MEM(l1_o_packed)
+RELEASE_MEM(l1_gate_up_packed)
+RELEASE_MEM(l1_down_packed)
+RELEASE_MEM(l2_qkv_packed)
+RELEASE_MEM(l2_o_packed)
+RELEASE_MEM(l2_gate_up_packed)
+RELEASE_MEM(l2_down_packed)
+RELEASE_MEM(l3_qkv_packed)
+RELEASE_MEM(l3_o_packed)
+RELEASE_MEM(l3_gate_up_packed)
+RELEASE_MEM(l3_down_packed)
+RELEASE_MEM(l4_qkv_packed)
+RELEASE_MEM(l4_o_packed)
+RELEASE_MEM(l4_gate_up_packed)
+RELEASE_MEM(l4_down_packed)
+RELEASE_MEM(l5_qkv_packed)
+RELEASE_MEM(l5_o_packed)
+RELEASE_MEM(l5_gate_up_packed)
+RELEASE_MEM(l5_down_packed)
+RELEASE_MEM(l6_qkv_packed)
+RELEASE_MEM(l6_o_packed)
+RELEASE_MEM(l6_gate_up_packed)
+RELEASE_MEM(l6_down_packed)
+RELEASE_MEM(l7_qkv_packed)
+RELEASE_MEM(l7_o_packed)
+RELEASE_MEM(l7_gate_up_packed)
+RELEASE_MEM(l7_down_packed)
+RELEASE_MEM(l8_qkv_packed)
+RELEASE_MEM(l8_o_packed)
+RELEASE_MEM(l8_gate_up_packed)
+RELEASE_MEM(l8_down_packed)
+RELEASE_MEM(l9_qkv_packed)
+RELEASE_MEM(l9_o_packed)
+RELEASE_MEM(l9_gate_up_packed)
+RELEASE_MEM(l9_down_packed)
+RELEASE_MEM(l10_qkv_packed)
+RELEASE_MEM(l10_o_packed)
+RELEASE_MEM(l10_gate_up_packed)
+RELEASE_MEM(l10_down_packed)
+RELEASE_MEM(l11_qkv_packed)
+RELEASE_MEM(l11_o_packed)
+RELEASE_MEM(l11_gate_up_packed)
+RELEASE_MEM(l11_down_packed)
+RELEASE_MEM(l12_qkv_packed)
+RELEASE_MEM(l12_o_packed)
+RELEASE_MEM(l12_gate_up_packed)
+RELEASE_MEM(l12_down_packed)
+RELEASE_MEM(l13_qkv_packed)
+RELEASE_MEM(l13_o_packed)
+RELEASE_MEM(l13_gate_up_packed)
+RELEASE_MEM(l13_down_packed)
+RELEASE_MEM(l14_qkv_packed)
+RELEASE_MEM(l14_o_packed)
+RELEASE_MEM(l14_gate_up_packed)
+RELEASE_MEM(l14_down_packed)
+RELEASE_MEM(l15_qkv_packed)
+RELEASE_MEM(l15_o_packed)
+RELEASE_MEM(l15_gate_up_packed)
+RELEASE_MEM(l15_down_packed)
+RELEASE_MEM(l16_qkv_packed)
+RELEASE_MEM(l16_o_packed)
+RELEASE_MEM(l16_gate_up_packed)
+RELEASE_MEM(l16_down_packed)
+RELEASE_MEM(l17_qkv_packed)
+RELEASE_MEM(l17_o_packed)
+RELEASE_MEM(l17_gate_up_packed)
+RELEASE_MEM(l17_down_packed)
+RELEASE_MEM(l18_qkv_packed)
+RELEASE_MEM(l18_o_packed)
+RELEASE_MEM(l18_gate_up_packed)
+RELEASE_MEM(l18_down_packed)
+RELEASE_MEM(l19_qkv_packed)
+RELEASE_MEM(l19_o_packed)
+RELEASE_MEM(l19_gate_up_packed)
+RELEASE_MEM(l19_down_packed)
+RELEASE_MEM(l20_qkv_packed)
+RELEASE_MEM(l20_o_packed)
+RELEASE_MEM(l20_gate_up_packed)
+RELEASE_MEM(l20_down_packed)
+RELEASE_MEM(l21_qkv_packed)
+RELEASE_MEM(l21_o_packed)
+RELEASE_MEM(l21_gate_up_packed)
+RELEASE_MEM(l21_down_packed)
+RELEASE_MEM(l22_qkv_packed)
+RELEASE_MEM(l22_o_packed)
+RELEASE_MEM(l22_gate_up_packed)
+RELEASE_MEM(l22_down_packed)
+RELEASE_MEM(l23_qkv_packed)
+RELEASE_MEM(l23_o_packed)
+RELEASE_MEM(l23_gate_up_packed)
+RELEASE_MEM(l23_down_packed)
+RELEASE_MEM(l24_qkv_packed)
+RELEASE_MEM(l24_o_packed)
+RELEASE_MEM(l24_gate_up_packed)
+RELEASE_MEM(l24_down_packed)
+RELEASE_MEM(l25_qkv_packed)
+RELEASE_MEM(l25_o_packed)
+RELEASE_MEM(l25_gate_up_packed)
+RELEASE_MEM(l25_down_packed)
+RELEASE_MEM(l26_qkv_packed)
+RELEASE_MEM(l26_o_packed)
+RELEASE_MEM(l26_gate_up_packed)
+RELEASE_MEM(l26_down_packed)
+RELEASE_MEM(l27_qkv_packed)
+RELEASE_MEM(l27_o_packed)
+RELEASE_MEM(l27_gate_up_packed)
+RELEASE_MEM(l27_down_packed)
+RELEASE_MEM(l28_qkv_packed)
+RELEASE_MEM(l28_o_packed)
+RELEASE_MEM(l28_gate_up_packed)
+RELEASE_MEM(l28_down_packed)
+RELEASE_MEM(l29_qkv_packed)
+RELEASE_MEM(l29_o_packed)
+RELEASE_MEM(l29_gate_up_packed)
+RELEASE_MEM(l29_down_packed)
+RELEASE_MEM(l30_qkv_packed)
+RELEASE_MEM(l30_o_packed)
+RELEASE_MEM(l30_gate_up_packed)
+RELEASE_MEM(l30_down_packed)
+RELEASE_MEM(l31_qkv_packed)
+RELEASE_MEM(l31_o_packed)
+RELEASE_MEM(l31_gate_up_packed)
+RELEASE_MEM(l31_down_packed)
 RELEASE_MEM(l0_ln1_g)
 RELEASE_MEM(l0_qkv_scales)
 RELEASE_MEM(l0_o_scales)
@@ -2407,11 +2147,9 @@ RELEASE_MEM(l31_o_scales)
 RELEASE_MEM(l31_ln2_g)
 RELEASE_MEM(l31_gate_up_scales)
 RELEASE_MEM(l31_down_scales)
-# Per-layer weight/scale buffers are already released right after each
-# layer's own use (see LOAD_MEM/RELEASE_MEM above) so at most one layer's
-# weights are GPU-resident at any instant. Generation is complete, so the
-# only remaining GPU-resident buffers below (KV caches, embeddings, scratch)
-# can be released once here as well.
+# Packed weights and small weight buffers have now been released once.
+# Generation is complete, so release the remaining KV caches, embeddings,
+# and shared scratch buffers as well.
 RELEASE_MEM(l0_k_cache)
 RELEASE_MEM(l0_v_cache)
 RELEASE_MEM(l1_k_cache)

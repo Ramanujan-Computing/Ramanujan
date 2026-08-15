@@ -1082,8 +1082,6 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
         gpuBufferReallocated = true;
       }
     } else if (!gpuAvCache[di]->isBinaryLoaded) {
-      // Activation/scratch array: host may have updated it, re-upload.
-      // Binary-loaded weight arrays never change after first load — skip write.
       gpuErr = clEnqueueWriteBuffer(s_clCtx.queue, gpuBuffers[di], CL_FALSE, 0,
                                     gpuNeeded, gpuAvCache[di]->val, 0, nullptr,
                                     nullptr);
@@ -1122,9 +1120,22 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
   // rjGpuLogDispatchState(gpuZeroWorkSize, gpuBufferError);
 
   if (!gpuBufferError && !gpuZeroWorkSize) {
+#ifdef __ANDROID__
+    // Adreno optimization: pick a wave size (64) that divides the global size.
+    // Apple/desktop OpenCL drivers pick a better default themselves — forcing
+    // a fixed local size there can exceed a register-heavy dequant kernel's
+    // actual CL_KERNEL_WORK_GROUP_SIZE and fall back to a much slower path.
+    if (gpuWorkDim == 1) {
+        if (gpuGlobalWorkSize[0] % 64 == 0) gpuLocalWorkSize[0] = 64;
+        else if (gpuGlobalWorkSize[0] % 32 == 0) gpuLocalWorkSize[0] = 32;
+        else gpuLocalWorkSize[0] = 1;
+        gpuLocalWorkSizePtr = gpuLocalWorkSize;
+    }
+#endif
+
     gpuErr =
         clEnqueueNDRangeKernel(s_clCtx.queue, gpuKernel, gpuWorkDim, nullptr,
-                               gpuGlobalWorkSize, nullptr, 0, nullptr, nullptr);
+                               gpuGlobalWorkSize, gpuLocalWorkSizePtr, 0, nullptr, nullptr);
 
     if (gpuErr != CL_SUCCESS) {
       RJ_GPU_LOG("[GPU] clEnqueueNDRangeKernel failed: %d\n", gpuErr);

@@ -24,7 +24,7 @@ import numpy as np
 with contextlib.redirect_stderr(io.StringIO()):
     from transformers import AutoTokenizer
 
-N_TOKENS = 5
+N_TOKENS = 500
 
 
 # ---------------------------------------------------------------------------
