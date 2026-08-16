@@ -1072,20 +1072,32 @@ RuleEngineInputUnits *GPUFunctionCommandRE::process() {
 
   if (!gpuBufferError && !gpuZeroWorkSize) {
 #ifdef __ANDROID__
-    // Adreno optimization: only for 1-D kernels. Start from wave=64 (a good
+    // Adreno optimization: Start from wave=64 (a good
     // Adreno wavefront size) and halve it until it both divides evenly into
-    // gpuGlobalWorkSize[0] and fits within this kernel's real
+    // gpuGlobalWorkSize[i] and fits within this kernel's real
     // CL_KERNEL_WORK_GROUP_SIZE cap (gpuMaxWorkGroupSize, queried once in
     // setFields() so we never force a group size the driver would reject).
+    // The cap is then reduced for subsequent dimensions to fit within the max.
     // Apple/desktop drivers already pick a good default (nullptr local size),
     // so this whole block is Android-only.
-    if (gpuWorkDim == 1) {
+    if (gpuWorkDim > 0 && gpuWorkDim <= 3) {
         size_t cap = gpuMaxWorkGroupSize > 0 ? gpuMaxWorkGroupSize : 1;
-        size_t wave = 64;
-        while (wave > 1 && (wave > cap || gpuGlobalWorkSize[0] % wave != 0)) {
-            wave >>= 1;
+        
+        // Target an optimal starting size based on dimensionality to encourage 
+        // square/cubic blocks for better 2D/3D spatial cache locality.
+        // 1D -> 64x1x1 (64 threads)
+        // 2D -> 16x16x1 (256 threads)
+        // 3D -> 8x8x8 or 8x8x4 (up to 512 threads)
+        size_t start_wave = (gpuWorkDim == 1) ? 64 : (gpuWorkDim == 2 ? 16 : 8);
+
+        for (size_t i = 0; i < gpuWorkDim; ++i) {
+            size_t wave = start_wave;
+            while (wave > 1 && (wave > cap || gpuGlobalWorkSize[i] % wave != 0)) {
+                wave >>= 1;
+            }
+            gpuLocalWorkSize[i] = wave;
+            cap = (cap / wave) > 0 ? (cap / wave) : 1;
         }
-        gpuLocalWorkSize[0] = wave;
         gpuLocalWorkSizePtr = gpuLocalWorkSize;
     }
 #endif
