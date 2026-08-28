@@ -5,22 +5,20 @@
 #include <string>
 #include <vector>
 #include "RuleEngineInputUnit.hpp"
-#include <json/json.h>
+#include "rule_engine_input.pb.h"
 #include "../ruleEngineObject/RedefineArrayCommandRE.h"
 
 class RedefineArrayCommand : public RuleEngineInputUnit {
 public:
     std::string arrayId;
     std::vector<std::string> newDimensions;
-    // Optionally, initial values can be added here
 
-    RedefineArrayCommand(Json::Value* value) {
-        this->id = (*value)["id"].asString();
-        this->arrayId = (*value)["arrayId"].asString();
-        for (int i = 0; i < (*value)["newDimensions"].size(); i++) {
-            this->newDimensions.push_back((*value)["newDimensions"][i].asString());
+    RedefineArrayCommand(const ramanujan::RedefineArrayCommand* p) {
+        this->id = p->id();
+        this->arrayId = p->array_id();
+        for (const auto& d : p->new_dimensions()) {
+            this->newDimensions.push_back(d);
         }
-        // TODO: Parse initialValue if needed
     }
 
     RuleEngineInputUnits* getInternalAnalogy() override {

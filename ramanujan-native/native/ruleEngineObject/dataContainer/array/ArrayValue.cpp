@@ -62,15 +62,18 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
                 size_t mapSize = totalSize * sizeof(float);
                 if (mapSize == 0) mapSize = sizeof(float);
 
-                // Two-step mmap: anonymous region covers the full totalSize (tail is
-                // demand-zeroed by the OS); MAP_FIXED overlays file content on the first
-                // fcount floats. This avoids SIGBUS from mapping past EOF and avoids the
-                // double-buffer (heap alloc + page cache) that fstream::read causes.
+                // Two-step mmap: anonymous region covers the full totalSize (tail past
+                // fcount is demand-zeroed, avoiding SIGBUS on a short file); MAP_FIXED
+                // overlays the file on the first fcount floats. The overlay is file-backed
+                // and read-only, so its pages are reclaimable page cache the kernel can
+                // evict under memory pressure -- essential for the ~2.7 GB of Phi-3 weights
+                // on a 3.6 GB device. clCreateBuffer(CL_MEM_COPY_HOST_PTR) copies via a
+                // CPU memcpy, which faults these pages in normally (no GPU-DMA race).
                 void* mapped = mmap(nullptr, mapSize, PROT_READ | PROT_WRITE,
                                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
                 if (mapped != MAP_FAILED) {
                     if (fcount > 0) {
-                        mmap(mapped, fcount * sizeof(float), PROT_READ | PROT_WRITE,
+                        mmap(mapped, (size_t)fcount * sizeof(float), PROT_READ,
                              MAP_PRIVATE | MAP_FIXED, fd, 0);
                     }
                     fdata = static_cast<float*>(mapped);

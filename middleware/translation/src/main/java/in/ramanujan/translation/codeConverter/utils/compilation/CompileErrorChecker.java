@@ -120,6 +120,7 @@ public class CompileErrorChecker {
         add("LOG");
         add("GPU_SYNC");
         add("GPU_LOAD");
+        add("RETURN");
 
     }};
 

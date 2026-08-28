@@ -12,7 +12,7 @@ import in.ramanujan.rule.engine.util.NativeLibraryLoader;
 import java.io.IOException;
 
 public class NativeProcessor {
-    public native void process(String ruleEngineInputJson, String firstCommandId);
+    public native void process(byte[] ruleEngineInputProto, String firstCommandId);
 
     public HashMap jniObject;
     public ArrayList debugPoints;

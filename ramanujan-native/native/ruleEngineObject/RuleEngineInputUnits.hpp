@@ -45,9 +45,6 @@ public:
     return itr->second;
   }
 
-  ~RuleEngineInputUnits() { destroy(); }
-
-private:
   virtual void destroy() = 0;
 };
 

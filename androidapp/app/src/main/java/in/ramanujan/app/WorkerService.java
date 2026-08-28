@@ -19,6 +19,7 @@ import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.FunctionCall;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeProcessor;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -178,10 +179,29 @@ public class WorkerService extends Service {
                                         String hashStr = sb.toString();
                                         
                                         File localFile = new File(getCacheDir(), "local_rj_bin_" + hashStr + ".bin");
-                                        
-                                        if (localFile.exists() && localFile.length() > 0) {
+
+                                        // Expected size = product(dimensions) * 4 bytes (flat float32).
+                                        // A cached file that is a different size is a leftover partial
+                                        // download and must be re-fetched, otherwise the native side
+                                        // zero-pads the missing tail -> corrupt weights -> garbage output.
+                                        long expectedBytes = -1;
+                                        if (array.getDimension() != null && !array.getDimension().isEmpty()) {
+                                            long count = 1;
+                                            for (Integer d : array.getDimension()) count *= (d == null ? 0 : d);
+                                            expectedBytes = count * 4L;
+                                        }
+
+                                        boolean cached = localFile.exists()
+                                                && (expectedBytes >= 0
+                                                        ? localFile.length() == expectedBytes
+                                                        : localFile.length() > 0);
+                                        if (cached) {
                                             System.err.println("[Worker] Skipping download, binary already cached for array " + array.getName() + ": " + localFile.getAbsolutePath());
                                         } else {
+                                            if (localFile.exists() && expectedBytes >= 0 && localFile.length() != expectedBytes) {
+                                                System.err.println("[Worker] Re-downloading corrupt/partial cache for array " + array.getName()
+                                                        + ": have " + localFile.length() + " bytes, expected " + expectedBytes);
+                                            }
                                             String downloadUrl = sUrl + "/binary/fetch?path=" + URLEncoder.encode(serverPath, "UTF-8");
                                             System.err.println("[Worker] Fetching binary parallel for array " + array.getName() + " from server path: " + serverPath);
                                             downloadFile(downloadUrl, localFile);
@@ -227,10 +247,10 @@ public class WorkerService extends Service {
                     Map<String, Object> results = new HashMap<>();
                     long start = System.currentTimeMillis();
                     try {
-                        String reiJson = MAPPER.writeValueAsString(rei);
                         NativeProcessor np = new NativeProcessor();
                         if (firstCommandId != null && !firstCommandId.isEmpty()) {
-                            np.process(reiJson, firstCommandId);
+                            byte[] reiProto = RuleEngineInputProtoSerializer.serialize(rei);
+                            np.process(reiProto, firstCommandId);
                             if (np.jniObject != null) results = np.jniObject;
                         }
                     } catch (Exception e) {
@@ -347,13 +367,44 @@ public class WorkerService extends Service {
         if (code >= 400) {
             throw new IOException("Server returned HTTP error code: " + code);
         }
-        try (InputStream is = conn.getInputStream();
-             OutputStream os = new FileOutputStream(destFile)) {
-            byte[] buf = new byte[65536];
-            int n;
-            while ((n = is.read(buf)) != -1) {
-                os.write(buf, 0, n);
+        long contentLength = conn.getContentLengthLong();
+
+        // Download to a temp file and atomically rename into place only after the full
+        // body is verified. A partial download (interrupted thread, dropped connection,
+        // killed app) must never appear at destFile, or the cache-hit check below would
+        // serve a truncated weight file forever -> zero-padded tensors -> garbage output.
+        File tmpFile = new File(destFile.getAbsolutePath() + ".part-" + UUID.randomUUID());
+        long total = 0;
+        try {
+            try (InputStream is = conn.getInputStream();
+                 FileOutputStream os = new FileOutputStream(tmpFile)) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = is.read(buf)) != -1) {
+                    os.write(buf, 0, n);
+                    total += n;
+                }
+                os.flush();
+                os.getFD().sync(); // force bytes to stable storage before rename
             }
+
+            if (contentLength >= 0 && total != contentLength) {
+                throw new IOException("Truncated download for " + destFile.getName()
+                        + ": got " + total + " of " + contentLength + " bytes");
+            }
+
+            File parent = destFile.getParentFile();
+            if (parent != null) parent.mkdirs();
+            if (!tmpFile.renameTo(destFile)) {
+                // renameTo can fail across some filesystems; fall back to copy+replace
+                if (destFile.exists()) destFile.delete();
+                if (!tmpFile.renameTo(destFile)) {
+                    throw new IOException("Failed to move downloaded file into place: "
+                            + destFile.getAbsolutePath());
+                }
+            }
+        } finally {
+            if (tmpFile.exists()) tmpFile.delete();
         }
     }
 }

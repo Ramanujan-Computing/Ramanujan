@@ -2,14 +2,14 @@
 #define VARIABLE_H
 
 #include <string>
-#include <json/value.h>
 #include "RuleEngineInputUnit.hpp"
+#include "rule_engine_input.pb.h"
 
 
 
 class Variable : public RuleEngineInputUnit {
     public:
-    Variable(Json::Value *pValue);
+    Variable(const ramanujan::Variable* p);
 
     std::string name, dataType, frameCount;
         double value;
@@ -19,7 +19,7 @@ class Variable : public RuleEngineInputUnit {
 
 class MethodAgnosticVariable : public RuleEngineInputUnit {
 public:
-    MethodAgnosticVariable(Json::Value *pValue);
+    MethodAgnosticVariable(const ramanujan::MethodDataTypeAgnosticArg* p);
 
     std::string name, dataType, frameCount;
     double value;
@@ -29,4 +29,3 @@ public:
 
 
 #endif
-

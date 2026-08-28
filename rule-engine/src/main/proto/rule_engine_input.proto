@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package ramanujan;
+
+option java_package = "in.ramanujan.rule.engine.proto";
+option java_outer_classname = "RuleEngineProto";
+option optimize_for = SPEED;
+
+message RuleEngineInput {
+  repeated Variable variables = 1;
+  repeated Command commands = 2;
+  repeated IfBlock if_blocks = 3;
+  repeated Operation operations = 4;
+  repeated Condition conditions = 5;
+  repeated Constant constants = 6;
+  repeated Array arrays = 7;
+  repeated MethodDataTypeAgnosticArg method_data_type_agnostic_args = 8;
+  repeated FunctionCall function_calls = 9;
+  repeated WhileBlock while_blocks = 10;
+  repeated RedefineArrayCommand redefine_array_commands = 11;
+  repeated ReturnOperation return_operations = 12;
+}
+
+message Variable {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string name = 3;
+  string data_type = 4;
+  double value = 5;
+  bool is_returnable = 6;
+  string frame_count = 7;
+}
+
+message MethodDataTypeAgnosticArg {
+  string id = 1;
+  string name = 2;
+  string frame_count = 3;
+  double value = 4;
+}
+
+message Command {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string immediate_parent_rule_engine_input_unit_id = 3;
+  string next_id = 4;
+  string if_blocks = 5;
+  string loops = 6;
+  string operation = 7;
+  string constant = 8;
+  string variable_id = 9;
+  string condition_id = 10;
+  string while_id = 11;
+  string return_operation = 12;
+  bool return_statement = 13;
+  repeated string next_dag_trigger_ids = 14;
+  FunctionCall function_call = 15;
+  ArrayCommand array_command = 16;
+  RedefineArrayCommand redefine_array_command = 17;
+  repeated ReturnAssignmentPair return_assignment_pairs = 18;
+}
+
+message ArrayCommand {
+  string array_id = 1;
+  repeated string index = 2;
+}
+
+message ReturnAssignmentPair {
+  string target_command_id = 1;
+  string source_command_id = 2;
+}
+
+message IfBlock {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string immediate_parent_rule_engine_input_unit_id = 3;
+  string condition_id = 4;
+  string if_command = 5;
+  string else_command = 6;
+}
+
+message Operation {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string operator_type = 3;
+  string operand1 = 4;
+  string operand2 = 5;
+}
+
+message Condition {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string condition_type = 3;
+  string comparision_command1 = 4;
+  string comparision_command2 = 5;
+}
+
+message Constant {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string data_type = 3;
+  double value = 4;
+}
+
+message Array {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string data_type = 3;
+  string name = 4;
+  string frame_count = 5;
+  repeated int32 dimension = 6;
+  map<string, double> values = 7;
+  string binary_file = 8;
+}
+
+message FunctionCall {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string immediate_parent_rule_engine_input_unit_id = 3;
+  string first_command_id = 4;
+  repeated string arguments = 5;
+  repeated string all_variables_in_method = 6;
+  bool is_gpu = 7;
+  string open_cl_code = 8;
+  repeated int32 gpu_parallelism_arg_indices = 9;
+  int32 gpu_work_dim_arg_index = 10;
+}
+
+message WhileBlock {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string immediate_parent_rule_engine_input_unit_id = 3;
+  string condition_id = 4;
+  string while_command_id = 5;
+}
+
+message RedefineArrayCommand {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string array_id = 3;
+  repeated string new_dimensions = 4;
+}
+
+message ReturnOperation {
+  string id = 1;
+  int32 code_str_ptr = 2;
+  string operator_type = 3;
+  string operand1 = 4;
+  string operand2 = 5;
+}

@@ -7,6 +7,7 @@ import in.ramanujan.pojo.RuleEngineInputUnits;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.*;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
 import in.ramanujan.rule.engine.NativeProcessor;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogicFactory;
 import in.ramanujan.translation.codeConverter.CodeSnippetElement;
@@ -1384,6 +1385,119 @@ public class PythonCodeRunTest {
         analyzeResults(variableMap, arrayMap, variablesToAssert, arrayIndexToAssert);
     }
 
+    // ========== RETURN DIRECTIVE TESTS ==========
+
+    /**
+     * Verifies that RETURN(arr1) causes only arr1 to appear in arrChangeMap,
+     * even though arr2 was also modified during execution.
+     */
+    @Test(timeout = 5000)
+    public void testReturnDirectiveSelectiveArrayReturn() throws Exception {
+        String pythonCode =
+            "arr1 = [0 for _ in range(3)]\n" +
+            "arr2 = [0 for _ in range(3)]\n" +
+            "arr1[0] = 10\n" +
+            "arr1[1] = 20\n" +
+            "arr1[2] = 30\n" +
+            "arr2[0] = 100\n" +
+            "arr2[1] = 200\n" +
+            "arr2[2] = 300\n" +
+            "RETURN(arr1)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        // arr1 must be in the result
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 10d);
+        expectedArr1.put("1", 20d);
+        expectedArr1.put("2", 30d);
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        analyzeResults(variableMap, arrayMap, new HashMap<>(), arrayIndexToAssert);
+
+        // arr2 must NOT be in the result (RETURN filtered it out)
+        for (Array a : arrayMap.values()) {
+            if ("arr2".equals(a.getName())) {
+                assertTrue("arr2 should not be returned when RETURN(arr1) is used",
+                    a.getValues() == null || a.getValues().isEmpty());
+            }
+        }
+    }
+
+    /**
+     * Verifies that RETURN(arr1, arr2) causes both arrays to appear while a third
+     * modified array is excluded.
+     */
+    @Test(timeout = 5000)
+    public void testReturnDirectiveMultipleArrays() throws Exception {
+        String pythonCode =
+            "arr1 = [0 for _ in range(2)]\n" +
+            "arr2 = [0 for _ in range(2)]\n" +
+            "arr3 = [0 for _ in range(2)]\n" +
+            "arr1[0] = 1\n" +
+            "arr1[1] = 2\n" +
+            "arr2[0] = 3\n" +
+            "arr2[1] = 4\n" +
+            "arr3[0] = 5\n" +
+            "arr3[1] = 6\n" +
+            "RETURN(arr1, arr2)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 1d);
+        expectedArr1.put("1", 2d);
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        Map<String, Object> expectedArr2 = new HashMap<>();
+        expectedArr2.put("0", 3d);
+        expectedArr2.put("1", 4d);
+        arrayIndexToAssert.put("arr2", expectedArr2);
+        analyzeResults(variableMap, arrayMap, new HashMap<>(), arrayIndexToAssert);
+
+        // arr3 must NOT be in the result
+        for (Array a : arrayMap.values()) {
+            if ("arr3".equals(a.getName())) {
+                assertTrue("arr3 should not be returned when RETURN(arr1, arr2) is used",
+                    a.getValues() == null || a.getValues().isEmpty());
+            }
+        }
+    }
+
+    /**
+     * Regression: without RETURN, all modified arrays are returned (unchanged behaviour).
+     */
+    @Test(timeout = 5000)
+    public void testNoReturnDirectiveReturnsAllModifiedArrays() throws Exception {
+        String pythonCode =
+            "arr1 = [0 for _ in range(2)]\n" +
+            "arr2 = [0 for _ in range(2)]\n" +
+            "arr1[0] = 5\n" +
+            "arr1[1] = 15\n" +
+            "arr2[0] = 50\n" +
+            "arr2[1] = 150\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> arrayIndexToAssert = new HashMap<>();
+        Map<String, Object> expectedArr1 = new HashMap<>();
+        expectedArr1.put("0", 5d);
+        expectedArr1.put("1", 15d);
+        arrayIndexToAssert.put("arr1", expectedArr1);
+        Map<String, Object> expectedArr2 = new HashMap<>();
+        expectedArr2.put("0", 50d);
+        expectedArr2.put("1", 150d);
+        arrayIndexToAssert.put("arr2", expectedArr2);
+
+        analyzeResults(variableMap, arrayMap, new HashMap<>(), arrayIndexToAssert);
+    }
+
     // ========== AST PARSING TESTS ==========
 
     /**
@@ -1621,7 +1735,11 @@ public class PythonCodeRunTest {
             "def vector_add_GPU_1(a, b, c, gid):\n" +
             "    c[gid] = a[gid] + b[gid]\n" +
             "\n" +
-            "vector_add_GPU_1(a, b, c, 4)\n";
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(b)\n" +
+            "LOAD_MEM(c)\n" +
+            "vector_add_GPU_1(a, b, c, 4)\n" +
+            "GPU_SYNC(c)\n";
 
         Map<String, Variable> execVarMap1D = new HashMap<>();
         Map<String, Array>    execArrMap1D = new HashMap<>();
@@ -1687,7 +1805,10 @@ public class PythonCodeRunTest {
             "def scale_2d_GPU_2(a, out, row, col):\n" +
             "    out[row] = a[row] * 2\n" +
             "\n" +
-            "scale_2d_GPU_2(a, out, 4, 4)\n";
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(out)\n" +
+            "scale_2d_GPU_2(a, out, 4, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMap2D = new HashMap<>();
         Map<String, Array>    execArrMap2D = new HashMap<>();
@@ -1757,7 +1878,10 @@ public class PythonCodeRunTest {
             "    else:\n" +
             "        out[gid] = 0\n" +
             "\n" +
-            "relu_GPU_1(a, out, 4)\n";
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(out)\n" +
+            "relu_GPU_1(a, out, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMapRelu = new HashMap<>();
         Map<String, Array>    execArrMapRelu = new HashMap<>();
@@ -1828,7 +1952,10 @@ public class PythonCodeRunTest {
             "        k = k + 1\n" +
             "    out[gid] = s\n" +
             "\n" +
-            "prefix_sum_GPU_1(a, out, 4)\n";
+            "LOAD_MEM(a)\n" +
+            "LOAD_MEM(out)\n" +
+            "prefix_sum_GPU_1(a, out, 4)\n" +
+            "GPU_SYNC(out)\n";
 
         Map<String, Variable> execVarMapWhile = new HashMap<>();
         Map<String, Array>    execArrMapWhile = new HashMap<>();
@@ -2089,23 +2216,18 @@ public class PythonCodeRunTest {
         
         // Execute using NativeProcessor
         if (!commands.isEmpty()) {
-                NativeProcessor processor = new NativeProcessor();
-                ObjectMapper mapper = new ObjectMapper();
-                String jsonInput = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(ruleEngineInput);
+            NativeProcessor processor = new NativeProcessor();
+            byte[] protoBytes = RuleEngineInputProtoSerializer.serialize(ruleEngineInput);
 
-                // Write combined payload (firstCommandId + ruleEngineInput) to a stable tmp file for native debugging
-                ObjectNode wrapper = mapper.createObjectNode();
-                wrapper.put("firstCommandId", commands.get(0).getId());
-                wrapper.set("ruleEngineInput", mapper.valueToTree(ruleEngineInput));
-                    Path tmpPath = Paths.get("/tmp", "rule_engine_debug.json");
-                    Files.write(tmpPath,
-                        mapper.writerWithDefaultPrettyPrinter().writeValueAsString(wrapper)
-                            .getBytes(StandardCharsets.UTF_8));
+            // Write protobuf payload to a stable tmp file for native debugging
+            Path tmpPath = Paths.get("/tmp", "rule_engine_debug.pb");
+            Files.write(tmpPath, protoBytes);
+            Files.write(Paths.get("/tmp", "rule_engine_debug.json"), protoBytes);
 
-                System.out.println("========== Debug payload written to /tmp/rule_engine_debug.json ==========");
-                System.out.flush();
-            processor.process(jsonInput, commands.get(0).getId());
-            
+            System.out.println("========== Debug payload written to /tmp/rule_engine_debug.pb ==========");
+            System.out.flush();
+            processor.process(protoBytes, commands.get(0).getId());
+
             // Resolve variables from native processor result
             resolveVariablesFromNativeProcessor(processor, variableMap, arrayMap);
         }
@@ -2653,6 +2775,29 @@ public class PythonCodeRunTest {
         assertFalse("Bare double literal must not appear", kernel.contains(" 0.99)") || kernel.contains("(0.99)"));
         assertTrue("v should be __global float*", kernel.contains("__global float* v"));
     }
+
+        @Test
+        public void testGpuPackedNibbleUsesIntegerBitExtraction() throws Exception {
+        String pythonCode =
+            "def unpack_GPU_1(packed_values, output, gid):\n" +
+            "    packed = packed_values[gid]\n" +
+            "    output[gid] = PACKED_NIBBLE(packed, 4)\n";
+
+        RuleEngineInput rei = translatePythonToRuleEngineInput(pythonCode);
+        FunctionCall fc = findGpuFunctionCall(rei, "unpack_GPU_1");
+
+        assertNotNull(fc);
+        String kernel = fc.getOpenClCode();
+        assertNotNull(kernel);
+        assertTrue("packed float should be converted numerically to uint",
+            kernel.contains("((uint)(packed)"));
+        assertTrue("nibble extraction should use an integer shift and mask",
+            kernel.contains(">>") && kernel.contains("& 15u"));
+        assertFalse("nibble extraction must not use floating-point division",
+            kernel.contains("packed /"));
+        assertFalse("nibble extraction must not use floor",
+            kernel.contains("floor("));
+        }
 
     /**
      * Finds the first {@link FunctionCall} in {@code rei} whose {@code isGpu} flag is true and

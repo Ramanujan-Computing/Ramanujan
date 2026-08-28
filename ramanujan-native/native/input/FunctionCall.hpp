@@ -5,6 +5,7 @@
 #include <list>
 #include <vector>
 #include "RuleEngineInputUnit.hpp"
+#include "rule_engine_input.pb.h"
 
 
 
@@ -18,8 +19,6 @@ class FunctionCall : public RuleEngineInputUnit {
 
         /**
          * True when this function should be executed as an OpenCL GPU kernel.
-         * Functions whose Python names end with "_GPU" are compiled to OpenCL and
-         * this flag is set by the translation layer.
          */
         bool isGpu = false;
 
@@ -30,49 +29,35 @@ class FunctionCall : public RuleEngineInputUnit {
         std::string openClCode;
 
         /**
-         * Zero-based indices into the arguments vector of the range-kernel-dimension parameters,
-         * one per NDRange dimension.  At call time these values are passed as global_work_size[]
-         * to clEnqueueNDRangeKernel.  The size of this vector equals work_dim.
+         * Zero-based indices into the arguments vector of the range-kernel-dimension parameters.
          * Only meaningful when isGpu == true.
          */
         std::vector<int> gpuParallelismArgIndices;
 
         /**
          * Zero-based index of the M parameter (work_dim count) in the argument list.
-         * Always equals gpuParallelismArgIndices.size() at call time.
          * Only meaningful when isGpu == true.
          */
         int gpuWorkDimArgIndex = -1;
 
-        FunctionCall(Json::Value* value) {
-            this->id = (*value)["id"].asString();
-            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
-            this->firstCommandId = (*value)["firstCommandId"].asString();
-            for (int i = 0; i < (*value)["arguments"].size(); i++) {
-                this->arguments.push_back((*value)["arguments"][i].asString());
+        FunctionCall(const ramanujan::FunctionCall* p) {
+            this->id = p->id();
+            this->immediateParentRuleEngineInputUnitId = p->immediate_parent_rule_engine_input_unit_id();
+            this->firstCommandId = p->first_command_id();
+            for (const auto& a : p->arguments()) {
+                this->arguments.push_back(a);
                 argumentsSize++;
             }
-
-            for(int i=0; i<(*value)["allVariablesInMethod"].size(); i++){
-                this->allVariablesInMethod.push_back((*value)["allVariablesInMethod"][i].asString());
+            for (const auto& v : p->all_variables_in_method()) {
+                this->allVariablesInMethod.push_back(v);
                 allVariablesInMethodSize++;
             }
-
-            // GPU fields (optional – absent in non-GPU functions)
-            if (!(*value)["isGpu"].isNull() && (*value)["isGpu"].isBool()) {
-                this->isGpu = (*value)["isGpu"].asBool();
+            this->isGpu = p->is_gpu();
+            this->openClCode = p->open_cl_code();
+            for (int idx : p->gpu_parallelism_arg_indices()) {
+                this->gpuParallelismArgIndices.push_back(idx);
             }
-            if (!(*value)["openClCode"].isNull() && (*value)["openClCode"].isString()) {
-                this->openClCode = (*value)["openClCode"].asString();
-            }
-            if (!(*value)["gpuParallelismArgIndices"].isNull() && (*value)["gpuParallelismArgIndices"].isArray()) {
-                for (int idx = 0; idx < (int)(*value)["gpuParallelismArgIndices"].size(); idx++) {
-                    this->gpuParallelismArgIndices.push_back((*value)["gpuParallelismArgIndices"][idx].asInt());
-                }
-            }
-            if (!(*value)["gpuWorkDimArgIndex"].isNull() && (*value)["gpuWorkDimArgIndex"].isInt()) {
-                this->gpuWorkDimArgIndex = (*value)["gpuWorkDimArgIndex"].asInt();
-            }
+            this->gpuWorkDimArgIndex = p->gpu_work_dim_arg_index();
         }
 
     RuleEngineInputUnits *getInternalAnalogy();

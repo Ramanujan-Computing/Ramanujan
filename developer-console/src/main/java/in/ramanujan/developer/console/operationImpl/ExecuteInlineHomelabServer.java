@@ -63,6 +63,10 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         final Map<String, Variable> variableMap;
         final Map<String, Array>    arrayMap;
         final CountDownLatch        latch;
+        // arrayId -> local file path of a raw float32 binary file uploaded by a worker
+        // via /orchestrator/uploadBinary, for RETURN()-marked arrays too large to
+        // ship efficiently as a JSON point-value map.
+        final Map<String, String>   binaryArrayFiles = new ConcurrentHashMap<>();
 
         KernelRun(Map<String, Variable> variableMap, Map<String, Array> arrayMap, int taskCount) {
             this.variableMap = variableMap;
@@ -197,6 +201,10 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         Set<DagElement> completed = new HashSet<>();
         Deque<DagElement> readyQueue = new ArrayDeque<>();
         readyQueue.add(firstDag);
+        // arrayId -> local (homelab-side) file path, accumulated across every DAG
+        // element dispatched in this run, for RETURN()-marked arrays delivered via
+        // binary upload instead of the JSON point-value map.
+        Map<String, String> allBinaryArrayFiles = new HashMap<>();
 
         while (completed.size() < allElements.size()) {
             if (readyQueue.isEmpty()) {
@@ -232,6 +240,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
 
             System.err.println("[Homelab] dispatched element (firstCmd=" + element.getFirstCommandId() + "), waiting…");
             run.latch.await();
+            allBinaryArrayFiles.putAll(run.binaryArrayFiles);
 
             completed.add(element);
             for (DagElement next : element.getNextElements()) {
@@ -262,6 +271,16 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
         System.err.println("[Homelab] setStores: arrStore keys=" + arrStore.keySet());
         ExecutorImpl.setStores(varStore, arrStore);
+
+        Map<String, String> binaryStore = new HashMap<>();
+        for (Map.Entry<String, String> e : allBinaryArrayFiles.entrySet()) {
+            String id = e.getKey();
+            if (id.contains("func") || !id.contains("_name_")) continue;
+            String name = id.split("_name_")[1];
+            binaryStore.put(name, e.getValue());
+        }
+        System.err.println("[Homelab] setStores: binaryStore keys=" + binaryStore.keySet());
+        ExecutorImpl.setBinaryArrayFileStore(binaryStore);
     }
 
     // -------------------------------------------------------------------------
@@ -276,6 +295,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         server.createContext("/orchestrator/run",  this::handleOrchestratorRun);
         server.createContext("/orchestrator/dump", this::handleOrchestratorDump);
         server.createContext("/binary/fetch",      this::handleBinaryFetch);
+        server.createContext("/orchestrator/uploadBinary", this::handleUploadBinary);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         System.err.println("[Homelab] HTTP server listening on :" + port);
@@ -304,6 +324,22 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         Map<String, Object> req = MAPPER.readValue(body, Map.class);
         String name = (String) req.get("name");
         String path = (String) req.get("path");
+
+        String binaryFile = ExecutorImpl.binaryArrayFileStore.get(name);
+        if (binaryFile != null) {
+            System.err.println("[Homelab] dump request: name=" + name + " path=" + path
+                    + " (binary-backed, file=" + binaryFile + ")");
+            try {
+                writeBinaryFileAsCsv(binaryFile, path);
+                sendJson(ex, 200, "{\"status\":\"SUCCESS\"}");
+            } catch (Exception e) {
+                Map<String, Object> err = new LinkedHashMap<>();
+                err.put("status", "ERROR");
+                err.put("message", e.getMessage() != null ? e.getMessage() : e.toString());
+                sendJson(ex, 500, MAPPER.writeValueAsString(err));
+            }
+            return;
+        }
 
         System.err.println("[Homelab] dump request: name=" + name + " path=" + path
                 + " storeKeys=" + ExecutorImpl.arrayStore.keySet());
@@ -397,6 +433,73 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         } catch (Exception e) {
             sendJson(ex, 500, "{\"status\":\"ERROR\",\"message\":\"" + e.getMessage() + "\"}");
         }
+    }
+
+    /**
+     * Workers POST here (raw octet-stream body) to deliver the full contents of a
+     * RETURN()-marked array as a binary float32 file, instead of a JSON point-value
+     * map. Query params: uuid (task uuid), arrayId (DAG-scoped array id).
+     */
+    private void handleUploadBinary(HttpExchange ex) throws IOException {
+        try {
+            String query = ex.getRequestURI().getRawQuery();
+            String uuid = null, arrayId = null;
+            if (query != null) {
+                for (String pair : query.split("&")) {
+                    int idx = pair.indexOf('=');
+                    if (idx <= 0) continue;
+                    String k = URLDecoder.decode(pair.substring(0, idx), "UTF-8");
+                    String v = URLDecoder.decode(pair.substring(idx + 1), "UTF-8");
+                    if ("uuid".equals(k)) uuid = v;
+                    else if ("arrayId".equals(k)) arrayId = v;
+                }
+            }
+
+            if (uuid == null || arrayId == null) {
+                consumeBody(ex);
+                sendJson(ex, 400, "{\"status\":\"ERROR\",\"message\":\"Missing uuid or arrayId\"}");
+                return;
+            }
+
+            PendingTask task = inflight.get(uuid);
+            if (task == null) {
+                consumeBody(ex);
+                sendJson(ex, 404, "{\"status\":\"ERROR\",\"message\":\"Unknown task uuid: " + uuid + "\"}");
+                return;
+            }
+
+            File dest = File.createTempFile("ramanujan_homelab_recv_", ".bin");
+            try (InputStream is = ex.getRequestBody();
+                 OutputStream os = new FileOutputStream(dest)) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = is.read(buf)) != -1) os.write(buf, 0, n);
+            }
+
+            task.kernelRun.binaryArrayFiles.put(arrayId, dest.getAbsolutePath());
+            sendJson(ex, 200, "{\"status\":\"SUCCESS\"}");
+        } catch (Exception e) {
+            sendJson(ex, 500, "{\"status\":\"ERROR\",\"message\":\"" + e.getMessage() + "\"}");
+        }
+    }
+
+    /** Converts a raw little-endian float32 binary file into a single flat comma-separated
+     *  CSV line, matching the format written by write_flat_csv()/read by read_flat_csv() on
+     *  the python client side. Avoids ever materializing a per-element Map/JSON structure. */
+    private static void writeBinaryFileAsCsv(String binFilePath, String csvOutPath) throws IOException {
+        byte[] raw = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(binFilePath));
+        java.nio.FloatBuffer floats = java.nio.ByteBuffer.wrap(raw)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                .asFloatBuffer();
+        int n = floats.remaining();
+        StringBuilder sb = new StringBuilder(Math.max(16, n * 12));
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append(',');
+            sb.append(floats.get(i));
+        }
+        sb.append('\n');
+        java.nio.file.Files.write(java.nio.file.Paths.get(csvOutPath),
+                sb.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /** Workers poll this to receive work.

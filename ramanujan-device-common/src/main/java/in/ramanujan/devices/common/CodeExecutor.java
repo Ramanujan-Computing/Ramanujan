@@ -1,6 +1,6 @@
 package in.ramanujan.devices.common;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 import in.ramanujan.debugger.UserReadableDebugPoint;
 import in.ramanujan.devices.common.logging.Logger;
 import in.ramanujan.devices.common.logging.LoggerFactory;
@@ -22,8 +22,6 @@ import static in.ramanujan.utils.Constants.arrayIndex;
 public class CodeExecutor {
 
     static Logger logger;
-
-    final static ObjectMapper objectMapper = new ObjectMapper();
 
     static void init(final LoggerFactory loggerFactory) {
         logger = loggerFactory.getLogger(CodeExecutor.class);
@@ -73,7 +71,7 @@ public class CodeExecutor {
                 NativeProcessor nativeProcessor = new NativeProcessor();
                 Map<String, Object> results = new HashMap<>();
                 if(openPingApiResponse.getFirstCommandId() != "") {
-                    nativeProcessor.process(objectMapper.writeValueAsString(ruleEngineInput), openPingApiResponse.getFirstCommandId());
+                    nativeProcessor.process(RuleEngineInputProtoSerializer.serialize(ruleEngineInput), openPingApiResponse.getFirstCommandId());
                     results = nativeProcessor.jniObject;
 
 //                    Processor processor = new Processor(ruleEngineInput, openPingApiResponse.getFirstCommandId(), checkpointPushClient);

@@ -14,6 +14,7 @@ import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.
 import in.ramanujan.translation.codeConverter.pojo.ExtractedCodeAndFunctionCode;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.translation.codeConverter.utils.TranslateUtil;
+import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 
 import java.io.File;
 import java.io.IOException;
@@ -76,23 +77,21 @@ public class ExecuteInline implements Operation {
             postProcess(dagElement, null);
             return;
         }
-        String ruleEngineInputJson = objectMapper.writeValueAsString(dagElement.getRuleEngineInput());
+        RuleEngineInput ruleEngineInput = dagElement.getRuleEngineInput();
+        byte[] ruleEngineInputProto = RuleEngineInputProtoSerializer.serialize(ruleEngineInput);
         if (shouldWriteRuleEngineDebug()) {
-            // Write combined wrapper that Test.cpp loadFromTmp() expects: {firstCommandId, ruleEngineInput}
-            Map<String, Object> wrapper = new LinkedHashMap<>();
-            wrapper.put("firstCommandId", dagElement.getFirstCommandId());
-            wrapper.put("ruleEngineInput", objectMapper.readTree(ruleEngineInputJson));
-            objectMapper.writeValue(new File("/tmp/rule_engine_debug.json"), wrapper);
+            // Write protobuf byte array payload that Test.cpp loadFromTmp() expects
+            Files.write(new File("/tmp/rule_engine_debug.pb").toPath(), ruleEngineInputProto);
+            Files.write(new File("/tmp/rule_engine_debug.json").toPath(), ruleEngineInputProto);
             objectMapper.writeValue(new File("/tmp/rule_engine_debug_meta.json"),
                     Collections.singletonMap("firstCommandId", dagElement.getFirstCommandId()));
         }
-
         System.out.println("[ExecuteInline] Calling NativeProcessor for DAG element " + dagElement.getId() + " (firstCmd=" + dagElement.getFirstCommandId() + ")");
-        System.out.println("[ExecuteInline]   RuleEngineInput JSON size: " + (ruleEngineInputJson.length() / 1024) + " KB");
+        System.out.println("[ExecuteInline]   RuleEngineInput protobuf size: " + (ruleEngineInputProto.length / 1024) + " KB");
         System.out.flush();
         long nativeStart = System.currentTimeMillis();
         in.ramanujan.rule.engine.NativeProcessor nativeProcessor = new in.ramanujan.rule.engine.NativeProcessor();
-        nativeProcessor.process(ruleEngineInputJson, dagElement.getFirstCommandId());
+        nativeProcessor.process(ruleEngineInputProto, dagElement.getFirstCommandId());
         System.out.println("[ExecuteInline]   NativeProcessor completed in " + (System.currentTimeMillis() - nativeStart) + "ms");
         System.out.flush();
         for(Object en : nativeProcessor.jniObject.entrySet()) {

@@ -4,88 +4,88 @@
 n_seq    = params[0]
 n_tokens = params[1]
 
-# Shared scratch for sequence up to 1024
-h_ln1     = [0 for _ in range(3145728)]   # 1024 * 3072
-h_ln2     = [0 for _ in range(3145728)]
-attn_out  = [0 for _ in range(3145728)]
-scores_2d = [0 for _ in range(33554432)]  # 32 * 1024 * 1024
+# Low-end variant: fixed 128-token capacity, enforced by chat_phi3.py.
+h_ln1     = [0 for _ in range(393216)]   # 128 * 3072
+h_ln2     = [0 for _ in range(393216)]
+attn_out  = [0 for _ in range(393216)]
+scores_2d = [0 for _ in range(524288)]   # 32 * 128 * 128
 
-qkv_buf    = [0 for _ in range(9437184)]   # 1024 * 9216
-h_attn_buf = [0 for _ in range(3145728)]
-h_ff_buf   = [0 for _ in range(16777216)]  # 1024 * 16384
-h_out_buf  = [0 for _ in range(3145728)]
-h_state    = [0 for _ in range(3145728)]
+qkv_buf    = [0 for _ in range(1179648)]  # 128 * 9216
+h_attn_buf = [0 for _ in range(393216)]
+h_ff_buf   = [0 for _ in range(2097152)]  # 128 * 16384
+h_out_buf  = [0 for _ in range(393216)]
+h_state    = [0 for _ in range(393216)]
 
 logits           = [0 for _ in range(32064)]
 rms_buf          = [0 for _ in range(1)]
 argmax_arr       = [0 for _ in range(1)]
-generated_tokens = [0 for _ in range(1024)]
+generated_tokens = [0 for _ in range(128)]
 
-# Per-layer K/V caches (1024 * 3072 each — indices stay <= 3.14M)
-l0_k_cache = [0 for _ in range(3145728)]
-l0_v_cache = [0 for _ in range(3145728)]
-l1_k_cache = [0 for _ in range(3145728)]
-l1_v_cache = [0 for _ in range(3145728)]
-l2_k_cache = [0 for _ in range(3145728)]
-l2_v_cache = [0 for _ in range(3145728)]
-l3_k_cache = [0 for _ in range(3145728)]
-l3_v_cache = [0 for _ in range(3145728)]
-l4_k_cache = [0 for _ in range(3145728)]
-l4_v_cache = [0 for _ in range(3145728)]
-l5_k_cache = [0 for _ in range(3145728)]
-l5_v_cache = [0 for _ in range(3145728)]
-l6_k_cache = [0 for _ in range(3145728)]
-l6_v_cache = [0 for _ in range(3145728)]
-l7_k_cache = [0 for _ in range(3145728)]
-l7_v_cache = [0 for _ in range(3145728)]
-l8_k_cache = [0 for _ in range(3145728)]
-l8_v_cache = [0 for _ in range(3145728)]
-l9_k_cache = [0 for _ in range(3145728)]
-l9_v_cache = [0 for _ in range(3145728)]
-l10_k_cache = [0 for _ in range(3145728)]
-l10_v_cache = [0 for _ in range(3145728)]
-l11_k_cache = [0 for _ in range(3145728)]
-l11_v_cache = [0 for _ in range(3145728)]
-l12_k_cache = [0 for _ in range(3145728)]
-l12_v_cache = [0 for _ in range(3145728)]
-l13_k_cache = [0 for _ in range(3145728)]
-l13_v_cache = [0 for _ in range(3145728)]
-l14_k_cache = [0 for _ in range(3145728)]
-l14_v_cache = [0 for _ in range(3145728)]
-l15_k_cache = [0 for _ in range(3145728)]
-l15_v_cache = [0 for _ in range(3145728)]
-l16_k_cache = [0 for _ in range(3145728)]
-l16_v_cache = [0 for _ in range(3145728)]
-l17_k_cache = [0 for _ in range(3145728)]
-l17_v_cache = [0 for _ in range(3145728)]
-l18_k_cache = [0 for _ in range(3145728)]
-l18_v_cache = [0 for _ in range(3145728)]
-l19_k_cache = [0 for _ in range(3145728)]
-l19_v_cache = [0 for _ in range(3145728)]
-l20_k_cache = [0 for _ in range(3145728)]
-l20_v_cache = [0 for _ in range(3145728)]
-l21_k_cache = [0 for _ in range(3145728)]
-l21_v_cache = [0 for _ in range(3145728)]
-l22_k_cache = [0 for _ in range(3145728)]
-l22_v_cache = [0 for _ in range(3145728)]
-l23_k_cache = [0 for _ in range(3145728)]
-l23_v_cache = [0 for _ in range(3145728)]
-l24_k_cache = [0 for _ in range(3145728)]
-l24_v_cache = [0 for _ in range(3145728)]
-l25_k_cache = [0 for _ in range(3145728)]
-l25_v_cache = [0 for _ in range(3145728)]
-l26_k_cache = [0 for _ in range(3145728)]
-l26_v_cache = [0 for _ in range(3145728)]
-l27_k_cache = [0 for _ in range(3145728)]
-l27_v_cache = [0 for _ in range(3145728)]
-l28_k_cache = [0 for _ in range(3145728)]
-l28_v_cache = [0 for _ in range(3145728)]
-l29_k_cache = [0 for _ in range(3145728)]
-l29_v_cache = [0 for _ in range(3145728)]
-l30_k_cache = [0 for _ in range(3145728)]
-l30_v_cache = [0 for _ in range(3145728)]
-l31_k_cache = [0 for _ in range(3145728)]
-l31_v_cache = [0 for _ in range(3145728)]
+# Per-layer K/V caches (128 * 3072 each)
+l0_k_cache = [0 for _ in range(393216)]
+l0_v_cache = [0 for _ in range(393216)]
+l1_k_cache = [0 for _ in range(393216)]
+l1_v_cache = [0 for _ in range(393216)]
+l2_k_cache = [0 for _ in range(393216)]
+l2_v_cache = [0 for _ in range(393216)]
+l3_k_cache = [0 for _ in range(393216)]
+l3_v_cache = [0 for _ in range(393216)]
+l4_k_cache = [0 for _ in range(393216)]
+l4_v_cache = [0 for _ in range(393216)]
+l5_k_cache = [0 for _ in range(393216)]
+l5_v_cache = [0 for _ in range(393216)]
+l6_k_cache = [0 for _ in range(393216)]
+l6_v_cache = [0 for _ in range(393216)]
+l7_k_cache = [0 for _ in range(393216)]
+l7_v_cache = [0 for _ in range(393216)]
+l8_k_cache = [0 for _ in range(393216)]
+l8_v_cache = [0 for _ in range(393216)]
+l9_k_cache = [0 for _ in range(393216)]
+l9_v_cache = [0 for _ in range(393216)]
+l10_k_cache = [0 for _ in range(393216)]
+l10_v_cache = [0 for _ in range(393216)]
+l11_k_cache = [0 for _ in range(393216)]
+l11_v_cache = [0 for _ in range(393216)]
+l12_k_cache = [0 for _ in range(393216)]
+l12_v_cache = [0 for _ in range(393216)]
+l13_k_cache = [0 for _ in range(393216)]
+l13_v_cache = [0 for _ in range(393216)]
+l14_k_cache = [0 for _ in range(393216)]
+l14_v_cache = [0 for _ in range(393216)]
+l15_k_cache = [0 for _ in range(393216)]
+l15_v_cache = [0 for _ in range(393216)]
+l16_k_cache = [0 for _ in range(393216)]
+l16_v_cache = [0 for _ in range(393216)]
+l17_k_cache = [0 for _ in range(393216)]
+l17_v_cache = [0 for _ in range(393216)]
+l18_k_cache = [0 for _ in range(393216)]
+l18_v_cache = [0 for _ in range(393216)]
+l19_k_cache = [0 for _ in range(393216)]
+l19_v_cache = [0 for _ in range(393216)]
+l20_k_cache = [0 for _ in range(393216)]
+l20_v_cache = [0 for _ in range(393216)]
+l21_k_cache = [0 for _ in range(393216)]
+l21_v_cache = [0 for _ in range(393216)]
+l22_k_cache = [0 for _ in range(393216)]
+l22_v_cache = [0 for _ in range(393216)]
+l23_k_cache = [0 for _ in range(393216)]
+l23_v_cache = [0 for _ in range(393216)]
+l24_k_cache = [0 for _ in range(393216)]
+l24_v_cache = [0 for _ in range(393216)]
+l25_k_cache = [0 for _ in range(393216)]
+l25_v_cache = [0 for _ in range(393216)]
+l26_k_cache = [0 for _ in range(393216)]
+l26_v_cache = [0 for _ in range(393216)]
+l27_k_cache = [0 for _ in range(393216)]
+l27_v_cache = [0 for _ in range(393216)]
+l28_k_cache = [0 for _ in range(393216)]
+l28_v_cache = [0 for _ in range(393216)]
+l29_k_cache = [0 for _ in range(393216)]
+l29_v_cache = [0 for _ in range(393216)]
+l30_k_cache = [0 for _ in range(393216)]
+l30_v_cache = [0 for _ in range(393216)]
+l31_k_cache = [0 for _ in range(393216)]
+l31_v_cache = [0 for _ in range(393216)]
 
 kp_qkv  = [0 for _ in range(3)]
 kp_proj = [0 for _ in range(3)]
@@ -113,8 +113,15 @@ def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
     N = kparams[1]
     K_pack = kparams[2]
 
+    N_int = 0
+    if N == 3072.0:
+        N_int = 3072
+    if N == 9216.0:
+        N_int = 9216
+    if N == 16384.0:
+        N_int = 16384
+
     W_scales_idx0 = 0
-    w_base = 0
     W_packed_idx0 = 0
     a_idx = 0
     A_idx0 = 0
@@ -129,30 +136,19 @@ def matmul_4bit_GPU_2(A, W_packed, W_scales, C, kparams, row, col):
 
     W_scales_idx0 = col
     scale = W_scales[W_scales_idx0]
-    w_base = col * K_pack
 
     s = 0.0
     k_pack = 0
     while k_pack < K_pack:
-        W_packed_idx0 = w_base + k_pack
+        W_packed_idx0 = k_pack * N_int + col
         packed = W_packed[W_packed_idx0]
 
-        w5 = packed / 1048576.0
-        FLOOR(w5)
-        packed = packed - w5 * 1048576.0
-        w4 = packed / 65536.0
-        FLOOR(w4)
-        packed = packed - w4 * 65536.0
-        w3 = packed / 4096.0
-        FLOOR(w3)
-        packed = packed - w3 * 4096.0
-        w2 = packed / 256.0
-        FLOOR(w2)
-        packed = packed - w2 * 256.0
-        w1 = packed / 16.0
-        FLOOR(w1)
-        packed = packed - w1 * 16.0
-        w0 = packed
+        w0 = PACKED_NIBBLE(packed, 0)
+        w1 = PACKED_NIBBLE(packed, 1)
+        w2 = PACKED_NIBBLE(packed, 2)
+        w3 = PACKED_NIBBLE(packed, 3)
+        w4 = PACKED_NIBBLE(packed, 4)
+        w5 = PACKED_NIBBLE(packed, 5)
 
         w0 = (w0 - 8.0) * scale
         w1 = (w1 - 8.0) * scale
@@ -211,7 +207,6 @@ def matmul_4bit_decode_GPU_1(A, W_packed, W_scales, C, kparams, cur_n_seq_arr, c
         r_f = r_f - 1.0
 
     W_scales_idx0 = 0
-    w_base = 0
     W_packed_idx0 = 0
     a_idx = 0
     c_idx = 0
@@ -225,30 +220,19 @@ def matmul_4bit_decode_GPU_1(A, W_packed, W_scales, C, kparams, cur_n_seq_arr, c
 
     W_scales_idx0 = col
     scale = W_scales[W_scales_idx0]
-    w_base = col * K_pack
 
     s = 0.0
     k_pack = 0
     while k_pack < K_pack:
-        W_packed_idx0 = w_base + k_pack
+        W_packed_idx0 = k_pack * N_int + col
         packed = W_packed[W_packed_idx0]
 
-        w5 = packed / 1048576.0
-        FLOOR(w5)
-        packed = packed - w5 * 1048576.0
-        w4 = packed / 65536.0
-        FLOOR(w4)
-        packed = packed - w4 * 65536.0
-        w3 = packed / 4096.0
-        FLOOR(w3)
-        packed = packed - w3 * 4096.0
-        w2 = packed / 256.0
-        FLOOR(w2)
-        packed = packed - w2 * 256.0
-        w1 = packed / 16.0
-        FLOOR(w1)
-        packed = packed - w1 * 16.0
-        w0 = packed
+        w0 = PACKED_NIBBLE(packed, 0)
+        w1 = PACKED_NIBBLE(packed, 1)
+        w2 = PACKED_NIBBLE(packed, 2)
+        w3 = PACKED_NIBBLE(packed, 3)
+        w4 = PACKED_NIBBLE(packed, 4)
+        w5 = PACKED_NIBBLE(packed, 5)
 
         w0 = (w0 - 8.0) * scale
         w1 = (w1 - 8.0) * scale
@@ -477,7 +461,7 @@ def causal_attn_GPU_2(qkv_buf, k_cache, v_cache, scores_2d, attn_out, cur_n_seq_
     attn_out_idx0 = 0
 
     h_off = col * 96
-    score_base = col * 1048576 + row * 1024
+    score_base = col * 16384 + row * 128
 
     dk = 0
     j = 0
@@ -553,7 +537,7 @@ def causal_attn_k_decode_GPU_2(qkv_buf, k_cache, scores_2d, cur_n_seq_arr, j, co
             row_int = row_int + 1
             r_f = r_f - 1.0
         h_off = col * 96
-        score_base = col * 1048576 + row_int * 1024
+        score_base = col * 16384 + row_int * 128
         sc = 0.0
         dk = 0
         q_base = row_int * 9216 + h_off
@@ -579,7 +563,7 @@ def causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, col):
     while r_f >= 1.0:
         row_int = row_int + 1
         r_f = r_f - 1.0
-    score_base = col * 1048576 + row_int * 1024
+    score_base = col * 16384 + row_int * 128
 
     scores_2d_idx0 = 0
     scores_2d_idx1 = 0
@@ -623,7 +607,7 @@ def causal_attn_v_decode_GPU_2(scores_2d, v_cache, attn_out, cur_n_seq_arr, dk, 
         row_int = row_int + 1
         r_f = r_f - 1.0
     h_off = col * 96
-    score_base = col * 1048576 + row_int * 1024
+    score_base = col * 16384 + row_int * 128
 
     ov = 0.0
     j = 0
@@ -694,7 +678,7 @@ def copy_GPU_2(src, dst, row, col):
     idx = row * 3072 + col
     dst[idx] = src[idx]
 
-def logits_compute_GPU_1(h_ln1, lm_head_1, lm_head_2, logits, cur_n_seq_arr, j):
+def logits_shard_1_GPU_1(h_ln1, lm_head, logits, cur_n_seq_arr, j):
     row_int = 0
     r_f = (cur_n_seq_arr[0] - 1.0) + 0.1
     while r_f >= 1024.0:
@@ -708,14 +692,67 @@ def logits_compute_GPU_1(h_ln1, lm_head_1, lm_head_2, logits, cur_n_seq_arr, j):
     wte_idx = 0
     while k < 3072:
         h_ln1_idx = row_int * 3072 + k
-        if j < 16000:
-            wte_idx = j * 3072 + k
-            s = s + h_ln1[h_ln1_idx] * lm_head_1[wte_idx]
-        else:
-            wte_idx = (j - 16000) * 3072 + k
-            s = s + h_ln1[h_ln1_idx] * lm_head_2[wte_idx]
+        wte_idx = j * 3072 + k
+        s = s + h_ln1[h_ln1_idx] * lm_head[wte_idx]
         k = k + 1
     logits[j] = s
+
+def logits_shard_2_GPU_1(h_ln1, lm_head, logits, cur_n_seq_arr, j):
+    row_int = 0
+    r_f = (cur_n_seq_arr[0] - 1.0) + 0.1
+    while r_f >= 1024.0:
+        row_int = row_int + 1024
+        r_f = r_f - 1024.0
+    while r_f >= 1.0:
+        row_int = row_int + 1
+        r_f = r_f - 1.0
+    s = 0.0
+    k = 0
+    while k < 3072:
+        h_ln1_idx = row_int * 3072 + k
+        wte_idx = j * 3072 + k
+        s = s + h_ln1[h_ln1_idx] * lm_head[wte_idx]
+        k = k + 1
+    logits_idx = j + 8000
+    logits[logits_idx] = s
+
+def logits_shard_3_GPU_1(h_ln1, lm_head, logits, cur_n_seq_arr, j):
+    row_int = 0
+    r_f = (cur_n_seq_arr[0] - 1.0) + 0.1
+    while r_f >= 1024.0:
+        row_int = row_int + 1024
+        r_f = r_f - 1024.0
+    while r_f >= 1.0:
+        row_int = row_int + 1
+        r_f = r_f - 1.0
+    s = 0.0
+    k = 0
+    while k < 3072:
+        h_ln1_idx = row_int * 3072 + k
+        wte_idx = j * 3072 + k
+        s = s + h_ln1[h_ln1_idx] * lm_head[wte_idx]
+        k = k + 1
+    logits_idx = j + 16000
+    logits[logits_idx] = s
+
+def logits_shard_4_GPU_1(h_ln1, lm_head, logits, cur_n_seq_arr, j):
+    row_int = 0
+    r_f = (cur_n_seq_arr[0] - 1.0) + 0.1
+    while r_f >= 1024.0:
+        row_int = row_int + 1024
+        r_f = r_f - 1024.0
+    while r_f >= 1.0:
+        row_int = row_int + 1
+        r_f = r_f - 1.0
+    s = 0.0
+    k = 0
+    while k < 3072:
+        h_ln1_idx = row_int * 3072 + k
+        wte_idx = j * 3072 + k
+        s = s + h_ln1[h_ln1_idx] * lm_head[wte_idx]
+        k = k + 1
+    logits_idx = j + 24000
+    logits[logits_idx] = s
 
 def argmax_GPU_1(logits, argmax_arr, gid):
     max_v = logits[0]
@@ -740,7 +777,7 @@ def store_token_GPU_1(argmax_arr, generated_tokens, step_arr, gid):
         step_f = step_f - 1.0
     generated_tokens[step_int] = argmax_arr[0]
 
-def embed_next_GPU_1(hidden, wte_1, wte_2, argmax_arr, cur_n_seq_arr, col):
+def embed_next_shard_1_GPU_1(hidden, wte, argmax_arr, cur_n_seq_arr, col):
     idx = 0
     wte_idx0 = 0
 
@@ -766,12 +803,59 @@ def embed_next_GPU_1(hidden, wte_1, wte_2, argmax_arr, cur_n_seq_arr, col):
 
     idx = row_int * 3072 + col
     wte_idx0 = 0
-    if t_int < 16000:
+    if t_int < 8000:
         wte_idx0 = t_int * 3072 + col
-        hidden[idx] = wte_1[wte_idx0]
-    else:
-        wte_idx0 = (t_int - 16000) * 3072 + col
-        hidden[idx] = wte_2[wte_idx0]
+        hidden[idx] = wte[wte_idx0]
+
+def embed_next_shard_2_GPU_1(hidden, wte, argmax_arr, cur_n_seq_arr, col):
+    tok = argmax_arr[0]
+    t_int = 0
+    t_f = tok + 0.1
+    while t_f >= 1024.0:
+        t_int = t_int + 1024
+        t_f = t_f - 1024.0
+    while t_f >= 1.0:
+        t_int = t_int + 1
+        t_f = t_f - 1.0
+    row = cur_n_seq_arr[0]
+    if t_int >= 8000:
+        if t_int < 16000:
+            idx = row * 3072 + col
+            wte_idx = (t_int - 8000) * 3072 + col
+            hidden[idx] = wte[wte_idx]
+
+def embed_next_shard_3_GPU_1(hidden, wte, argmax_arr, cur_n_seq_arr, col):
+    tok = argmax_arr[0]
+    t_int = 0
+    t_f = tok + 0.1
+    while t_f >= 1024.0:
+        t_int = t_int + 1024
+        t_f = t_f - 1024.0
+    while t_f >= 1.0:
+        t_int = t_int + 1
+        t_f = t_f - 1.0
+    row = cur_n_seq_arr[0]
+    if t_int >= 16000:
+        if t_int < 24000:
+            idx = row * 3072 + col
+            wte_idx = (t_int - 16000) * 3072 + col
+            hidden[idx] = wte[wte_idx]
+
+def embed_next_shard_4_GPU_1(hidden, wte, argmax_arr, cur_n_seq_arr, col):
+    tok = argmax_arr[0]
+    t_int = 0
+    t_f = tok + 0.1
+    while t_f >= 1024.0:
+        t_int = t_int + 1024
+        t_f = t_f - 1024.0
+    while t_f >= 1.0:
+        t_int = t_int + 1
+        t_f = t_f - 1.0
+    row = cur_n_seq_arr[0]
+    if t_int >= 24000:
+        idx = row * 3072 + col
+        wte_idx = (t_int - 24000) * 3072 + col
+        hidden[idx] = wte[wte_idx]
 
 def inc_counters_GPU_1(step_arr, cur_n_seq_arr, gid):
     step_arr[0] = step_arr[0] + 1.0
@@ -783,6 +867,14 @@ def inc_counters_GPU_1(step_arr, cur_n_seq_arr, gid):
 # first use. These are used continuously from prefill through the end of
 # the decode loop and are only released once, at the very end (see the
 # RELEASE GPU MEMORY section below).
+LOAD_MEM(lm_head_1)
+LOAD_MEM(lm_head_2)
+LOAD_MEM(lm_head_3)
+LOAD_MEM(lm_head_4)
+LOAD_MEM(wte_1)
+LOAD_MEM(wte_2)
+LOAD_MEM(wte_3)
+LOAD_MEM(wte_4)
 LOAD_MEM(hidden)
 LOAD_MEM(h_state)
 LOAD_MEM(h_ln1)
@@ -800,10 +892,6 @@ LOAD_MEM(argmax_arr)
 LOAD_MEM(generated_tokens)
 LOAD_MEM(cur_n_seq_arr)
 LOAD_MEM(step_arr)
-LOAD_MEM(lm_head_1)
-LOAD_MEM(lm_head_2)
-LOAD_MEM(wte_1)
-LOAD_MEM(wte_2)
 LOAD_MEM(ln_f_g)
 LOAD_MEM(kp_qkv)
 LOAD_MEM(kp_proj)
@@ -1615,10 +1703,16 @@ residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
 
 # Final norm + logits + argmax + store + embed_next + inc_counters
 rmsnorm_GPU_1(h_state, ln_f_g, h_ln1, n_seq)
-logits_compute_GPU_1(h_ln1, lm_head_1, lm_head_2, logits, cur_n_seq_arr, 32064)
+logits_shard_1_GPU_1(h_ln1, lm_head_1, logits, cur_n_seq_arr, 8000)
+logits_shard_2_GPU_1(h_ln1, lm_head_2, logits, cur_n_seq_arr, 8000)
+logits_shard_3_GPU_1(h_ln1, lm_head_3, logits, cur_n_seq_arr, 8000)
+logits_shard_4_GPU_1(h_ln1, lm_head_4, logits, cur_n_seq_arr, 8064)
 argmax_GPU_1(logits, argmax_arr, 1)
 store_token_GPU_1(argmax_arr, generated_tokens, step_arr, 1)
-embed_next_GPU_1(h_state, wte_1, wte_2, argmax_arr, cur_n_seq_arr, 3072)
+embed_next_shard_1_GPU_1(h_state, wte_1, argmax_arr, cur_n_seq_arr, 3072)
+embed_next_shard_2_GPU_1(h_state, wte_2, argmax_arr, cur_n_seq_arr, 3072)
+embed_next_shard_3_GPU_1(h_state, wte_3, argmax_arr, cur_n_seq_arr, 3072)
+embed_next_shard_4_GPU_1(h_state, wte_4, argmax_arr, cur_n_seq_arr, 3072)
 inc_counters_GPU_1(step_arr, cur_n_seq_arr, 1)
 
 # ══════════════ DECODE LOOP ══════════════
@@ -1628,7 +1722,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l0_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l0_qkv_packed, l0_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l0_k_cache, l0_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l0_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l0_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l0_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l0_o_packed, l0_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1643,7 +1737,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l1_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l1_qkv_packed, l1_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l1_k_cache, l1_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l1_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l1_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l1_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l1_o_packed, l1_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1658,7 +1752,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l2_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l2_qkv_packed, l2_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l2_k_cache, l2_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l2_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l2_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l2_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l2_o_packed, l2_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1673,7 +1767,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l3_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l3_qkv_packed, l3_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l3_k_cache, l3_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l3_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l3_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l3_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l3_o_packed, l3_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1688,7 +1782,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l4_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l4_qkv_packed, l4_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l4_k_cache, l4_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l4_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l4_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l4_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l4_o_packed, l4_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1703,7 +1797,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l5_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l5_qkv_packed, l5_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l5_k_cache, l5_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l5_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l5_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l5_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l5_o_packed, l5_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1718,7 +1812,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l6_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l6_qkv_packed, l6_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l6_k_cache, l6_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l6_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l6_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l6_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l6_o_packed, l6_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1733,7 +1827,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l7_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l7_qkv_packed, l7_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l7_k_cache, l7_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l7_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l7_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l7_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l7_o_packed, l7_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1748,7 +1842,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l8_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l8_qkv_packed, l8_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l8_k_cache, l8_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l8_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l8_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l8_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l8_o_packed, l8_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1763,7 +1857,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l9_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l9_qkv_packed, l9_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l9_k_cache, l9_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l9_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l9_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l9_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l9_o_packed, l9_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1778,7 +1872,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l10_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l10_qkv_packed, l10_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l10_k_cache, l10_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l10_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l10_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l10_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l10_o_packed, l10_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1793,7 +1887,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l11_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l11_qkv_packed, l11_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l11_k_cache, l11_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l11_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l11_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l11_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l11_o_packed, l11_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1808,7 +1902,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l12_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l12_qkv_packed, l12_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l12_k_cache, l12_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l12_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l12_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l12_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l12_o_packed, l12_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1823,7 +1917,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l13_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l13_qkv_packed, l13_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l13_k_cache, l13_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l13_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l13_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l13_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l13_o_packed, l13_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1838,7 +1932,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l14_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l14_qkv_packed, l14_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l14_k_cache, l14_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l14_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l14_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l14_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l14_o_packed, l14_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1853,7 +1947,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l15_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l15_qkv_packed, l15_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l15_k_cache, l15_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l15_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l15_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l15_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l15_o_packed, l15_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1868,7 +1962,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l16_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l16_qkv_packed, l16_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l16_k_cache, l16_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l16_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l16_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l16_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l16_o_packed, l16_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1883,7 +1977,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l17_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l17_qkv_packed, l17_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l17_k_cache, l17_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l17_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l17_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l17_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l17_o_packed, l17_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1898,7 +1992,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l18_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l18_qkv_packed, l18_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l18_k_cache, l18_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l18_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l18_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l18_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l18_o_packed, l18_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1913,7 +2007,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l19_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l19_qkv_packed, l19_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l19_k_cache, l19_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l19_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l19_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l19_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l19_o_packed, l19_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1928,7 +2022,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l20_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l20_qkv_packed, l20_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l20_k_cache, l20_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l20_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l20_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l20_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l20_o_packed, l20_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1943,7 +2037,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l21_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l21_qkv_packed, l21_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l21_k_cache, l21_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l21_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l21_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l21_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l21_o_packed, l21_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1958,7 +2052,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l22_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l22_qkv_packed, l22_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l22_k_cache, l22_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l22_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l22_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l22_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l22_o_packed, l22_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1973,7 +2067,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l23_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l23_qkv_packed, l23_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l23_k_cache, l23_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l23_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l23_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l23_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l23_o_packed, l23_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -1988,7 +2082,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l24_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l24_qkv_packed, l24_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l24_k_cache, l24_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l24_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l24_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l24_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l24_o_packed, l24_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2003,7 +2097,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l25_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l25_qkv_packed, l25_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l25_k_cache, l25_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l25_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l25_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l25_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l25_o_packed, l25_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2018,7 +2112,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l26_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l26_qkv_packed, l26_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l26_k_cache, l26_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l26_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l26_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l26_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l26_o_packed, l26_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2033,7 +2127,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l27_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l27_qkv_packed, l27_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l27_k_cache, l27_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l27_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l27_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l27_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l27_o_packed, l27_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2048,7 +2142,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l28_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l28_qkv_packed, l28_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l28_k_cache, l28_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l28_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l28_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l28_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l28_o_packed, l28_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2063,7 +2157,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l29_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l29_qkv_packed, l29_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l29_k_cache, l29_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l29_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l29_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l29_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l29_o_packed, l29_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2078,7 +2172,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l30_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l30_qkv_packed, l30_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l30_k_cache, l30_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l30_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l30_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l30_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l30_o_packed, l30_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2093,7 +2187,7 @@ while _step < n_tokens:
     rmsnorm_decode_GPU_1(h_state, l31_ln1_g, h_ln1, cur_n_seq_arr, 3072)
     matmul_4bit_decode_GPU_1(h_ln1, l31_qkv_packed, l31_qkv_scales, qkv_buf, kp_qkv, cur_n_seq_arr, 9216)
     rope_and_cache_decode_GPU_1(qkv_buf, cos_cache, sin_cache, l31_k_cache, l31_v_cache, cur_n_seq_arr, 32)
-    causal_attn_k_decode_GPU_2(qkv_buf, l31_k_cache, scores_2d, cur_n_seq_arr, 1024, 32)
+    causal_attn_k_decode_GPU_2(qkv_buf, l31_k_cache, scores_2d, cur_n_seq_arr, 128, 32)
     causal_attn_softmax_decode_GPU_1(scores_2d, cur_n_seq_arr, 32)
     causal_attn_v_decode_GPU_2(scores_2d, l31_v_cache, attn_out, cur_n_seq_arr, 96, 32)
     matmul_4bit_decode_GPU_1(attn_out, l31_o_packed, l31_o_scales, h_attn_buf, kp_proj, cur_n_seq_arr, 3072)
@@ -2105,17 +2199,22 @@ while _step < n_tokens:
     residual_add_decode_GPU_1(h_state, h_out_buf, cur_n_seq_arr, 3072)
 
     rmsnorm_decode_GPU_1(h_state, ln_f_g, h_ln1, cur_n_seq_arr, 3072)
-    logits_compute_GPU_1(h_ln1, lm_head_1, lm_head_2, logits, cur_n_seq_arr, 32064)
+    logits_shard_1_GPU_1(h_ln1, lm_head_1, logits, cur_n_seq_arr, 8000)
+    logits_shard_2_GPU_1(h_ln1, lm_head_2, logits, cur_n_seq_arr, 8000)
+    logits_shard_3_GPU_1(h_ln1, lm_head_3, logits, cur_n_seq_arr, 8000)
+    logits_shard_4_GPU_1(h_ln1, lm_head_4, logits, cur_n_seq_arr, 8064)
     argmax_GPU_1(logits, argmax_arr, 1)
     store_token_GPU_1(argmax_arr, generated_tokens, step_arr, 1)
-    embed_next_GPU_1(h_state, wte_1, wte_2, argmax_arr, cur_n_seq_arr, 3072)
+    embed_next_shard_1_GPU_1(h_state, wte_1, argmax_arr, cur_n_seq_arr, 3072)
+    embed_next_shard_2_GPU_1(h_state, wte_2, argmax_arr, cur_n_seq_arr, 3072)
+    embed_next_shard_3_GPU_1(h_state, wte_3, argmax_arr, cur_n_seq_arr, 3072)
+    embed_next_shard_4_GPU_1(h_state, wte_4, argmax_arr, cur_n_seq_arr, 3072)
     inc_counters_GPU_1(step_arr, cur_n_seq_arr, 1)
 
     _step = _step + 1.0
 
 # ══════════════ RELEASE GPU MEMORY ══════════════
-# Packed layer weights remain resident after prefill and are released here
-# once generation completes. Small scale/gamma arrays follow the same lifetime.
+# Layers 0-31 remain resident for the entire run (fully GPU-resident model).
 RELEASE_MEM(l0_qkv_packed)
 RELEASE_MEM(l0_o_packed)
 RELEASE_MEM(l0_gate_up_packed)
@@ -2436,9 +2535,11 @@ RELEASE_MEM(l31_o_scales)
 RELEASE_MEM(l31_ln2_g)
 RELEASE_MEM(l31_gate_up_scales)
 RELEASE_MEM(l31_down_scales)
-# Packed weights and small weight buffers have now been released once.
-# Generation is complete, so release the remaining KV caches, embeddings,
-# and shared scratch buffers as well.
+# Per-layer weight/scale buffers are already released right after each
+# layer's own use (see LOAD_MEM/RELEASE_MEM above) so at most one layer's
+# weights are GPU-resident at any instant. Generation is complete, so the
+# only remaining GPU-resident buffers below (KV caches, embeddings, scratch)
+# can be released once here as well.
 RELEASE_MEM(l0_k_cache)
 RELEASE_MEM(l0_v_cache)
 RELEASE_MEM(l1_k_cache)
@@ -2505,8 +2606,12 @@ RELEASE_MEM(l31_k_cache)
 RELEASE_MEM(l31_v_cache)
 RELEASE_MEM(lm_head_1)
 RELEASE_MEM(lm_head_2)
+RELEASE_MEM(lm_head_3)
+RELEASE_MEM(lm_head_4)
 RELEASE_MEM(wte_1)
 RELEASE_MEM(wte_2)
+RELEASE_MEM(wte_3)
+RELEASE_MEM(wte_4)
 RELEASE_MEM(cos_cache)
 RELEASE_MEM(sin_cache)
 RELEASE_MEM(h_ln1)
@@ -2520,6 +2625,7 @@ RELEASE_MEM(h_out_buf)
 RELEASE_MEM(h_state)
 
 GPU_SYNC(generated_tokens)
+#RETURN(generated_tokens)
 # GPU_SYNC(argmax_arr)
 # GPU_SYNC(step_arr)
 # GPU_SYNC(cur_n_seq_arr)

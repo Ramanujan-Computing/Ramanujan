@@ -3,26 +3,22 @@
 //
 
 #include "in_ramanujan_rule_engine_NativeProcessor.h"
+#include "rule_engine_input.pb.h"
 
 JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
-        (JNIEnv *env, jobject obj, jstring ruleEngineInputJsonStr, jstring firstCommandIdStr) {
-    // Convert jstring to std::string
-    const char *cStr = env->GetStringUTFChars(ruleEngineInputJsonStr, 0);
-    std::string str(cStr);
-    env->ReleaseStringUTFChars(ruleEngineInputJsonStr, cStr);
+        (JNIEnv *env, jobject obj, jbyteArray ruleEngineInputProtoBytes, jstring firstCommandIdStr) {
+    // Deserialize protobuf bytes into the generated message
+    jsize len = env->GetArrayLength(ruleEngineInputProtoBytes);
+    jbyte* bytes = env->GetByteArrayElements(ruleEngineInputProtoBytes, nullptr);
+    ramanujan::RuleEngineInput proto;
+    proto.ParseFromArray(bytes, len);
+    env->ReleaseByteArrayElements(ruleEngineInputProtoBytes, bytes, JNI_ABORT);
 
     const char *cStr1 = env->GetStringUTFChars(firstCommandIdStr, 0);
     std::string str1(cStr1);
     env->ReleaseStringUTFChars(firstCommandIdStr, cStr1);
 
-    // Parse JSON std::string
-    Json::Value root;
-    Json::CharReaderBuilder builder;
-    std::string errors;
-    std::istringstream iss(str);
-    Json::parseFromStream(builder, iss, &root, &errors);
-
-    RuleEngineInput *ruleEngineInput = new RuleEngineInput(&root);
+    RuleEngineInput *ruleEngineInput = new RuleEngineInput(&proto);
     Processor *processor = new Processor();
 
     processor->process(*ruleEngineInput, str1);
@@ -80,6 +76,22 @@ JNIEXPORT jobject JNICALL Java_in_ramanujan_rule_engine_NativeProcessor_process
     }
 
     env->CallObjectMethod(map, putMethod, env->NewStringUTF("arrayIndex"), arrayMapMap);
+
+    // RETURN()-marked arrays are delivered as arrayId -> local temp file path
+    // (raw float32 bytes) instead of point-value maps, since they are commonly
+    // far too large (millions of elements) to ship efficiently as JSON. This is
+    // a small map (just the marked arrays), so no per-element JNI overhead here.
+    std::unordered_map<std::string, std::string> *binaryArrayFiles = processor->binaryReturnArrayFiles();
+    jobject binaryArrayFilesMap = env->NewObject(mapClass, mapConstructor);
+    for (auto const &x : *binaryArrayFiles) {
+        jstring key = env->NewStringUTF(x.first.c_str());
+        jstring value = env->NewStringUTF(x.second.c_str());
+        env->CallObjectMethod(binaryArrayFilesMap, putMethod, key, value);
+        env->DeleteLocalRef(key);
+        env->DeleteLocalRef(value);
+    }
+    env->CallObjectMethod(map, putMethod, env->NewStringUTF("binaryArrayFiles"), binaryArrayFilesMap);
+    delete binaryArrayFiles;
 
     // return map via jni
 

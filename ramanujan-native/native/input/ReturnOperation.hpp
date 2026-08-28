@@ -3,17 +3,17 @@
 
 #include <string>
 #include "RuleEngineInputUnit.hpp"
-#include <json/json.h>
+#include "rule_engine_input.pb.h"
 
 class ReturnOperation : public RuleEngineInputUnit {
     public:
         std::string operatorType, operand1, operand2;
 
-        ReturnOperation(Json::Value* value) {
-            this->id = (*value)["id"].asString();
-            this->operatorType = (*value)["operatorType"].asString();
-            this->operand1 = (*value)["operand1"].asString();
-            this->operand2 = (*value)["operand2"].asString();
+        ReturnOperation(const ramanujan::ReturnOperation* p) {
+            this->id = p->id();
+            this->operatorType = p->operator_type();
+            this->operand1 = p->operand1();
+            this->operand2 = p->operand2();
         }
 
     RuleEngineInputUnits *getInternalAnalogy();

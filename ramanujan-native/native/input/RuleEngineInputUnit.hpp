@@ -4,7 +4,6 @@
 #include <string>
 #include <list>
 #include "../ruleEngineObject/RuleEngineInputUnits.hpp"
-#include <json/json.h>
 
 
 

@@ -5,6 +5,7 @@
 #include <list>
 #include <vector>
 #include "RuleEngineInputUnit.hpp"
+#include "rule_engine_input.pb.h"
 
 
 
@@ -13,12 +14,11 @@ class ArrayCommand : public RuleEngineInputUnit {
         std::string arrayId;
         std::vector<std::string*> *index;
 
-        ArrayCommand(Json::Value* value) {
-            this->id = (*value)["id"].asString();
-            this->arrayId = (*value)["arrayId"].asString();
+        ArrayCommand(const ramanujan::ArrayCommand* p) {
+            this->arrayId = p->array_id();
             this->index = new std::vector<std::string*>();
-            for (int i = 0; i < (*value)["index"].size(); i++) {
-                this->index->push_back(new std::string((*value)["index"][i].asString()));
+            for (const auto& s : p->index()) {
+                this->index->push_back(new std::string(s));
             }
         }
 
@@ -29,4 +29,3 @@ class ArrayCommand : public RuleEngineInputUnit {
 
 
 #endif
-

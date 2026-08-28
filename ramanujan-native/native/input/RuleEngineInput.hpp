@@ -17,7 +17,7 @@
 #include "Return.hpp"
 #include "ReturnOperation.hpp"
 
-#include <json/json.h>
+#include "rule_engine_input.pb.h"
 
 
 
@@ -36,65 +36,31 @@ class RuleEngineInput {
         std::vector<RedefineArrayCommand*> *redefineArrayCommands = new std::vector<RedefineArrayCommand*>();
         std::vector<ReturnOperation*> *returnOperations = new std::vector<ReturnOperation*>();
 
-        RuleEngineInput(Json::Value* value) {
-            Json::Value variables = (*value)["variables"];
-            for(int i = 0; i < variables.size(); i++) {
-                this->variables->push_back(new Variable(&variables[i]));
-            }
-            Json::Value methodDataTypeAgnosticArgs = (*value)["methodDataTypeAgnosticArgs"];
-            for(int i=0; i< methodDataTypeAgnosticArgs.size(); i++) {
-                this->methodAgnosticVariables->push_back(new MethodAgnosticVariable(&methodDataTypeAgnosticArgs[i]));
-            }
-
-            Json::Value commands = (*value)["commands"];
-            for(int i = 0; i < commands.size(); i++) {
-                this->commands->push_back(new Command(&commands[i]));
-            }
-
-            Json::Value ifBlocks = (*value)["ifBlocks"];
-            for(int i = 0; i < ifBlocks.size(); i++) {
-                this->ifBlocks->push_back(new If(&ifBlocks[i]));
-            }
-
-            Json::Value operations = (*value)["operations"];
-            for(int i = 0; i < operations.size(); i++) {
-                this->operations->push_back(new Operation(&operations[i]));
-            }
-
-            Json::Value conditions = (*value)["conditions"];
-            for(int i = 0; i < conditions.size(); i++) {
-                this->conditions->push_back(new Condition(&conditions[i]));
-            }
-
-            Json::Value constants = (*value)["constants"];
-            for(int i = 0; i < constants.size(); i++) {
-                this->constants->push_back(new Constant(&constants[i]));
-            }
-
-            Json::Value arrays = (*value)["arrays"];
-            for(int i = 0; i < arrays.size(); i++) {
-                this->arrays->push_back(new Array(&arrays[i]));
-            }
-
-            Json::Value functionCalls = (*value)["functionCalls"];
-            for(int i = 0; i < functionCalls.size(); i++) {
-                this->functionCalls->push_back(new FunctionCall(&functionCalls[i]));
-            }
-
-            Json::Value whileBlocks = (*value)["whileBlocks"];
-            for(int i = 0; i < whileBlocks.size(); i++) {
-                this->whileBlocks->push_back(new While(&whileBlocks[i]));
-            }
-
-            Json::Value redefineArrayCommands = (*value)["redefineArrayCommands"];
-            for(int i = 0; i < redefineArrayCommands.size(); i++) {
-                this->redefineArrayCommands->push_back(new RedefineArrayCommand(&redefineArrayCommands[i]));
-            }
-
-            Json::Value returnOperations = (*value)["returnOperations"];
-            for(int i = 0; i < returnOperations.size(); i++) {
-                this->returnOperations->push_back(new ReturnOperation(&returnOperations[i]));
-            }
+        RuleEngineInput(const ramanujan::RuleEngineInput* proto) {
+            for (const auto& v : proto->variables())
+                this->variables->push_back(new Variable(&v));
+            for (const auto& m : proto->method_data_type_agnostic_args())
+                this->methodAgnosticVariables->push_back(new MethodAgnosticVariable(&m));
+            for (const auto& c : proto->commands())
+                this->commands->push_back(new Command(&c));
+            for (const auto& i : proto->if_blocks())
+                this->ifBlocks->push_back(new If(&i));
+            for (const auto& o : proto->operations())
+                this->operations->push_back(new Operation(&o));
+            for (const auto& c : proto->conditions())
+                this->conditions->push_back(new Condition(&c));
+            for (const auto& c : proto->constants())
+                this->constants->push_back(new Constant(&c));
+            for (const auto& a : proto->arrays())
+                this->arrays->push_back(new Array(&a));
+            for (const auto& fc : proto->function_calls())
+                this->functionCalls->push_back(new FunctionCall(&fc));
+            for (const auto& w : proto->while_blocks())
+                this->whileBlocks->push_back(new While(&w));
+            for (const auto& r : proto->redefine_array_commands())
+                this->redefineArrayCommands->push_back(new RedefineArrayCommand(&r));
+            for (const auto& r : proto->return_operations())
+                this->returnOperations->push_back(new ReturnOperation(&r));
         }
 };
 

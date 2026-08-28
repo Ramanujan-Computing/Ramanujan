@@ -5,7 +5,6 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <json/json.h>
 
 RuleEngineInputUnits* RedefineArrayCommandRE::process() {
     // 1. Compute new dimensions using the class field dims

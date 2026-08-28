@@ -10,7 +10,7 @@
 #include "ReturnAssignmentPair.hpp"
 #include "RuleEngineInputUnit.hpp"
 #include "../ruleEngineObject/FunctionCommandRE.h"
-#include <json/json.h>
+#include "rule_engine_input.pb.h"
 
 
 
@@ -32,45 +32,37 @@ class Command : public RuleEngineInputUnit {
         bool returnStatement = false;
         std::vector<ReturnAssignmentPair*> returnAssignmentPairs;
 
-        Command(Json::Value* value) {
-            this->id = (*value)["id"].asString();
-            this->immediateParentRuleEngineInputUnitId = (*value)["immediateParentRuleEngineInputUnitId"].asString();
-            this->nextId = (*value)["nextId"].asString();
-            this->ifBlocks = (*value)["ifBlocks"].asString();
-            this->loops = (*value)["loops"].asString();
-            this->operation = (*value)["operation"].asString();
-            this->constant = (*value)["constant"].asString();
-            this->variableId = (*value)["variableId"].asString();
-            this->conditionId = (*value)["conditionId"].asString();
-            this->whileId = (*value)["whileId"].asString();
-            this->returnOperation = (*value)["returnOperation"].asString();
-            this->codeStrPtr = (*value)["codeStrPtr"].asInt();
-            this->returnStatement = (*value)["returnStatement"].asBool();
-            
-            Json::Value functionCallJSON = (*value)["functionCall"];
-            if(!functionCallJSON.isNull()) {
-                this->functionCall = new FunctionCall(&functionCallJSON);
+        Command(const ramanujan::Command* p) {
+            this->id = p->id();
+            this->immediateParentRuleEngineInputUnitId = p->immediate_parent_rule_engine_input_unit_id();
+            this->nextId = p->next_id();
+            this->ifBlocks = p->if_blocks();
+            this->loops = p->loops();
+            this->operation = p->operation();
+            this->constant = p->constant();
+            this->variableId = p->variable_id();
+            this->conditionId = p->condition_id();
+            this->whileId = p->while_id();
+            this->returnOperation = p->return_operation();
+            this->codeStrPtr = p->code_str_ptr();
+            this->returnStatement = p->return_statement();
+
+            if (p->has_function_call()) {
+                this->functionCall = new FunctionCall(&p->function_call());
             }
-            Json::Value arrayCommandJSON = (*value)["arrayCommand"];
-            if(!arrayCommandJSON.isNull()) {
-                this->arrayCommand = new ArrayCommand(&arrayCommandJSON);
+            if (p->has_array_command()) {
+                this->arrayCommand = new ArrayCommand(&p->array_command());
             }
-            Json::Value redefineArrayCommandJSON = (*value)["redefineArrayCommand"];
-            if(!redefineArrayCommandJSON.isNull()) {
-                this->redefineArrayCommand = new RedefineArrayCommand(&redefineArrayCommandJSON);
+            if (p->has_redefine_array_command()) {
+                this->redefineArrayCommand = new RedefineArrayCommand(&p->redefine_array_command());
             }
-            
-            // Parse returnAssignmentPairs array
-            Json::Value returnAssignmentPairsJSON = (*value)["returnAssignmentPairs"];
-            if (!returnAssignmentPairsJSON.isNull() && returnAssignmentPairsJSON.isArray()) {
-                for (int i = 0; i < returnAssignmentPairsJSON.size(); i++) {
-                    ReturnAssignmentPair* pair = new ReturnAssignmentPair(&returnAssignmentPairsJSON[i]);
-                    this->returnAssignmentPairs.push_back(pair);
-                }
+
+            for (const auto& pair : p->return_assignment_pairs()) {
+                this->returnAssignmentPairs.push_back(new ReturnAssignmentPair(&pair));
             }
-            
-            for (int i = 0; i < (*value)["nextDagTriggerIds"].size(); i++) {
-                this->nextDagTriggerIds.push_back((*value)["nextDagTriggerIds"][i].asString());
+
+            for (const auto& id : p->next_dag_trigger_ids()) {
+                this->nextDagTriggerIds.push_back(id);
             }
         }
 
@@ -80,4 +72,3 @@ class Command : public RuleEngineInputUnit {
 
 
 #endif
-

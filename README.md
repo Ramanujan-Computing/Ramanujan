@@ -924,6 +924,26 @@ def p2g_GPU_1(positions, params, gid):
     i0 = gxp                     # integer grid index (stored as float)
 ```
 
+### Packed 4-bit extraction (2 arguments)
+
+```python
+nibble = PACKED_NIBBLE(packed, index)
+```
+
+`PACKED_NIBBLE` numerically converts an exact integer-valued packed `float` to
+OpenCL `uint`, shifts by `index * 4`, masks with `0xF`, and returns the nibble as
+a `float`. Valid nibble indexes are 0 through 5 for Ramanujan's six-weights-per-
+float Phi-3 format. Packed values must not exceed `0xFFFFFF`, which is exactly
+representable in `float32`.
+
+```c
+((float)(((uint)packed >> ((uint)index * 4u)) & 15u))
+```
+
+This avoids floating-point divide and `floor()` during 4-bit dequantization.
+It is an expression intrinsic and may be used on the right-hand side of an
+assignment inside `_GPU_N` functions.
+
 ### Atomic float add (3 arguments)
 
 ```python
@@ -1037,13 +1057,183 @@ while _i < n_seq * 768:
 Without the `GPU_SYNC` calls, `hidden` and `h_out_buf` would still hold **stale** values from
 before the last GPU kernels ran, producing silently wrong results.
 
-### `GPU_SYNC` vs the previous implicit sync model
+### Selective result return — `RETURN`
+
+By default, after execution completes `arrChangeMap()` reports **every** array that was modified
+(comparing each element against its pre-execution snapshot).  For large models with hundreds of
+weight arrays this means the JNI result map can contain far more data than the caller needs.
+
+The `RETURN` built-in lets user code explicitly name the arrays that should appear in the result.
+If `RETURN` is called at any point during execution, **only** the listed arrays are included in
+`arrChangeMap()`; all other modified arrays are silently dropped.  If `RETURN` is never called
+the behaviour is unchanged — all modified arrays are returned.
+
+```python
+RETURN(arr1, arr2, ..., arrN)
+```
+
+`RETURN` accepts any number of array arguments and marks each with an internal flag at runtime.
+It is a no-op for the computation itself (it does not stop execution or modify any values).
+
+### Example
+
+```python
+hidden = [0 for _ in range(768)]
+kv_cache = [0 for _ in range(4096)]
+weights = [0 for _ in range(131072)]  # large weight buffer
+
+# ... kernel calls that write to all three arrays ...
+
+# Only return the outputs the caller actually needs
+RETURN(hidden, kv_cache)
+```
+
+Without `RETURN`, `weights` and every other modified array would be serialised back through JNI
+even though the caller only needs `hidden` and `kv_cache`.
+
+### Behaviour summary
+
+| Script contains `RETURN(...)`? | What `arrChangeMap()` returns |
+|---|---|
+| No | All modified arrays with their changed indexes (unchanged default) |
+| Yes | Only the listed arrays, still reporting only changed indexes |
+
+### `RETURN` vs `GPU_SYNC`
+
+`GPU_SYNC` and `RETURN` are independent and complementary:
+
+| | Purpose | When to use |
+|---|---|---|
+| `GPU_SYNC(arr)` | Flush the GPU queue and read `arr` back to the CPU | Before the host reads a GPU-written array |
+| `RETURN(arr1, ...)` | Filter which arrays are included in the final result | To reduce serialisation overhead when only a subset of arrays is needed |
+
+## Explicit GPU memory release — `RELEASE_MEM` and `LOAD_MEM`
+
+Every array a `_GPU_N` kernel touches gets its own GPU buffer, and buffers are never freed
+automatically while the process is running. For large models (e.g. dozens of transformer
+layers, each with several 4-bit packed weight/scale arrays plus K/V caches) this means **all**
+per-layer buffers stay resident on the GPU simultaneously. On memory-constrained devices
+(e.g. ~5 GB unified memory) this can exhaust GPU/unified memory and cause an OOM crash.
+
+`RELEASE_MEM` and `LOAD_MEM` give user code explicit control over when a buffer actually
+occupies GPU memory:
+
+```python
+RELEASE_MEM(array)   # Frees the array's GPU buffer immediately (host data is untouched)
+LOAD_MEM(array)       # (Re)allocates the GPU buffer and uploads the current host data
+```
+
+- **`RELEASE_MEM(array)`** calls `clReleaseMemObject` on the array's buffer and clears it, so the
+  memory is returned to the driver right away. The host-side (CPU) copy of the array is never
+  touched, so the data itself is not lost.
+- **`LOAD_MEM(array)`** allocates a fresh GPU buffer for the array from its current host data.
+  It is the correct counterpart to `RELEASE_MEM` — plain `GPU_LOAD` only writes into an
+  *already-existing* buffer, so it cannot bring back an array that has been released.
+
+> **Mandatory, not optional.** A `_GPU_N` kernel dispatch performs **no** implicit buffer
+> allocation or upload of its own — it only does `clSetKernelArg` + `clEnqueueNDRangeKernel`
+> against whatever GPU buffer the array already has. This means:
+> - **`LOAD_MEM(array)` is required** before the *first* time an array is passed as a data
+>   argument to any `_GPU_N` kernel, and again after any `RELEASE_MEM(array)` on it. Skipping
+>   this is not silently "slow" — it is a hard error: the kernel logs
+>   `missing LOAD_MEM(array) before first use` and the dispatch is skipped entirely (the
+>   kernel's outputs are left unchanged).
+> - **`GPU_LOAD(array)` is required** any time host (CPU) code mutates an array that already has
+>   a live GPU buffer (e.g. `l_idx_arr[0] = l_idx`) and the *next* kernel dispatch needs to see
+>   that new value. `GPU_LOAD` only writes into an existing buffer — it never allocates one — so
+>   it must not be used as a substitute for `LOAD_MEM` on an array that hasn't been loaded yet
+>   (or was just released).
+
+### When to use these
+
+`RELEASE_MEM` is intended for **immutable** arrays (4-bit packed weights, scale tables, RoPE
+cos/sin tables, etc.). Never release an array that a GPU kernel *writes* to (activation
+buffers, KV caches, etc.) without first reading its current value back with `GPU_SYNC` —
+`RELEASE_MEM` does not sync, so releasing a GPU-resident write target discards whatever the
+GPU hasn't yet written back to the host copy.
+
+> **Release/reload has a cost — every call is buffer churn.** `RELEASE_MEM` +
+> `LOAD_MEM` on the same array is a `clReleaseMemObject` +
+> `clCreateBuffer` pair, not a full data copy, for weight arrays uploaded with
+> `CL_MEM_USE_HOST_PTR` (see `isBinaryLoaded` in the "Direct CSV Population" section above) —
+> on unified-memory devices (e.g. Apple Silicon) this is cheap since no bytes actually move.
+> It is still real per-call overhead, though, so only cycle an array through
+> `RELEASE_MEM`/`LOAD_MEM` when you specifically need to cap peak GPU memory (e.g. to fit a
+> multi-layer model on a memory-constrained device); don't do it reflexively for arrays that
+> are about to be reused within the same layer or the same kernel dispatch.
+
+### Pattern 1 — release once, at the very end
+
+If you don't need to cap peak GPU memory mid-run, the simplest use is to release every large
+buffer exactly once, right before the process is about to end (or before the very last use of
+a single-pass computation), instead of releasing/reloading inside a hot loop:
+
+```python
+# ... 32 transformer layers, prefill + decode loop, all reusing the same
+# per-layer weight/cache buffers on every iteration ...
+
+# Generation is finished — nothing on the GPU is needed anymore before the
+# host reads back `generated_tokens`. Release every large buffer once,
+# instead of thrashing release/reload inside the decode loop.
+RELEASE_MEM(l0_qkv_packed)
+RELEASE_MEM(l0_qkv_scales)
+RELEASE_MEM(l0_k_cache)
+RELEASE_MEM(l0_v_cache)
+# ... one RELEASE_MEM call per large buffer ...
+
+GPU_SYNC(generated_tokens)
+```
+
+### Pattern 2 — per-layer streaming (only one layer's weights resident at a time)
+
+When peak GPU memory itself is the constraint (e.g. a multi-layer transformer that would
+otherwise keep every layer's weights resident simultaneously), `LOAD_MEM` an immutable
+layer's weights right before that layer's kernels run, and `RELEASE_MEM` them again
+immediately after — in **every** place that layer is used, including inside a repeated decode
+loop. Because weight arrays are read-only inputs (never a GPU write target) and are typically
+`isBinaryLoaded` (zero-copy `CL_MEM_USE_HOST_PTR`), the repeated release/reload is just cheap
+buffer-object churn, not a data copy, and at any instant only one layer's weights occupy GPU
+memory:
+
+```python
+# ── Layer N ──
+LOAD_MEM(lN_qkv_packed)
+LOAD_MEM(lN_qkv_scales)
+LOAD_MEM(lN_o_packed)
+LOAD_MEM(lN_o_scales)
+LOAD_MEM(lN_gate_up_packed)
+LOAD_MEM(lN_gate_up_scales)
+LOAD_MEM(lN_down_packed)
+LOAD_MEM(lN_down_scales)
+rmsnorm_GPU_1(h_state, lN_ln1_g, h_ln1, n_seq)
+matmul_4bit_GPU_2(h_ln1, lN_qkv_packed, lN_qkv_scales, qkv_buf, kp_qkv, n_seq, 9216)
+# ... rest of layer N's kernels ...
+residual_add_GPU_2(h_state, h_out_buf, n_seq, 3072)
+RELEASE_MEM(lN_qkv_packed)
+RELEASE_MEM(lN_qkv_scales)
+RELEASE_MEM(lN_o_packed)
+RELEASE_MEM(lN_o_scales)
+RELEASE_MEM(lN_gate_up_packed)
+RELEASE_MEM(lN_gate_up_scales)
+RELEASE_MEM(lN_down_packed)
+RELEASE_MEM(lN_down_scales)
+```
+
+Note that KV caches (`lN_k_cache`/`lN_v_cache`) are deliberately **not** part of this
+per-layer cycle — they are write targets updated by every layer every step, so they must stay
+GPU-resident across the whole run (they are only released once, at the very end, alongside the
+other shared buffers per Pattern 1). See
+[`ramanujan-test-codes/phi3/phi3_transformer_stack_4bit.py`](../ramanujan-test-codes/phi3/phi3_transformer_stack_4bit.py)
+for the full worked example across all 32 layers, in both the prefill pass and the decode loop.
+
+## `GPU_SYNC` vs the previous implicit sync model
 
 Before `GPU_SYNC` was introduced, every `_GPU_N` call automatically issued a blocking
 `clEnqueueReadBuffer` + `clFinish` after the kernel, preventing any batching.  The overhead
 measured ~11% of total inference time on macOS (visible as `IOKit → IOGPU → clFinish` in
 profiler traces).  With the explicit model, the GPU queue is drained **only** at the
 necessary points, and all other kernel dispatches remain asynchronous.
+
 
 # Future of the language and platform:
 Ramanujan now supports a subset of Python syntax through AST-based conversion (see Python Support section above). The platform is actively evolving to support more Python features progressively.

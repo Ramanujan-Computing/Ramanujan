@@ -66,7 +66,34 @@ fi
 
 ANDROID_NDK=$1
 
-for ABI in arm64-v8a x86_64; do  #armeabi-v7a x86 x86_64; do
+# =============================================================================
+# Locate or build a host protoc compiler for generating C++ protobuf code
+# during Android cross-compilation.
+# =============================================================================
+HOST_PROTOC=""
+for candidate in cmake-build-debug/bin/protoc build-gpu/bin/protoc build-host/bin/protoc build-host/_deps/protobuf-build/protoc cmake-build-non-debug/bin/protoc; do
+  if [ -x "$candidate" ]; then
+    HOST_PROTOC="$(pwd)/$candidate"
+    break
+  fi
+done
+
+if [ -z "$HOST_PROTOC" ]; then
+  echo "Building host protoc compiler for cross-compilation..."
+  cmake -H. -Bbuild-host -DGPU_ENABLED=OFF
+  cmake --build build-host --target protoc
+  if [ -x "build-host/bin/protoc" ]; then
+    HOST_PROTOC="$(pwd)/build-host/bin/protoc"
+  elif [ -x "build-host/_deps/protobuf-build/protoc" ]; then
+    HOST_PROTOC="$(pwd)/build-host/_deps/protobuf-build/protoc"
+  else
+    echo "Error: Could not build or locate host protoc compiler."
+    exit 1
+  fi
+fi
+echo "Using host protoc compiler: $HOST_PROTOC"
+
+for ABI in arm64-v8a; do  # armeabi-v7a x86 x86_64
   JSONCPP_INCLUDE_DIRS=/Users/pranav/Library/Android/sdk/ndk/26.1.10909125/includes/jsoncpp/build/$ABI/include
   JSONCPP_LIBRARY_DIRS=/Users/pranav/Library/Android/sdk/ndk/26.1.10909125/includes/jsoncpp/build/$ABI/lib
   JSONCPP_LIBRARIES=$JSONCPP_LIBRARY_DIRS/libjsoncpp.so
@@ -80,10 +107,13 @@ for ABI in arm64-v8a x86_64; do  #armeabi-v7a x86 x86_64; do
   rm -f build/$ABI/CMakeCache.txt
 
   cmake -H. -Bbuild/$ABI \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ABI \
     -DANDROID_PLATFORM=android-21 \
     -DGPU_ENABLED=ON \
+    -DPROTOC_EXECUTABLE="$HOST_PROTOC" \
+    -Dprotobuf_BUILD_PROTOC_BINARIES=OFF \
     -DJSONCPP_INCLUDE_DIRS=$JSONCPP_INCLUDE_DIRS \
     -DJSONCPP_LIBRARY_DIRS=$JSONCPP_LIBRARY_DIRS \
     -DJSONCPP_LIBRARIES=$JSONCPP_LIBRARIES
@@ -93,6 +123,13 @@ for ABI in arm64-v8a x86_64; do  #armeabi-v7a x86 x86_64; do
   # ── Auto-copy .so into the Android Gradle jniLibs tree ──────────────────
   DEST=../../androidapp/app/src/main/jniLibs/$ABI
   mkdir -p "$DEST"
-  cp build/$ABI/lib/libnative.so "$DEST/libnative.so"
+  if [ -f "build/$ABI/libnative.so" ]; then
+    cp build/$ABI/libnative.so "$DEST/libnative.so"
+  elif [ -f "build/$ABI/lib/libnative.so" ]; then
+    cp build/$ABI/lib/libnative.so "$DEST/libnative.so"
+  else
+    echo "Error: libnative.so not found in build/$ABI or build/$ABI/lib"
+    exit 1
+  fi
   echo "Copied libnative.so → $DEST"
 done
