@@ -266,6 +266,23 @@ public class WorkerService extends Service {
                                 + "  result keys=" + results.keySet());
                     }
 
+                    Object binaryFilesObj = results.remove("binaryArrayFiles");
+                    if (binaryFilesObj instanceof Map) {
+                        Map<String, String> binaryFiles = (Map<String, String>) binaryFilesObj;
+                        for (Map.Entry<String, String> be : binaryFiles.entrySet()) {
+                            String arrayId  = be.getKey();
+                            String filePath = be.getValue();
+                            try {
+                                uploadBinaryFile(serverUrl, uuid, arrayId, filePath);
+                            } catch (Exception uploadEx) {
+                                System.err.println("[Worker] failed to upload binary array " + arrayId
+                                        + " for task " + uuid + ": " + uploadEx.getMessage());
+                            } finally {
+                                new File(filePath).delete();
+                            }
+                        }
+                    }
+
                     Map<String, Object> payload = new LinkedHashMap<>();
                     payload.put("uuid",   uuid);
                     payload.put("hostId", hostId);
@@ -405,6 +422,31 @@ public class WorkerService extends Service {
             }
         } finally {
             if (tmpFile.exists()) tmpFile.delete();
+        }
+    }
+
+    private void uploadBinaryFile(String serverUrl, String uuid, String arrayId, String filePath) throws Exception {
+        String url = serverUrl + "/orchestrator/uploadBinary?uuid=" + URLEncoder.encode(uuid, "UTF-8")
+                + "&arrayId=" + URLEncoder.encode(arrayId, "UTF-8");
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/octet-stream");
+        conn.setDoOutput(true);
+        File f = new File(filePath);
+        conn.setFixedLengthStreamingMode((int) f.length());
+        
+        try (java.io.InputStream is = new java.io.FileInputStream(f);
+             java.io.OutputStream os = conn.getOutputStream()) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = is.read(buf)) != -1) os.write(buf, 0, n);
+        }
+        
+        int code = conn.getResponseCode();
+        InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
+        if (is != null) is.close();
+        if (code >= 400) {
+            throw new IOException("uploadBinary for arrayId=" + arrayId + " failed with HTTP " + code);
         }
     }
 }
