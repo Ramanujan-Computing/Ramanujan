@@ -282,9 +282,9 @@ public class ExecutorImpl implements Operation {
      */
     public static void setStores(Map<String, Object> variableMap, Map<String, Map<String, Object>> arrayMap) {
         variableStore.clear();
-        if (variableMap != null) variableStore.putAll(variableMap);
+        if (variableMap != null) { for (java.util.Map.Entry<String, Object> e : variableMap.entrySet()) { if (e.getValue() != null) variableStore.put(e.getKey(), e.getValue()); } }
         arrayStore.clear();
-        if (arrayMap != null) arrayStore.putAll(arrayMap);
+        if (arrayMap != null) { for (java.util.Map.Entry<String, java.util.Map<String, Object>> e : arrayMap.entrySet()) { if (e.getValue() != null) arrayStore.put(e.getKey(), e.getValue()); } }
     }
 
     /**

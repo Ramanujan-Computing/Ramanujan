@@ -486,9 +486,9 @@ public class TranslateUtil {
         String codeWithoutComments = trimmedCode.replaceAll("(?m)#[^\n]*", "");
         String codeWithoutThreadBlocks = codeWithoutComments;
         // Remove threadStart(...) { ... } and threadParallelismCycle(...) { ... } blocks
-        // Also remove threadTriggerOnSomeThreadCompletion(...) { ... } blocks
+        // Also remove threadOnEnd(...) { ... } blocks
         codeWithoutThreadBlocks = codeWithoutThreadBlocks.replaceAll(
-                "(?s)(threadStart|threadParallelismCycle|threadTriggerOnSomeThreadCompletion)\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", "");
+                "(?s)(threadStart|threadParallelismCycle|threadOnEnd)\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", "");
         if (codeWithoutThreadBlocks.contains("{") || codeWithoutThreadBlocks.contains("}")) {
             return false;
         }
