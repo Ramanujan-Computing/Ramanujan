@@ -266,9 +266,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
                 firstSnippet, csvList, functionCallsREI,
                 variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
 
-        List<DagElement> allElements = new ArrayList<>();
-        allElements.add(firstDag);
-        allElements.addAll(dagList);
+        List<DagElement> allElements = new ArrayList<>(dagList);
 
         System.err.println("[Homelab] compiled " + args.get(0)
                 + " in " + (System.currentTimeMillis() - t0) + "ms  DAG=" + allElements.size());
@@ -294,7 +292,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
 
         try {
-            run.latch.await(2, java.util.concurrent.TimeUnit.SECONDS);
+            run.latch.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
