@@ -47,29 +47,14 @@ public class RuleEngineInput {
     }
 
     public void addAllPartsOfGivenRuleEngineInput(RuleEngineInput ruleEngineInput) {
-        // Deduplicate variables and arrays by object identity — child thread DAG elements
-        // may have already had some globals added via getExistingVariable/getExistingArray,
-        // so we must not re-add the same object reference (duplicate IDs crash the native lib).
-        java.util.Set<Variable> existingVars = java.util.Collections.newSetFromMap(
-                new java.util.IdentityHashMap<>());
-        existingVars.addAll(variables);
-        for (Variable v : ruleEngineInput.getVariables()) {
-            if (existingVars.add(v)) variables.add(v);
-        }
-
-        java.util.Set<Array> existingArrays = java.util.Collections.newSetFromMap(
-                new java.util.IdentityHashMap<>());
-        existingArrays.addAll(arrays);
-        for (Array a : ruleEngineInput.getArrays()) {
-            if (existingArrays.add(a)) arrays.add(a);
-        }
-
+        variables.addAll(ruleEngineInput.getVariables());
         commands.addAll(ruleEngineInput.getCommands());
         ifBlocks.addAll(ruleEngineInput.getIfBlocks());
         operations.addAll(ruleEngineInput.getOperations());
         conditions.addAll(ruleEngineInput.getConditions());
         constants.addAll(ruleEngineInput.getConstants());
         functionCalls.addAll(ruleEngineInput.getFunctionCalls());
+        arrays.addAll(ruleEngineInput.getArrays());
         whileBlocks.addAll(ruleEngineInput.getWhileBlocks());
         redefineArrayCommands.addAll(ruleEngineInput.getRedefineArrayCommands());
         methodDataTypeAgnosticArgs.addAll(ruleEngineInput.getMethodDataTypeAgnosticArgs());

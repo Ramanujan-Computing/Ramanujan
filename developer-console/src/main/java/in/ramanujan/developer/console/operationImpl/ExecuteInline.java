@@ -110,13 +110,9 @@ public class ExecuteInline implements Operation {
                     array.getValues().putAll(arrayResult);
                 }
             } else {
-                if ("binaryArrayFiles".equals(key)) {
-                    // Internal map returned by C++ worker, skip
-                    continue;
-                }
                 Variable variable = variableMap.get(key);
                 if(variable == null) {
-                    throw new IOException("Variable not found: " + key);
+                    throw new IOException("Variable not found");
                 }
                 variable.setValue(value);
             }
