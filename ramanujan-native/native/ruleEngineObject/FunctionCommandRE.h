@@ -16,6 +16,7 @@
 #include "dataContainer/VariableRE.h"
 #include "dataContainer/array/ArrayValue.h"
 #include <list>
+#include <random>
 #include <unordered_map>
 #include <vector>
 #ifdef GPU_ENABLED
@@ -411,16 +412,22 @@ public:
  * - RAND(array) - sets all array elements to random values [0.0, 1.0)
  */
 class RAND : public BuiltInFunctionsImpl {
+private:
+  std::mt19937 generator;
+  std::uniform_real_distribution<> distribution;
+
 public:
   /**
    * Constructor for random number generation function.
    * @param pCall1 Function call information with target variable/array
    */
-  RAND(FunctionCall *pCall1) : BuiltInFunctionsImpl(pCall1) {}
+  RAND(FunctionCall *pCall1)
+      : BuiltInFunctionsImpl(pCall1), generator(std::random_device{}()),
+        distribution(0.0, 1.0) {}
 
   /**
    * Executes random number generation.
-   * Uses static random engine to generate uniformly distributed random numbers.
+  * Uses an instance-local engine to generate uniformly distributed numbers.
    */
   RuleEngineInputUnits *process() override;
 };

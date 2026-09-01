@@ -861,6 +861,18 @@ public class PythonAstToRuleEngineInputConverter {
             if (array == null) {
                 array = codeConverter.getArrayMap().get(arrayVarName);
             }
+            if (array != null) {
+                boolean toBeAdded = true;
+                for (Array arrayInRuleInput : ruleEngineInput.getArrays()) {
+                    if (array == arrayInRuleInput) {
+                        toBeAdded = false;
+                        break;
+                    }
+                }
+                if (toBeAdded) {
+                    ruleEngineInput.getArrays().add(array);
+                }
+            }
         }
         if (array == null) {
             throw new CompilationException(null, null, "Array " + arrayVarName + " not found");
@@ -2594,6 +2606,17 @@ public class PythonAstToRuleEngineInputConverter {
         // First check if it's a declared array
         Array array = getExistingArray(arrayVarName, variableScope);
         if (array != null) {
+            boolean toBeAdded = true;
+            for (Array arrayInRuleInput : ruleEngineInput.getArrays()) {
+                if (array == arrayInRuleInput) {
+                    toBeAdded = false;
+                    break;
+                }
+            }
+            if (toBeAdded) {
+                ruleEngineInput.getArrays().add(array);
+            }
+            
             Command command = new Command();
             command.setId("command_" + UUID.randomUUID().toString());
             ArrayCommand arrayCommand = new ArrayCommand();
@@ -2639,6 +2662,17 @@ public class PythonAstToRuleEngineInputConverter {
         if (isInsideFunction(variableScope)) {
             Array globalArr = codeConverter.getArrayMap().get(arrayVarName);
             if (globalArr != null) {
+                boolean toBeAdded = true;
+                for (Array arrayInRuleInput : ruleEngineInput.getArrays()) {
+                    if (globalArr == arrayInRuleInput) {
+                        toBeAdded = false;
+                        break;
+                    }
+                }
+                if (toBeAdded) {
+                    ruleEngineInput.getArrays().add(globalArr);
+                }
+                
                 Command command = new Command();
                 command.setId("command_" + UUID.randomUUID().toString());
                 ArrayCommand arrayCommand = new ArrayCommand();
@@ -2913,6 +2947,7 @@ public class PythonAstToRuleEngineInputConverter {
         // Check if we're inside a function (any scope starts with "func_")
         boolean insideFunction = isInsideFunction(variableScope);
         
+        Variable foundVar = null;
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
             
@@ -2923,14 +2958,31 @@ public class PythonAstToRuleEngineInputConverter {
             }
             
             Variable var = codeConverter.getVariableMap().get(scope + name);
-            if (var != null) return var;
+            if (var != null) {
+                foundVar = var;
+                break;
+            }
         }
         
         // If not inside a function, also check global scope
-        if (!insideFunction) {
-            return codeConverter.getVariableMap().get(name);
+        if (foundVar == null && !insideFunction) {
+            foundVar = codeConverter.getVariableMap().get(name);
         }
-        return null;
+        
+        if (foundVar != null) {
+            boolean toBeAdded = true;
+            for (Variable varInRuleInput : ruleEngineInput.getVariables()) {
+                if (foundVar == varInRuleInput) {
+                    toBeAdded = false;
+                    break;
+                }
+            }
+            if (toBeAdded) {
+                ruleEngineInput.getVariables().add(foundVar);
+            }
+        }
+        
+        return foundVar;
     }
     
     /**
@@ -2961,6 +3013,7 @@ public class PythonAstToRuleEngineInputConverter {
         // Check if we're inside a function
         boolean insideFunction = isInsideFunction(variableScope);
         
+        Array foundArray = null;
         for (int i = variableScope.size() - 1; i >= 0; i--) {
             String scope = variableScope.get(i);
             
@@ -2970,14 +3023,31 @@ public class PythonAstToRuleEngineInputConverter {
             }
             
             Array arr = codeConverter.getArrayMap().get(scope + name);
-            if (arr != null) return arr;
+            if (arr != null) {
+                foundArray = arr;
+                break;
+            }
         }
         
         // If not inside a function, also check global scope
-        if (!insideFunction) {
-            return codeConverter.getArrayMap().get(name);
+        if (foundArray == null && !insideFunction) {
+            foundArray = codeConverter.getArrayMap().get(name);
         }
-        return null;
+        
+        if (foundArray != null) {
+            boolean toBeAdded = true;
+            for (Array arrInRuleInput : ruleEngineInput.getArrays()) {
+                if (foundArray == arrInRuleInput) {
+                    toBeAdded = false;
+                    break;
+                }
+            }
+            if (toBeAdded) {
+                ruleEngineInput.getArrays().add(foundArray);
+            }
+        }
+        
+        return foundArray;
     }
     
     /**

@@ -62,16 +62,21 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
     private static final class KernelRun {
         final Map<String, Variable> variableMap;
         final Map<String, Array>    arrayMap;
+        final List<DagElement>      allElements;
+        final Set<DagElement>       completedElements = Collections.newSetFromMap(new ConcurrentHashMap<DagElement, Boolean>());
+        final Set<DagElement>       enqueuedElements  = Collections.newSetFromMap(new ConcurrentHashMap<DagElement, Boolean>());
         final CountDownLatch        latch;
         // arrayId -> local file path of a raw float32 binary file uploaded by a worker
         // via /orchestrator/uploadBinary, for RETURN()-marked arrays too large to
         // ship efficiently as a JSON point-value map.
         final Map<String, String>   binaryArrayFiles = new ConcurrentHashMap<>();
+        volatile Throwable          failure = null;
 
-        KernelRun(Map<String, Variable> variableMap, Map<String, Array> arrayMap, int taskCount) {
-            this.variableMap = variableMap;
-            this.arrayMap    = arrayMap;
-            this.latch       = new CountDownLatch(taskCount);
+        KernelRun(Map<String, Variable> variableMap, Map<String, Array> arrayMap, List<DagElement> allElements) {
+            this.variableMap      = variableMap;
+            this.arrayMap         = arrayMap;
+            this.allElements      = allElements;
+            this.latch            = new CountDownLatch(allElements.size());
         }
     }
 
@@ -143,8 +148,83 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
     }
 
     // -------------------------------------------------------------------------
-    // Compile + dispatch
+    // Compile + dynamic DAG orchestrator dispatch
     // -------------------------------------------------------------------------
+
+    private void dispatchElement(KernelRun run, DagElement element) {
+        if (!run.enqueuedElements.add(element)) {
+            return;
+        }
+
+        // Fast-path: empty elements without commands (e.g. DAG join/fork placeholder nodes)
+        if (element.getFirstCommandId() == null || element.getFirstCommandId().isEmpty()) {
+            System.err.println("[Homelab] element " + element.getId() + " (empty firstCommandId) completed immediately");
+            markCompletedAndTriggerNext(run, element);
+            return;
+        }
+
+        try {
+            String taskUuid = UUID.randomUUID().toString();
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("uuid",           taskUuid);
+            data.put("ruleEngineInput", element.getRuleEngineInput());
+            data.put("firstCommandId", element.getFirstCommandId());
+            data.put("debug",          false);
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("status", "SUCCESS");
+            envelope.put("data",   data);
+            String responseJson = MAPPER.writeValueAsString(envelope);
+
+            PendingTask task = new PendingTask(taskUuid, element, run, responseJson);
+            inflight.put(taskUuid, task);
+            taskQueue.add(task);
+
+            System.err.println("[Homelab] dispatched task (firstCmd=" + element.getFirstCommandId()
+                    + ", uuid=" + taskUuid + ") | queued=" + taskQueue.size()
+                    + ", inflight=" + inflight.size());
+        } catch (Exception e) {
+            System.err.println("[Homelab] error dispatching element " + element.getId() + ": " + e.getMessage());
+            run.failure = e;
+            run.latch.countDown();
+        }
+    }
+
+    private void markCompletedAndTriggerNext(KernelRun run, DagElement completedElement) {
+        if (run.completedElements.add(completedElement)) {
+            run.latch.countDown();
+            System.err.println("[Homelab] element " + completedElement.getId()
+                    + " (firstCmd=" + completedElement.getFirstCommandId() + ") done | remaining="
+                    + run.latch.getCount());
+        }
+
+        List<DagElement> nextElements = completedElement.getNextElements();
+        if (nextElements != null) {
+            for (DagElement next : nextElements) {
+                checkAndDispatchIfReady(run, next);
+            }
+        }
+    }
+
+    private void checkAndDispatchIfReady(KernelRun run, DagElement candidate) {
+        if (run.completedElements.contains(candidate) || run.enqueuedElements.contains(candidate)) {
+            return;
+        }
+
+        List<DagElement> prevs = candidate.getPreviousElements();
+        boolean allSatisfied = true;
+        if (prevs != null && !prevs.isEmpty()) {
+            for (DagElement prev : prevs) {
+                if (!run.completedElements.contains(prev)) {
+                    allSatisfied = false;
+                    break;
+                }
+            }
+        }
+
+        if (allSatisfied) {
+            dispatchElement(run, candidate);
+        }
+    }
 
     private void dispatchToWorkers(List<String> args) throws Exception {
         long t0 = System.currentTimeMillis();
@@ -186,71 +266,41 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
                 firstSnippet, csvList, functionCallsREI,
                 variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
 
-        List<DagElement> allElements = new ArrayList<>();
-        allElements.add(firstDag);
-        allElements.addAll(dagList);
+        Set<DagElement> uniqueElements = new LinkedHashSet<>();
+        uniqueElements.add(firstDag);
+        uniqueElements.addAll(dagList);
+        List<DagElement> allElements = new ArrayList<>(uniqueElements);
 
         System.err.println("[Homelab] compiled " + args.get(0)
                 + " in " + (System.currentTimeMillis() - t0) + "ms  DAG=" + allElements.size());
 
-        // Execute DAG elements in topological order so each element sees the
-        // merged results of its predecessors.  Dispatching all elements at once
-        // (the old approach) sent every worker a snapshot of the initial arrays;
-        // dependent kernels (gravity → feet → integrate) never saw each other's
-        // outputs, so velocities stayed zero and positions never changed.
-        Set<DagElement> completed = new HashSet<>();
-        Deque<DagElement> readyQueue = new ArrayDeque<>();
-        readyQueue.add(firstDag);
-        // arrayId -> local (homelab-side) file path, accumulated across every DAG
-        // element dispatched in this run, for RETURN()-marked arrays delivered via
-        // binary upload instead of the JSON point-value map.
-        Map<String, String> allBinaryArrayFiles = new HashMap<>();
+        KernelRun run = new KernelRun(variableMap, arrayMap, allElements);
 
-        while (completed.size() < allElements.size()) {
-            if (readyQueue.isEmpty()) {
-                for (DagElement el : allElements) {
-                    if (!completed.contains(el) && completed.containsAll(el.getPreviousElements())) {
-                        readyQueue.add(el);
-                    }
-                }
-                if (readyQueue.isEmpty()) break; // cycle or all done
+        // Identify all root DAG elements (elements with no previous dependencies)
+        List<DagElement> roots = new ArrayList<>();
+        for (DagElement el : allElements) {
+            if (el.getPreviousElements() == null || el.getPreviousElements().isEmpty()) {
+                roots.add(el);
             }
+        }
+        if (roots.isEmpty()) {
+            roots.add(firstDag);
+        }
 
-            DagElement element = readyQueue.poll();
-            if (completed.contains(element)) continue;
-
-            // Build the task JSON NOW, after all predecessor results have been
-            // merged into the shared arrayMap / variableMap objects that
-            // element.getRuleEngineInput() references.
-            String taskUuid = UUID.randomUUID().toString();
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("uuid",           taskUuid);
-            data.put("ruleEngineInput", element.getRuleEngineInput());
-            data.put("firstCommandId", element.getFirstCommandId());
-            data.put("debug",          false);
-            Map<String, Object> envelope = new LinkedHashMap<>();
-            envelope.put("status", "SUCCESS");
-            envelope.put("data",   data);
-            String responseJson = MAPPER.writeValueAsString(envelope);
-
-            KernelRun run = new KernelRun(variableMap, arrayMap, 1);
-            PendingTask task = new PendingTask(taskUuid, element, run, responseJson);
-            taskQueue.add(task);
-            inflight.put(taskUuid, task);
-
-            System.err.println("[Homelab] dispatched element (firstCmd=" + element.getFirstCommandId() + "), waiting…");
-            run.latch.await();
-            allBinaryArrayFiles.putAll(run.binaryArrayFiles);
-
-            completed.add(element);
-            for (DagElement next : element.getNextElements()) {
-                if (!completed.contains(next) && completed.containsAll(next.getPreviousElements())) {
-                    readyQueue.add(next);
-                }
+        System.err.println("[Homelab] launching DAG with " + roots.size() + " initial root element(s)...");
+        synchronized (run) {
+            for (DagElement root : roots) {
+                dispatchElement(run, root);
             }
         }
 
-        System.err.println("[Homelab] all " + completed.size() + " element(s) done in "
+        run.latch.await();
+
+        if (run.failure != null) {
+            throw new RuntimeException("Kernel execution failed on worker", run.failure);
+        }
+
+        System.err.println("[Homelab] all " + allElements.size() + " element(s) done in "
                 + (System.currentTimeMillis() - t0) + "ms");
 
         // Populate ExecutorImpl stores so dump / var / arr commands work post-run
@@ -273,7 +323,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         ExecutorImpl.setStores(varStore, arrStore);
 
         Map<String, String> binaryStore = new HashMap<>();
-        for (Map.Entry<String, String> e : allBinaryArrayFiles.entrySet()) {
+        for (Map.Entry<String, String> e : run.binaryArrayFiles.entrySet()) {
             String id = e.getKey();
             if (id.contains("func") || !id.contains("_name_")) continue;
             String name = id.split("_name_")[1];
@@ -528,7 +578,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         sendJson(ex, 200, "{\"status\":\"SUCCESS\"}");
     }
 
-    /** Workers submit results here. Merge results then count down the latch. */
+    /** Workers submit results here. Merge results, mark element completed, and dispatch newly ready successors. */
     @SuppressWarnings("unchecked")
     private void handleTaskComplete(HttpExchange ex) throws IOException {
         // Java 8 compatible way to read request body
@@ -547,12 +597,13 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
                     System.err.println("[Homelab] received unknown uuid: " + uuid);
                     return;
                 }
-                mergeResults(results, task.kernelRun.variableMap, task.kernelRun.arrayMap);
-                task.kernelRun.latch.countDown();
-                System.err.println("[Homelab] task " + uuid + " done ("
-                        + task.kernelRun.latch.getCount() + " remaining)");
+                synchronized (task.kernelRun) {
+                    mergeResults(results, task.kernelRun.variableMap, task.kernelRun.arrayMap);
+                    markCompletedAndTriggerNext(task.kernelRun, task.dagElement);
+                }
             } catch (Exception e) {
                 System.err.println("[Homelab] error on task/complete: " + e.getMessage());
+                e.printStackTrace(System.err);
             }
         }).start();
     }

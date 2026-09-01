@@ -37,6 +37,7 @@ import java.util.concurrent.*;
 public class ExecuteInlineWorker implements Operation {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Object GPU_EXECUTION_LOCK = new Object();
 
     @Override
     public void execute(List<String> args) throws IOException {
@@ -123,7 +124,13 @@ public class ExecuteInlineWorker implements Operation {
                     NativeProcessor np = new NativeProcessor();
                     if (firstCommandId != null && !firstCommandId.isEmpty()) {
                         byte[] reiProto = RuleEngineInputProtoSerializer.serialize(rei);
-                        np.process(reiProto, firstCommandId);
+                        if (gpuKernels.isEmpty()) {
+                            np.process(reiProto, firstCommandId);
+                        } else {
+                            synchronized (GPU_EXECUTION_LOCK) {
+                                np.process(reiProto, firstCommandId);
+                            }
+                        }
                         if (np.jniObject != null) results = np.jniObject;
                     }
                 } catch (Exception e) {
