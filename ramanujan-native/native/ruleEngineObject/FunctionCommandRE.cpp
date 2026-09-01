@@ -1229,12 +1229,6 @@ RuleEngineInputUnits *PINF::process() {
   return nextUnit;
 }
 
-// Static random number generation components for RAND function
-static std::random_device rd;  // Non-deterministic random seed
-static std::mt19937 gen(rd()); // Mersenne Twister generator engine
-static std::uniform_real_distribution<>
-    dis(0.0, 1.0); // Uniform distribution [0.0, 1.0)
-
 /**
  * RAND (Random Number Generation) Built-in Function Implementation.
  *
@@ -1256,14 +1250,14 @@ RuleEngineInputUnits *RAND::process() {
 
     // Check if this is a variable (DoublePtr)
     if (DoublePtr *doublePtr = dynamic_cast<DoublePtr *>(dataContainerValue)) {
-      doublePtr->value = dis(gen);
+      doublePtr->value = distribution(generator);
     }
     // Check if this is an array (ArrayValue)
     else if (ArrayDataContainerValue *pArrayDataContainerValueValue =
                  dynamic_cast<ArrayDataContainerValue *>(dataContainerValue)) {
       ArrayValue *arrayValue = pArrayDataContainerValueValue->arrayValue;
       for (int i = 0; i < arrayValue->totalSize; i++) {
-        arrayValue->val[i] = dis(gen);
+        arrayValue->val[i] = distribution(generator);
       }
     }
   }

@@ -484,11 +484,7 @@ public class TranslateUtil {
         // Strip Python line comments (#...) before checking for braces, so that
         // notation like Σ_{k} in a comment does not fool the brace detector.
         String codeWithoutComments = trimmedCode.replaceAll("(?m)#[^\n]*", "");
-        String codeWithoutThreadBlocks = codeWithoutComments;
-        // Remove threadStart(...) { ... } and threadParallelismCycle(...) { ... } blocks
-        // Also remove threadOnEnd(...) { ... } blocks
-        codeWithoutThreadBlocks = codeWithoutThreadBlocks.replaceAll(
-                "(?s)(threadStart|threadParallelismCycle|threadOnEnd)\\s*\\([^)]*\\)\\s*\\{[^}]*\\}", "");
+        String codeWithoutThreadBlocks = removeThreadBlocks(codeWithoutComments);
         if (codeWithoutThreadBlocks.contains("{") || codeWithoutThreadBlocks.contains("}")) {
             return false;
         }
@@ -534,6 +530,33 @@ public class TranslateUtil {
         
         // Default to Ramanujan if no clear indicators
         return false;
+    }
+
+    private static String removeThreadBlocks(String code) {
+        java.util.regex.Pattern header = java.util.regex.Pattern.compile(
+                "\\b(?:threadStart|threadParallelismCycle|threadOnEnd)\\s*\\([^)]*\\)\\s*\\{");
+        StringBuilder result = new StringBuilder(code.length());
+        int copiedThrough = 0;
+        java.util.regex.Matcher matcher = header.matcher(code);
+        while (matcher.find(copiedThrough)) {
+            result.append(code, copiedThrough, matcher.start());
+            int depth = 1;
+            int index = matcher.end();
+            while (index < code.length() && depth > 0) {
+                char current = code.charAt(index++);
+                if (current == '{') depth++;
+                else if (current == '}') depth--;
+            }
+            if (depth != 0) {
+                result.append(code, matcher.start(), code.length());
+                copiedThrough = code.length();
+                break;
+            }
+            result.append('\n');
+            copiedThrough = index;
+        }
+        result.append(code, copiedThrough, code.length());
+        return result.toString();
     }
 
     private Boolean validateIfSuffixOfMethod(Character c) {

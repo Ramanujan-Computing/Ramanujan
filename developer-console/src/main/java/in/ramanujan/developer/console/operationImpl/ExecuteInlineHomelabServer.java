@@ -266,9 +266,10 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
                 firstSnippet, csvList, functionCallsREI,
                 variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
 
-        List<DagElement> allElements = new ArrayList<>();
-        allElements.add(firstDag);
-        allElements.addAll(dagList);
+        Set<DagElement> uniqueElements = new LinkedHashSet<>();
+        uniqueElements.add(firstDag);
+        uniqueElements.addAll(dagList);
+        List<DagElement> allElements = new ArrayList<>(uniqueElements);
 
         System.err.println("[Homelab] compiled " + args.get(0)
                 + " in " + (System.currentTimeMillis() - t0) + "ms  DAG=" + allElements.size());
@@ -293,11 +294,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             }
         }
 
-        try {
-            run.latch.await(2, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        run.latch.await();
 
         if (run.failure != null) {
             throw new RuntimeException("Kernel execution failed on worker", run.failure);
