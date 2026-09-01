@@ -64,5 +64,22 @@ runtime, OpenCL backend) is independent work and is not derived from Newton.
 
 ---
 
+## Android OpenCL support
+
+Ramanujan's Android native runtime uses OpenCL API definitions from the
+[Khronos OpenCL-Headers](https://github.com/KhronosGroup/OpenCL-Headers)
+project and dynamically loads the OpenCL implementation provided by the
+device's GPU vendor.
+
+Our thanks to the Khronos Group, the OpenCL community, and Android GPU vendors
+for maintaining the specifications, headers, and device implementations that
+make portable on-device GPU computation possible.
+
+The runtime loader in
+[`ramanujan-native/native/opencl_loader.h`](ramanujan-native/native/opencl_loader.h)
+uses the OpenCL API definitions.
+
+---
+
 For runtime/build dependencies of the Ramanujan platform itself, see
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).

@@ -21,6 +21,19 @@ HOMELAB_READY
 HOMELAB_ADDRESS http://<server-ip>:8888
 ```
 
+To use an Android phone as the worker, connect the phone and computer to the
+same local network. In the Android app's **Server URL** field, enter the complete
+URL printed after `HOMELAB_ADDRESS`, including `http://` and port `8888`. For
+example, if the server prints:
+
+```text
+HOMELAB_ADDRESS http://192.168.1.42:8888
+```
+
+enter exactly `http://192.168.1.42:8888` and tap **Start Workers**. Do not enter
+`localhost`; on Android, `localhost` refers to the phone rather than the
+computer running `rj homelab`.
+
 Start a worker in another terminal:
 
 ```sh
