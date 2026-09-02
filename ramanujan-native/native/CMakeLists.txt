@@ -118,8 +118,8 @@ else()
     message(STATUS "[Ramanujan] OpenCL GPU support DISABLED  (pass -DGPU_ENABLED=ON to enable)")
 endif()
 IF(ANDROID)
-    # For Android builds, use NDK's JNI headers
-    include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
+    # The NDK toolchain sets CMAKE_SYSROOT for every supported host OS.
+    include_directories(${CMAKE_SYSROOT}/usr/include)
 ELSE()
     find_package(JNI REQUIRED)
     include_directories(${JNI_INCLUDE_DIRS})

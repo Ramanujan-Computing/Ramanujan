@@ -1450,6 +1450,19 @@ On Linux, replace the argument with the corresponding path under
 it to `androidapp/app/src/main/jniLibs/arm64-v8a/libnative.so`, where Gradle
 packages it into the APK.
 
+On Windows, run the PowerShell equivalent from the repository root:
+
+```powershell
+.\ramanujan-native\native\compileAndroidWindows.ps1 `
+    -NdkPath "$env:LOCALAPPDATA\Android\Sdk\ndk\26.1.10909125"
+```
+
+The NDK argument can be omitted when `ANDROID_NDK_HOME` is set or an NDK is
+installed in Android Studio's default location. Pass multiple architectures
+with `-Abis arm64-v8a,x86_64`; `arm64-v8a` is built by default. GPU/OpenCL
+support matches `compileAndroid.sh` and is enabled by default; pass
+`-DisableGpu` for a CPU-only Android library.
+
 ## Build and run the Android app
 
 The Android app depends on `ramanujan-device-common` from the local Maven
@@ -2061,5 +2074,3 @@ Token → [embed_kernel] → hidden
 ```
 
 See `ramanujan-test-codes/phi3/README.md` for full details on weight extraction, model architecture, and usage instructions.
-
-
