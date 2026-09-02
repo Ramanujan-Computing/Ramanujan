@@ -90,9 +90,7 @@ public:
      * ```
      */
     inline void allocateDual(int totalSize) {
-        // Check if we need to allocate more objects
-        // __builtin_expect hints that this branch is unlikely (optimization)
-        if(__builtin_expect((memStackSizePtrCreated - currentIter) < totalSize, 0)) {
+        if((memStackSizePtrCreated - currentIter) < totalSize) {
             needed = totalSize - (memStackSizePtrCreated - currentIter);
             for(int i = 0; i < needed; i++) {
                 memStack[memStackSizePtrCreated++] = new DataContainerValueFunctionCommandRE();

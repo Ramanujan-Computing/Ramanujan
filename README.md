@@ -1298,8 +1298,9 @@ worker.
 - Maven 3.9 or newer
 - CMake 3.27 or newer and a C++ compiler
 - Android Studio with Android SDK 34 and NDK 26.1.10909125 for the phone build
-- macOS, or Ubuntu with `libjsoncpp-dev`, `ocl-icd-opencl-dev`, and
-    `opencl-headers` installed
+- macOS; Ubuntu with `libjsoncpp-dev`, `ocl-icd-opencl-dev`, and
+    `opencl-headers`; or Windows with Visual Studio's **Desktop development
+    with C++** workload
 
 On Ubuntu, install the native packages with:
 
@@ -1363,6 +1364,10 @@ cp ramanujan-native/native/build/libnative.dylib "$RAMANUJAN_WS/"
 
 # Ubuntu
 cp ramanujan-native/native/build/libnative.so "$RAMANUJAN_WS/"
+
+# Windows PowerShell
+.\ramanujan-native\native\buildWindows.ps1
+Copy-Item C:\ramanujan-native-build\native.dll $env:RAMANUJAN_WS
 ```
 
 The workspace must now contain:
@@ -1372,6 +1377,7 @@ ramanujan-ws/
 ├── developer-console-1.0-SNAPSHOT-fat.jar
 └── libnative.dylib    # macOS
         libnative.so       # Ubuntu, instead of libnative.dylib
+        native.dll         # Windows, instead of libnative.dylib
 ```
 
 Install the `rj` command by adding this alias to `~/.zshrc` or `~/.bashrc`, then
@@ -2055,6 +2061,5 @@ Token → [embed_kernel] → hidden
 ```
 
 See `ramanujan-test-codes/phi3/README.md` for full details on weight extraction, model architecture, and usage instructions.
-
 
 

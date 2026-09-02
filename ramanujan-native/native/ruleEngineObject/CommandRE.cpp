@@ -211,6 +211,7 @@ DoublePtr * CommandRE::getVar() {
         return (DoublePtr* )constantRE->getVal();
 
     }
+    return nullptr;
 }
 
 DataOperation * CommandRE::getDataOperation() {
