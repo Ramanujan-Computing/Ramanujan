@@ -4,6 +4,37 @@
 thread samples 2,000,000 points, and the final DAG node combines all four
 results.
 
+## macOS and Ubuntu Setup
+
+Run these commands from the repository root:
+
+```sh
+export RAMANUJAN_WS="$HOME/ramanujan-ws"
+mkdir -p "$RAMANUJAN_WS"
+
+python3 -m pip install ast2json
+chmod +x projectBuilder.sh
+./projectBuilder.sh
+
+cp developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar \
+    "$RAMANUJAN_WS/"
+
+# macOS
+cp ramanujan-native/native/build/libnative.dylib "$RAMANUJAN_WS/"
+
+# Ubuntu
+cp ramanujan-native/native/build/libnative.so "$RAMANUJAN_WS/"
+```
+
+Add the following to `~/.zshrc` on macOS or `~/.bashrc` on Ubuntu:
+
+```sh
+export RAMANUJAN_WS="$HOME/ramanujan-ws"
+alias rj='java -Xms64m -Xmx512m -jar "$RAMANUJAN_WS/developer-console-1.0-SNAPSHOT-fat.jar"'
+```
+
+Reload the applicable profile with `source ~/.zshrc` or `source ~/.bashrc`.
+
 ## Windows Setup
 
 Run these commands in PowerShell from the repository root:

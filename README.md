@@ -1298,22 +1298,28 @@ worker.
 - Maven 3.9 or newer
 - CMake 3.27 or newer and a C++ compiler
 - Android Studio with Android SDK 34 and NDK 26.1.10909125 for the phone build
-- macOS; Ubuntu with `libjsoncpp-dev`, `ocl-icd-opencl-dev`, and
-    `opencl-headers`; or Windows with Visual Studio's **Desktop development
-    with C++** workload
 
-On Ubuntu, install the native packages with:
+### macOS and Ubuntu prerequisites
+
+macOS includes OpenCL. On Ubuntu, install the native packages with:
 
 ```sh
 sudo apt update
 sudo apt install build-essential cmake libjsoncpp-dev ocl-icd-opencl-dev opencl-headers
 ```
 
+### Windows prerequisites
+
+Install Visual Studio with the **Desktop development with C++** workload. The
+Windows build scripts use Visual Studio's CMake, Ninja, and MSVC installations.
+
 ## Clone the repository and create a workspace
 
 The Ramanujan workspace is a separate directory for runtime binaries. It is not
 the Git repository. Create both directories and set `RAMANUJAN_WS` to the
 workspace's absolute path:
+
+### macOS and Ubuntu workspace
 
 ```sh
 git clone https://github.com/Ramanujan-Computing/Ramanujan.git
@@ -1326,8 +1332,9 @@ export RAMANUJAN_WS="$HOME/ramanujan-ws"
 Add the `export` command to `~/.zshrc` or `~/.bashrc` to keep it across terminal
 sessions.
 
-On Windows, create the workspace and persist its location for future PowerShell
-sessions:
+### Windows workspace
+
+Create the workspace and persist its location for future PowerShell sessions:
 
 ```powershell
 $workspace = "$HOME\Desktop\ws"
@@ -1338,6 +1345,8 @@ $env:RAMANUJAN_WS = $workspace
 
 ## Build the Java modules and developer console
 
+### macOS and Ubuntu Java build
+
 Install the Python translation dependency, then build the Maven modules in
 dependency order:
 
@@ -1347,7 +1356,15 @@ chmod +x projectBuilder.sh
 ./projectBuilder.sh
 ```
 
-On Windows, run the required builds explicitly in dependency order:
+Copy the resulting fat JAR into the workspace:
+
+```sh
+cp developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar "$RAMANUJAN_WS/"
+```
+
+### Windows Java build
+
+Run the required builds explicitly in dependency order:
 
 ```powershell
 python -m pip install ast2json
@@ -1358,15 +1375,7 @@ mvn -f middleware\translation\pom.xml clean install -DskipTests
 mvn -f developer-console\pom.xml clean install -DskipTests
 ```
 
-The final Java artifact is
-`developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar`. Copy it
-directly into the workspace:
-
-```sh
-cp developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar "$RAMANUJAN_WS/"
-```
-
-On Windows:
+Copy the resulting fat JAR into the workspace:
 
 ```powershell
 Copy-Item developer-console\target\developer-console-1.0-SNAPSHOT-fat.jar `
@@ -1374,6 +1383,8 @@ Copy-Item developer-console\target\developer-console-1.0-SNAPSHOT-fat.jar `
 ```
 
 ## Build and install the desktop native binary
+
+### macOS and Ubuntu native build
 
 `projectBuilder.sh` creates a standard native build. To configure it explicitly
 with OpenCL GPU support and release optimizations, run:
@@ -1392,8 +1403,13 @@ cp ramanujan-native/native/build/libnative.dylib "$RAMANUJAN_WS/"
 
 # Ubuntu
 cp ramanujan-native/native/build/libnative.so "$RAMANUJAN_WS/"
+```
 
-# Windows PowerShell
+### Windows native build
+
+Build the CPU-only Windows DLL and copy it into the workspace:
+
+```powershell
 .\ramanujan-native\native\buildWindows.ps1 -BuildDirectory C:\ramanujan-native-build
 Copy-Item C:\ramanujan-native-build\native.dll $env:RAMANUJAN_WS
 ```
@@ -1408,15 +1424,20 @@ ramanujan-ws/
     native.dll         # Windows, instead of libnative.dylib
 ```
 
-Install the `rj` command by adding this alias to `~/.zshrc` or `~/.bashrc`, then
-reload that file:
+## Install the `rj` command
+
+### macOS and Ubuntu `rj` command
+
+Add this alias to `~/.zshrc` or `~/.bashrc`, then reload that file:
 
 ```sh
 alias rj='java -jar "$RAMANUJAN_WS/developer-console-1.0-SNAPSHOT-fat.jar"'
 source ~/.zshrc   # use ~/.bashrc when running Bash
 ```
 
-For a persistent Windows `rj` command, run this once in PowerShell:
+### Windows `rj` command
+
+For a persistent command, run this once in PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Force (Split-Path $PROFILE)
@@ -1467,6 +1488,8 @@ be close to `3.14159`; its exact value changes on every run.
 
 ## Build the Android native binary
 
+### macOS and Ubuntu Android build
+
 Android Studio installs the NDK under the Android SDK. Find the installed NDK
 path in Android Studio under **Settings > Languages & Frameworks > Android SDK >
 SDK Tools**, or list the versions from a terminal:
@@ -1492,7 +1515,9 @@ On Linux, replace the argument with the corresponding path under
 it to `androidapp/app/src/main/jniLibs/arm64-v8a/libnative.so`, where Gradle
 packages it into the APK.
 
-On Windows, run the PowerShell equivalent from the repository root:
+### Windows Android build
+
+Run the PowerShell build from the repository root:
 
 ```powershell
 .\ramanujan-native\native\compileAndroidWindows.ps1 `
