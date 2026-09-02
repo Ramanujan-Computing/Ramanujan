@@ -4,6 +4,56 @@
 thread samples 2,000,000 points, and the final DAG node combines all four
 results.
 
+## Windows Setup
+
+Run these commands in PowerShell from the repository root:
+
+```powershell
+$workspace = "$HOME\Desktop\ws"
+New-Item -ItemType Directory -Force $workspace
+[Environment]::SetEnvironmentVariable("RAMANUJAN_WS", $workspace, "User")
+$env:RAMANUJAN_WS = $workspace
+
+python -m pip install ast2json
+mvn -f commons\pom.xml clean install -DskipTests
+mvn -f rule-engine\pom.xml clean install -DskipTests
+mvn -f developer-console-model\pom.xml clean install -DskipTests
+mvn -f middleware\translation\pom.xml clean install -DskipTests
+mvn -f developer-console\pom.xml clean install -DskipTests
+
+.\ramanujan-native\native\buildWindows.ps1 -BuildDirectory C:\ramanujan-native-build
+Copy-Item developer-console\target\developer-console-1.0-SNAPSHOT-fat.jar `
+    $workspace -Force
+Copy-Item C:\ramanujan-native-build\native.dll $workspace -Force
+```
+
+Install `rj` in the PowerShell profile once so it is available in every new
+terminal:
+
+```powershell
+New-Item -ItemType Directory -Force (Split-Path $PROFILE)
+@'
+function global:rj {
+    $workspace = [Environment]::GetEnvironmentVariable("RAMANUJAN_WS", "User")
+    & java -Xms64m -Xmx512m `
+        -jar "$workspace\developer-console-1.0-SNAPSHOT-fat.jar" @args
+}
+'@ | Add-Content $PROFILE
+. $PROFILE
+```
+
+To build the Android worker library from Windows, install NDK
+`26.1.10909125` with Android Studio and run:
+
+```powershell
+.\ramanujan-native\native\compileAndroidWindows.ps1 `
+    -NdkPath "$env:LOCALAPPDATA\Android\Sdk\ndk\26.1.10909125"
+```
+
+The script copies `libnative.so` to
+`androidapp\app\src\main\jniLibs\arm64-v8a`. It enables Android OpenCL by
+default; pass `-DisableGpu` for a CPU-only build.
+
 ## Run on Homelab
 
 Run all commands from the repository root.
@@ -37,7 +87,7 @@ computer running `rj homelab`.
 Start a worker in another terminal:
 
 ```sh
-rj worker
+rj worker http://localhost:8888 4
 ```
 
 Then enter this command in the homelab server terminal:

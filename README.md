@@ -1326,6 +1326,16 @@ export RAMANUJAN_WS="$HOME/ramanujan-ws"
 Add the `export` command to `~/.zshrc` or `~/.bashrc` to keep it across terminal
 sessions.
 
+On Windows, create the workspace and persist its location for future PowerShell
+sessions:
+
+```powershell
+$workspace = "$HOME\Desktop\ws"
+New-Item -ItemType Directory -Force $workspace
+[Environment]::SetEnvironmentVariable("RAMANUJAN_WS", $workspace, "User")
+$env:RAMANUJAN_WS = $workspace
+```
+
 ## Build the Java modules and developer console
 
 Install the Python translation dependency, then build the Maven modules in
@@ -1337,12 +1347,30 @@ chmod +x projectBuilder.sh
 ./projectBuilder.sh
 ```
 
+On Windows, run the required builds explicitly in dependency order:
+
+```powershell
+python -m pip install ast2json
+mvn -f commons\pom.xml clean install -DskipTests
+mvn -f rule-engine\pom.xml clean install -DskipTests
+mvn -f developer-console-model\pom.xml clean install -DskipTests
+mvn -f middleware\translation\pom.xml clean install -DskipTests
+mvn -f developer-console\pom.xml clean install -DskipTests
+```
+
 The final Java artifact is
 `developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar`. Copy it
 directly into the workspace:
 
 ```sh
 cp developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar "$RAMANUJAN_WS/"
+```
+
+On Windows:
+
+```powershell
+Copy-Item developer-console\target\developer-console-1.0-SNAPSHOT-fat.jar `
+    $env:RAMANUJAN_WS -Force
 ```
 
 ## Build and install the desktop native binary
@@ -1366,7 +1394,7 @@ cp ramanujan-native/native/build/libnative.dylib "$RAMANUJAN_WS/"
 cp ramanujan-native/native/build/libnative.so "$RAMANUJAN_WS/"
 
 # Windows PowerShell
-.\ramanujan-native\native\buildWindows.ps1
+.\ramanujan-native\native\buildWindows.ps1 -BuildDirectory C:\ramanujan-native-build
 Copy-Item C:\ramanujan-native-build\native.dll $env:RAMANUJAN_WS
 ```
 
@@ -1376,8 +1404,8 @@ The workspace must now contain:
 ramanujan-ws/
 ├── developer-console-1.0-SNAPSHOT-fat.jar
 └── libnative.dylib    # macOS
-        libnative.so       # Ubuntu, instead of libnative.dylib
-        native.dll         # Windows, instead of libnative.dylib
+    libnative.so       # Ubuntu, instead of libnative.dylib
+    native.dll         # Windows, instead of libnative.dylib
 ```
 
 Install the `rj` command by adding this alias to `~/.zshrc` or `~/.bashrc`, then
@@ -1386,6 +1414,20 @@ reload that file:
 ```sh
 alias rj='java -jar "$RAMANUJAN_WS/developer-console-1.0-SNAPSHOT-fat.jar"'
 source ~/.zshrc   # use ~/.bashrc when running Bash
+```
+
+For a persistent Windows `rj` command, run this once in PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force (Split-Path $PROFILE)
+@'
+function global:rj {
+    $workspace = [Environment]::GetEnvironmentVariable("RAMANUJAN_WS", "User")
+    & java -Xms64m -Xmx512m `
+        -jar "$workspace\developer-console-1.0-SNAPSHOT-fat.jar" @args
+}
+'@ | Add-Content $PROFILE
+. $PROFILE
 ```
 
 Run `rj` in a new terminal to verify that the command and workspace environment
