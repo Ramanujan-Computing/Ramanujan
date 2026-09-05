@@ -5,10 +5,15 @@
 #include "ArrayValue.h"
 #include "../DataContainerValueFunctionCommandRE.h"
 
-#include <sys/mman.h>
+#include <mutex>
 #include <sys/stat.h>
 #include <fcntl.h>
+#ifdef _WIN32
+#include <fstream>
+#else
+#include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 
 // Global cache: binaryFilePath -> {float* data, int count}
@@ -51,6 +56,23 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
         }
         if (!fdata) {
             // First time: read from disk, insert into cache
+#ifdef _WIN32
+            std::ifstream input(key, std::ios::binary | std::ios::ate);
+            if (input) {
+                const std::streamsize fileSize = input.tellg();
+                fcount = static_cast<int>(fileSize / sizeof(float));
+                if (fcount > totalSize) fcount = totalSize;
+
+                fdata = static_cast<float*>(
+                    _aligned_malloc(totalSize * sizeof(float), 4096));
+                if (fdata) {
+                    memset(fdata, 0, totalSize * sizeof(float));
+                    input.seekg(0, std::ios::beg);
+                    input.read(reinterpret_cast<char*>(fdata),
+                               static_cast<std::streamsize>(fcount) * sizeof(float));
+                }
+            }
+#else
             int fd = open(key.c_str(), O_RDONLY);
             if (fd >= 0) {
                 struct stat st;
@@ -80,9 +102,16 @@ ArrayValue::ArrayValue(Array* array , std::string originalArrayId) {
                 }
                 close(fd);
             }
+#endif
             if (!fdata) {
                 std::cerr << "[ArrayValue] Failed to open/allocate for binary file: " << key << std::endl;
+#ifdef _WIN32
+                fdata = static_cast<float*>(
+                    _aligned_malloc(totalSize * sizeof(float), 4096));
+                if (fdata != nullptr) {
+#else
                 if (ALIGNED_ALLOC(&fdata, 4096, totalSize * sizeof(float)) == 0 && fdata != nullptr) {
+#endif
                     memset(fdata, 0, totalSize * sizeof(float));
                 }
             }

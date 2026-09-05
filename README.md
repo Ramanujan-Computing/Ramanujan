@@ -1298,21 +1298,31 @@ worker.
 - Maven 3.9 or newer
 - CMake 3.27 or newer and a C++ compiler
 - Android Studio with Android SDK 34 and NDK 26.1.10909125 for the phone build
-- macOS, or Ubuntu with `libjsoncpp-dev`, `ocl-icd-opencl-dev`, and
-    `opencl-headers` installed
 
-On Ubuntu, install the native packages with:
+### macOS and Ubuntu prerequisites
+
+macOS includes OpenCL. On Ubuntu, install the native packages with:
 
 ```sh
 sudo apt update
 sudo apt install build-essential cmake libjsoncpp-dev ocl-icd-opencl-dev opencl-headers
 ```
 
+### Windows prerequisites
+
+Install Visual Studio with the **Desktop development with C++** workload. The
+Windows build scripts use Visual Studio's CMake, Ninja, and MSVC installations.
+Also install Git for Windows, JDK 17 with `JAVA_HOME` set, and Maven 3.9 or
+newer with `mvn` on `PATH`. CMake downloads its native dependencies through
+Git during the first build.
+
 ## Clone the repository and create a workspace
 
 The Ramanujan workspace is a separate directory for runtime binaries. It is not
 the Git repository. Create both directories and set `RAMANUJAN_WS` to the
 workspace's absolute path:
+
+### macOS and Ubuntu workspace
 
 ```sh
 git clone https://github.com/Ramanujan-Computing/Ramanujan.git
@@ -1325,7 +1335,19 @@ export RAMANUJAN_WS="$HOME/ramanujan-ws"
 Add the `export` command to `~/.zshrc` or `~/.bashrc` to keep it across terminal
 sessions.
 
+### Windows workspace
+
+The root PowerShell builder creates the workspace and sets `RAMANUJAN_WS` for
+its process. Pass the workspace path explicitly; the script never prompts for
+it and does not persist the environment variable:
+
+```powershell
+.\projectBuilder.ps1 -WorkspacePath "$HOME\Desktop\ramanujan-ws"
+```
+
 ## Build the Java modules and developer console
+
+### macOS and Ubuntu Java build
 
 Install the Python translation dependency, then build the Maven modules in
 dependency order:
@@ -1336,15 +1358,33 @@ chmod +x projectBuilder.sh
 ./projectBuilder.sh
 ```
 
-The final Java artifact is
-`developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar`. Copy it
-directly into the workspace:
+Copy the resulting fat JAR into the workspace:
 
 ```sh
 cp developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar "$RAMANUJAN_WS/"
 ```
 
+### Windows Java build
+
+From the repository root, run the PowerShell builder with the required
+workspace path:
+
+```powershell
+python -m pip install ast2json
+.\projectBuilder.ps1 -WorkspacePath "$HOME\Desktop\ramanujan-ws"
+```
+
+The script resolves every repository path relative to its own location. It
+creates the workspace when needed, builds every Maven module in the same
+dependency order as `projectBuilder.sh`, builds the Windows desktop native
+component, and copies the fat JAR, JNI runtime DLL, and standalone native
+executable into the workspace. It stops on missing tools, failed commands, or
+missing or ambiguous artifacts. `RAMANUJAN_WS` is set only for the builder
+process; set it in the terminal that runs the console as shown below.
+
 ## Build and install the desktop native binary
+
+### macOS and Ubuntu native build
 
 `projectBuilder.sh` creates a standard native build. To configure it explicitly
 with OpenCL GPU support and release optimizations, run:
@@ -1365,21 +1405,58 @@ cp ramanujan-native/native/build/libnative.dylib "$RAMANUJAN_WS/"
 cp ramanujan-native/native/build/libnative.so "$RAMANUJAN_WS/"
 ```
 
-The workspace must now contain:
+### Windows native build
+
+`projectBuilder.ps1` performs the CPU-only native build and stages the DLL.
+To rebuild only the Windows native component during development, use:
+
+```powershell
+.\ramanujan-native\native\buildWindows.ps1 -BuildDirectory C:\ramanujan-native-build
+```
+
+The Windows workspace must now contain:
 
 ```text
 ramanujan-ws/
-├── developer-console-1.0-SNAPSHOT-fat.jar
-└── libnative.dylib    # macOS
-        libnative.so       # Ubuntu, instead of libnative.dylib
+|-- developer-console-1.0-SNAPSHOT-fat.jar
+|-- native.dll
+`-- native_test.exe
 ```
 
-Install the `rj` command by adding this alias to `~/.zshrc` or `~/.bashrc`, then
-reload that file:
+On macOS the native runtime is `libnative.dylib`; on Ubuntu it is
+`libnative.so`.
+
+## Install the `rj` command
+
+### macOS and Ubuntu `rj` command
+
+Add this alias to `~/.zshrc` or `~/.bashrc`, then reload that file:
 
 ```sh
 alias rj='java -jar "$RAMANUJAN_WS/developer-console-1.0-SNAPSHOT-fat.jar"'
 source ~/.zshrc   # use ~/.bashrc when running Bash
+```
+
+### Windows `rj` command
+
+Set the workspace in each terminal where the console will run:
+
+```powershell
+$env:RAMANUJAN_WS = "$HOME\Desktop\ramanujan-ws"
+```
+
+For a persistent `rj` command, run this once in PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force (Split-Path $PROFILE)
+@'
+function global:rj {
+    $workspace = [Environment]::GetEnvironmentVariable("RAMANUJAN_WS", "User")
+    & java -Xms64m -Xmx512m `
+        -jar "$workspace\developer-console-1.0-SNAPSHOT-fat.jar" @args
+}
+'@ | Add-Content $PROFILE
+. $PROFILE
 ```
 
 Run `rj` in a new terminal to verify that the command and workspace environment
@@ -1419,6 +1496,8 @@ be close to `3.14159`; its exact value changes on every run.
 
 ## Build the Android native binary
 
+### macOS and Ubuntu Android build
+
 Android Studio installs the NDK under the Android SDK. Find the installed NDK
 path in Android Studio under **Settings > Languages & Frameworks > Android SDK >
 SDK Tools**, or list the versions from a terminal:
@@ -1443,6 +1522,21 @@ On Linux, replace the argument with the corresponding path under
 `ramanujan-native/native/build/arm64-v8a/libnative.so` and automatically copies
 it to `androidapp/app/src/main/jniLibs/arm64-v8a/libnative.so`, where Gradle
 packages it into the APK.
+
+### Windows Android build
+
+Run the PowerShell build from the repository root:
+
+```powershell
+.\ramanujan-native\native\compileAndroidWindows.ps1 `
+    -NdkPath "$env:LOCALAPPDATA\Android\Sdk\ndk\26.1.10909125"
+```
+
+The NDK argument can be omitted when `ANDROID_NDK_HOME` is set or an NDK is
+installed in Android Studio's default location. Pass multiple architectures
+with `-Abis arm64-v8a,x86_64`; `arm64-v8a` is built by default. GPU/OpenCL
+support matches `compileAndroid.sh` and is enabled by default; pass
+`-DisableGpu` for a CPU-only Android library.
 
 ## Build and run the Android app
 
@@ -2055,6 +2149,3 @@ Token → [embed_kernel] → hidden
 ```
 
 See `ramanujan-test-codes/phi3/README.md` for full details on weight extraction, model architecture, and usage instructions.
-
-
-

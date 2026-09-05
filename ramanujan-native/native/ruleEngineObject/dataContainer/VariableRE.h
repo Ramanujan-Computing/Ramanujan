@@ -76,6 +76,7 @@ public:
     }
 
     RuleEngineInputUnits* process() override {
+        return nullptr;
     }
 };
 
@@ -97,6 +98,7 @@ public:
     }
 
     RuleEngineInputUnits* process() override {
+        return nullptr;
     }
 };
 
@@ -116,6 +118,7 @@ public:
     }
 
     RuleEngineInputUnits* process() override {
+        return nullptr;
     }
 };
 

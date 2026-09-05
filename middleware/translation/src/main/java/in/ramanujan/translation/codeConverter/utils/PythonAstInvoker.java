@@ -6,6 +6,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class PythonAstInvoker {
+    private static String pythonExecutable() {
+        String configured = System.getenv("RAMANUJAN_PYTHON");
+        if (configured != null && !configured.trim().isEmpty()) {
+            return configured;
+        }
+        return System.getProperty("os.name").toLowerCase().contains("win")
+                ? "python"
+                : "python3";
+    }
     
     public String invokeAst(String pythonCode) throws CompilationException {
         Path tempFile = null;
@@ -15,7 +24,7 @@ public class PythonAstInvoker {
             Files.write(tempFile, pythonCode.getBytes());
             
             // Execute python3 -m ast
-            ProcessBuilder pb = new ProcessBuilder("python3", "-m", "ast", tempFile.toString());
+            ProcessBuilder pb = new ProcessBuilder(pythonExecutable(), "-m", "ast", tempFile.toString());
             pb.redirectErrorStream(true);
             Process process = pb.start();
             
@@ -77,7 +86,7 @@ public class PythonAstInvoker {
                 "print(json.dumps(data))"
             );
 
-            ProcessBuilder pb = new ProcessBuilder("python3", "-c", pySnippet, tempPy.toString());
+            ProcessBuilder pb = new ProcessBuilder(pythonExecutable(), "-c", pySnippet, tempPy.toString());
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
