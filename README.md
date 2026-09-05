@@ -1312,6 +1312,9 @@ sudo apt install build-essential cmake libjsoncpp-dev ocl-icd-opencl-dev opencl-
 
 Install Visual Studio with the **Desktop development with C++** workload. The
 Windows build scripts use Visual Studio's CMake, Ninja, and MSVC installations.
+Also install Git for Windows, JDK 17 with `JAVA_HOME` set, and Maven 3.9 or
+newer with `mvn` on `PATH`. CMake downloads its native dependencies through
+Git during the first build.
 
 ## Clone the repository and create a workspace
 
@@ -1334,13 +1337,12 @@ sessions.
 
 ### Windows workspace
 
-Create the workspace and persist its location for future PowerShell sessions:
+The root PowerShell builder creates the workspace and sets `RAMANUJAN_WS` for
+its process. Pass the workspace path explicitly; the script never prompts for
+it and does not persist the environment variable:
 
 ```powershell
-$workspace = "$HOME\Desktop\ws"
-New-Item -ItemType Directory -Force $workspace
-[Environment]::SetEnvironmentVariable("RAMANUJAN_WS", $workspace, "User")
-$env:RAMANUJAN_WS = $workspace
+.\projectBuilder.ps1 -WorkspacePath "$HOME\Desktop\ramanujan-ws"
 ```
 
 ## Build the Java modules and developer console
@@ -1364,23 +1366,21 @@ cp developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar "$RAMANUJAN_W
 
 ### Windows Java build
 
-Run the required builds explicitly in dependency order:
+From the repository root, run the PowerShell builder with the required
+workspace path:
 
 ```powershell
 python -m pip install ast2json
-mvn -f commons\pom.xml clean install -DskipTests
-mvn -f rule-engine\pom.xml clean install -DskipTests
-mvn -f developer-console-model\pom.xml clean install -DskipTests
-mvn -f middleware\translation\pom.xml clean install -DskipTests
-mvn -f developer-console\pom.xml clean install -DskipTests
+.\projectBuilder.ps1 -WorkspacePath "$HOME\Desktop\ramanujan-ws"
 ```
 
-Copy the resulting fat JAR into the workspace:
-
-```powershell
-Copy-Item developer-console\target\developer-console-1.0-SNAPSHOT-fat.jar `
-    $env:RAMANUJAN_WS -Force
-```
+The script resolves every repository path relative to its own location. It
+creates the workspace when needed, builds every Maven module in the same
+dependency order as `projectBuilder.sh`, builds the Windows desktop native
+component, and copies the fat JAR, JNI runtime DLL, and standalone native
+executable into the workspace. It stops on missing tools, failed commands, or
+missing or ambiguous artifacts. `RAMANUJAN_WS` is set only for the builder
+process; set it in the terminal that runs the console as shown below.
 
 ## Build and install the desktop native binary
 
@@ -1407,22 +1407,24 @@ cp ramanujan-native/native/build/libnative.so "$RAMANUJAN_WS/"
 
 ### Windows native build
 
-Build the CPU-only Windows DLL and copy it into the workspace:
+`projectBuilder.ps1` performs the CPU-only native build and stages the DLL.
+To rebuild only the Windows native component during development, use:
 
 ```powershell
 .\ramanujan-native\native\buildWindows.ps1 -BuildDirectory C:\ramanujan-native-build
-Copy-Item C:\ramanujan-native-build\native.dll $env:RAMANUJAN_WS
 ```
 
-The workspace must now contain:
+The Windows workspace must now contain:
 
 ```text
 ramanujan-ws/
-├── developer-console-1.0-SNAPSHOT-fat.jar
-└── libnative.dylib    # macOS
-    libnative.so       # Ubuntu, instead of libnative.dylib
-    native.dll         # Windows, instead of libnative.dylib
+|-- developer-console-1.0-SNAPSHOT-fat.jar
+|-- native.dll
+`-- native_test.exe
 ```
+
+On macOS the native runtime is `libnative.dylib`; on Ubuntu it is
+`libnative.so`.
 
 ## Install the `rj` command
 
@@ -1437,7 +1439,13 @@ source ~/.zshrc   # use ~/.bashrc when running Bash
 
 ### Windows `rj` command
 
-For a persistent command, run this once in PowerShell:
+Set the workspace in each terminal where the console will run:
+
+```powershell
+$env:RAMANUJAN_WS = "$HOME\Desktop\ramanujan-ws"
+```
+
+For a persistent `rj` command, run this once in PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Force (Split-Path $PROFILE)
