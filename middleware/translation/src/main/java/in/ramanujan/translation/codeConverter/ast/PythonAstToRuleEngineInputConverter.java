@@ -2209,7 +2209,89 @@ public class PythonAstToRuleEngineInputConverter {
             return condition;
         }
         
+        if (test instanceof BoolOpNode) {
+            return convertBoolOpToCondition((BoolOpNode) test, variableScope);
+        }
+        
+        if (test instanceof UnaryOpNode && "Not".equals(((UnaryOpNode) test).getOp())) {
+            return convertNotToCondition((UnaryOpNode) test, variableScope);
+        }
+        
         throw new CompilationException(null, null, "Unsupported condition type");
+    }
+    
+    /**
+     * Converts a Python `and`/`or` boolean expression (e.g. {@code x > 5 and y < 10}) into a
+     * Condition, using {@code ConditionType.and}/{@code or} ("&&"/"||"). Each operand is itself
+     * converted to a Condition and wrapped in a Command (via {@link #wrapConditionInCommand})
+     * since {@code comparisionCommand1}/{@code comparisionCommand2} reference Commands, not
+     * Conditions directly. Python allows more than two operands (e.g. {@code a and b and c}),
+     * so they are reduced pairwise, left to right.
+     */
+    private Condition convertBoolOpToCondition(BoolOpNode boolOp, List<String> variableScope) 
+            throws CompilationException {
+        
+        List<AstNode> values = boolOp.getValues();
+        if (values == null || values.size() < 2) {
+            throw new CompilationException(null, null, "Boolean operation requires at least two operands");
+        }
+        
+        String conditionType;
+        if ("And".equals(boolOp.getOp())) {
+            conditionType = "&&";
+        } else if ("Or".equals(boolOp.getOp())) {
+            conditionType = "||";
+        } else {
+            throw new CompilationException(null, null, "Unsupported boolean operator: " + boolOp.getOp());
+        }
+        
+        Condition combined = convertCondition(values.get(0), variableScope);
+        for (int i = 1; i < values.size(); i++) {
+            Condition next = convertCondition(values.get(i), variableScope);
+            
+            Condition merged = new Condition();
+            merged.setId(UUID.randomUUID().toString());
+            merged.setConditionType(conditionType);
+            merged.setComparisionCommand1(wrapConditionInCommand(combined));
+            merged.setComparisionCommand2(wrapConditionInCommand(next));
+            
+            ruleEngineInput.getConditions().add(merged);
+            combined = merged;
+        }
+        return combined;
+    }
+    
+    /**
+     * Converts a Python `not` expression (e.g. {@code not flag}) into a Condition using
+     * {@code ConditionType.not}. The negated operand is converted to a Condition and wrapped in
+     * a Command, then referenced via {@code comparisionCommand1} (the "not" implementation only
+     * looks at the first operand).
+     */
+    private Condition convertNotToCondition(UnaryOpNode unaryOp, List<String> variableScope) 
+            throws CompilationException {
+        
+        Condition operandCondition = convertCondition(unaryOp.getOperand(), variableScope);
+        
+        Condition notCondition = new Condition();
+        notCondition.setId(UUID.randomUUID().toString());
+        notCondition.setConditionType("not");
+        notCondition.setComparisionCommand1(wrapConditionInCommand(operandCondition));
+        
+        ruleEngineInput.getConditions().add(notCondition);
+        return notCondition;
+    }
+    
+    /**
+     * Wraps a Condition in a Command (via {@code conditionId}) so it can be referenced from
+     * another Condition's {@code comparisionCommand1}/{@code comparisionCommand2}, mirroring how
+     * {@code CommandRE.conditionRE} is resolved at runtime.
+     */
+    private String wrapConditionInCommand(Condition condition) {
+        Command command = new Command();
+        command.setId("command_" + UUID.randomUUID().toString());
+        command.setConditionId(condition.getId());
+        ruleEngineInput.getCommands().add(command);
+        return command.getId();
     }
     
     /**

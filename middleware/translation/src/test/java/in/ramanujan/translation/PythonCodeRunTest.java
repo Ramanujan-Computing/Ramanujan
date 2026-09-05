@@ -766,6 +766,127 @@ public class PythonCodeRunTest {
     }
 
     /**
+     * Tests `and` boolean operation in an if-condition.
+     */
+    @Test(timeout = 5000)
+    public void testPythonIfWithAndCondition() throws Exception {
+        String pythonCode =
+            "a = 10\n" +
+            "b = 5\n" +
+            "result = 0\n" +
+            "if a > b and b > 0:\n" +
+            "    result = 1\n" +
+            "else:\n" +
+            "    result = 2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 1d); // both conditions true
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests `and` short-circuit-equivalent case where only one operand is true (should be false).
+     */
+    @Test(timeout = 5000)
+    public void testPythonIfWithAndConditionFalse() throws Exception {
+        String pythonCode =
+            "a = 10\n" +
+            "b = 5\n" +
+            "result = 0\n" +
+            "if a > b and b > 100:\n" +
+            "    result = 1\n" +
+            "else:\n" +
+            "    result = 2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 2d); // second condition false
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests `or` boolean operation in an if-condition.
+     */
+    @Test(timeout = 5000)
+    public void testPythonIfWithOrCondition() throws Exception {
+        String pythonCode =
+            "a = 10\n" +
+            "b = 5\n" +
+            "result = 0\n" +
+            "if a < b or b > 0:\n" +
+            "    result = 1\n" +
+            "else:\n" +
+            "    result = 2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 1d); // second operand true
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests `not` boolean operation in an if-condition.
+     */
+    @Test(timeout = 5000)
+    public void testPythonIfWithNotCondition() throws Exception {
+        String pythonCode =
+            "a = 10\n" +
+            "b = 5\n" +
+            "result = 0\n" +
+            "if not (a < b):\n" +
+            "    result = 1\n" +
+            "else:\n" +
+            "    result = 2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 1d); // a < b is false, so not(a < b) is true
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
+     * Tests a chained `and` boolean operation with three operands (a and b and c).
+     */
+    @Test(timeout = 5000)
+    public void testPythonIfWithChainedAndCondition() throws Exception {
+        String pythonCode =
+            "a = 10\n" +
+            "b = 5\n" +
+            "c = 1\n" +
+            "result = 0\n" +
+            "if a > b and b > c and c > 0:\n" +
+            "    result = 1\n" +
+            "else:\n" +
+            "    result = 2\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretPythonAndGetVariableArrayMap(pythonCode, variableMap, arrayMap);
+
+        Map<String, Object> variablesToAssert = new HashMap<>();
+        variablesToAssert.put("result", 1d); // all three conditions true
+
+        analyzeResults(variableMap, arrayMap, variablesToAssert, new HashMap<>());
+    }
+
+    /**
      * Tests simple while loop in Python.
      */
     @Test(timeout = 5000)
