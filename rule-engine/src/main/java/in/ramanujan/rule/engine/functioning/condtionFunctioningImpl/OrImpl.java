@@ -16,7 +16,7 @@ public class OrImpl implements ConditionFunctioning {
             @Override
             public boolean conditionOperate() {
                 return ConditionManager.process(mapBetweenIdAndRuleInput, compareWhat.getConditionRE(), processId, contextStack, debuggerPoint) ||
-                        ConditionManager.process(mapBetweenIdAndRuleInput, compareWhat.getConditionRE(), processId, contextStack, debuggerPoint);
+                        ConditionManager.process(mapBetweenIdAndRuleInput, compareWith.getConditionRE(), processId, contextStack, debuggerPoint);
             }
         };
     }

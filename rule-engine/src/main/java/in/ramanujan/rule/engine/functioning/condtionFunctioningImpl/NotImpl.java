@@ -15,7 +15,8 @@ public class NotImpl implements ConditionFunctioning {
         return new CachedConditionFunctioning() {
             @Override
             public boolean conditionOperate() {
-                return !ConditionManager.process(mapBetweenIdAndRuleInput, compareWith.getConditionRE(), processId,
+                // compareWhat (comparisionCommand1) matches the native engine's convention for `not`.
+                return !ConditionManager.process(mapBetweenIdAndRuleInput, compareWhat.getConditionRE(), processId,
                         contextStack, debuggerPoint);
             }
         };
