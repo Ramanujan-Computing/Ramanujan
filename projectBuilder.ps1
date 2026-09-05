@@ -137,8 +137,23 @@ $fileApiQuery = Join-Path $nativeBuild ".cmake\api\v1\query\codemodel-v2"
 New-Item -ItemType Directory -Path (Split-Path $fileApiQuery -Parent) -Force | Out-Null
 New-Item -ItemType File -Path $fileApiQuery -Force | Out-Null
 
+Write-Host ""
+Write-Host "Native build: GPU (OpenCL) support or CPU-only?"
+Write-Host "  The OpenCL headers and ICD loader are fetched and built automatically by"
+Write-Host "  CMakeLists.txt (via FetchContent) - no manual OpenCL SDK install is needed"
+Write-Host "  just to BUILD, on Windows."
+Write-Host "  However, to actually RUN GPU kernels at runtime, the machine running the"
+Write-Host "  resulting native library needs a real GPU with a vendor OpenCL driver"
+Write-Host "  installed (e.g. NVIDIA/AMD/Intel GPU driver). Without one, the app still"
+Write-Host "  runs fine - GPU-tagged operations are safely skipped and execution falls"
+Write-Host "  back to CPU."
+Write-Host ""
+$gpuChoice = Read-Host "Build with GPU support? (y/N)"
+$gpuEnabled = $gpuChoice -match '^[Yy]'
+Write-Host "Building native component with GPU_ENABLED=$(if ($gpuEnabled) { 'ON' } else { 'OFF' })"
+
 Write-Host "Configuring and building the Windows desktop native component"
-& $windowsNativeBuilder -BuildDirectory $nativeBuild
+& $windowsNativeBuilder -BuildDirectory $nativeBuild -GpuEnabled:$gpuEnabled
 if ($LASTEXITCODE -ne 0) {
     throw "Windows native build failed (exit code $LASTEXITCODE)."
 }
