@@ -26,6 +26,13 @@ They just have to download and install the `ramanujan` client one-time.
 > now **deprecated**. All active development is focused on writing computations directly in **Python** — see
 > [docs/python-support.md](docs/python-support.md) for details.
 
+## Python is the front-end, Ramanujan is the runtime:
+Researchers and simulation developers just need to write their simulation in Python and run it on the cluster. The
+cluster nodes don't need Python installed on them — each node runs the native **Ramanujan interpreter**, which executes
+the compiled simulation directly. See [docs/architecture.md](docs/architecture.md) for more on how Python code is
+compiled down to the Ramanujan runtime.
+
+
 ## Documentation
 This README covers only the high-level project description. The rest of the documentation has been split into
 focused pages under [docs/](docs/):
@@ -39,5 +46,5 @@ focused pages under [docs/](docs/):
 | [docs/build-and-usage.md](docs/build-and-usage.md) | Build and usage strategy — Maven build, native build, Docker, configuration. |
 | [docs/contributor-guide.md](docs/contributor-guide.md) | Contributor quick start — running a Monte Carlo example on a computer and Android phone. |
 | [docs/roadmap.md](docs/roadmap.md) | Future of the language and platform. |
-| [docs/csv-data-usage.md](docs/csv-data-usage.md) | Direct CSV data loading, the `dump` command, and the Phi-3 reference implementation. |
+| [docs/csv-data-usage.md](docs/csv-data-usage.md) | Direct CSV data loading, the `dump` command, and the Phi-3 inference example. |
 

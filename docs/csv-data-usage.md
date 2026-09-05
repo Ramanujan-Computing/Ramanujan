@@ -64,9 +64,9 @@ All query console commands:
 
 ---
 
-## Phi-3 Reference Implementation
+## Phi-3 Inference Example
 
-The `ramanujan-test-codes/phi3/` directory contains a complete implementation of **Microsoft Phi-3-mini-4k-instruct** (3.8B parameters) running entirely on Ramanujan's GPU runtime. This serves as a reference for running large neural networks on the platform.
+The `ramanujan-test-codes/phi3/` directory contains a complete inference example for **Microsoft Phi-3-mini-4k-instruct** (3.8B parameters) running entirely on Ramanujan's GPU runtime. This serves as an example of running large neural networks on the platform.
 
 ### Key Files
 | File | Purpose |
