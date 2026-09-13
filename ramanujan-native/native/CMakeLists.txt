@@ -11,7 +11,11 @@ if(NOT CMAKE_BUILD_TYPE)
   # Release. That left the interpreter running at debug speed.
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+if(MSVC)
+    add_compile_options($<$<CONFIG:Release>:/O2>)
+else()
+    add_compile_options($<$<CONFIG:Release>:-O3>)
+endif()
 
 include_directories(input)
 include_directories(processing)
@@ -24,6 +28,7 @@ include(FetchContent)
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE)
 if(CMAKE_CROSSCOMPILING AND NOT DEFINED protobuf_BUILD_PROTOC_BINARIES)
     set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
 endif()
@@ -113,19 +118,16 @@ else()
     message(STATUS "[Ramanujan] OpenCL GPU support DISABLED  (pass -DGPU_ENABLED=ON to enable)")
 endif()
 IF(ANDROID)
-    # For Android builds, use NDK's JNI headers
-    include_directories(${ANDROID_NDK}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include)
+    # The NDK toolchain sets CMAKE_SYSROOT for every supported host OS.
+    include_directories(${CMAKE_SYSROOT}/usr/include)
 ELSE()
-    # For non-Android builds, use JDK_HOME
-    include_directories($ENV{JDK_HOME}/include)
-    IF(UNIX AND NOT APPLE)
-        include_directories($ENV{JDK_HOME}/include/linux)
-    ELSEIF(APPLE)
-        include_directories($ENV{JDK_HOME}/include/darwin)
-    ENDIF()
+    find_package(JNI REQUIRED)
+    include_directories(${JNI_INCLUDE_DIRS})
 ENDIF()
 
-add_definitions(-D_GNU_SOURCE)
+if(NOT WIN32)
+    add_definitions(-D_GNU_SOURCE)
+endif()
 
 # Core sources shared by the JNI library and standalone test binary
 set(CORE_SOURCE_FILES
@@ -234,6 +236,9 @@ set(CORE_SOURCE_FILES
 # Standalone test binary (includes Test.cpp which still uses JSON for dev convenience)
 add_executable(native ${CORE_SOURCE_FILES} ruleEngineObject/Test.cpp)
 target_link_libraries(native PRIVATE protobuf::libprotobuf)
+if(WIN32)
+    set_target_properties(native PROPERTIES OUTPUT_NAME "native_test")
+endif()
 
 ## Production shared-library target (no DEBUG_BUILD – used by the JVM via JNI)
 add_library(native_lib SHARED ${CORE_SOURCE_FILES})

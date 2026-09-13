@@ -96,6 +96,6 @@ public:
     setFieldDone = true;
   }
 
-  RuleEngineInputUnits *process() override {}
+  RuleEngineInputUnits *process() override { return nullptr; }
 };
 #endif // NATIVE_FUNCTIONCALLRE_H
