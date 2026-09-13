@@ -189,7 +189,11 @@ public:
          * in the format of index1_index2_.._indexN.
          */
 
+#ifdef _WIN32
         int* indexArray = new int[dimensionSize];
+#else
+        int indexArray[dimensionSize];
+#endif
         int indexInt = index;
         for(int i = dimensionSize - 1; i >= 0; i--) {
             indexArray[i] = indexInt % dimensions[i];
@@ -200,7 +204,9 @@ public:
             result += std::to_string(indexArray[i]) + "_";
         }
         result += std::to_string(indexArray[dimensionSize - 1]);
+#ifdef _WIN32
         delete[] indexArray;
+#endif
         return result;
     }
 

@@ -90,7 +90,11 @@ public:
      * ```
      */
     inline void allocateDual(int totalSize) {
+#ifdef _WIN32
         if((memStackSizePtrCreated - currentIter) < totalSize) {
+#else
+        if(__builtin_expect((memStackSizePtrCreated - currentIter) < totalSize, 0)) {
+#endif
             needed = totalSize - (memStackSizePtrCreated - currentIter);
             for(int i = 0; i < needed; i++) {
                 memStack[memStackSizePtrCreated++] = new DataContainerValueFunctionCommandRE();
