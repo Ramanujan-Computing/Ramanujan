@@ -18,7 +18,10 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJson;
 
@@ -49,11 +52,18 @@ import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJs
 public class ExecuteInlineHomelabServer extends ExecuteInline {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int MAX_COMPLETED_REQUEST_STATES = 64;
 
     // Tasks compiled and waiting to be served to a polling worker
     private final BlockingQueue<PendingTask> taskQueue = new LinkedBlockingQueue<>();
     // Tasks served but not yet completed (keyed by uuid sent to worker)
     private final ConcurrentHashMap<String, PendingTask> inflight = new ConcurrentHashMap<>();
+    // Completed run outputs keyed by orchestrator requestId.
+    private final ConcurrentHashMap<String, CompletedRunState> completedRunStates = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<String> completedRunOrder = new ConcurrentLinkedQueue<>();
+    private final AtomicReference<String> latestRequestId = new AtomicReference<>();
+    private final ReadWriteLock runStateLock = new ReentrantReadWriteLock();
+    private HttpServer server;
 
     // -------------------------------------------------------------------------
     // Inner types
@@ -94,6 +104,20 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
     }
 
+    private static final class CompletedRunState {
+        final Map<String, Object> variableStore;
+        final Map<String, Map<String, Object>> arrayStore;
+        final Map<String, String> binaryArrayFileStore;
+
+        CompletedRunState(Map<String, Object> variableStore,
+                          Map<String, Map<String, Object>> arrayStore,
+                          Map<String, String> binaryArrayFileStore) {
+            this.variableStore = variableStore;
+            this.arrayStore = arrayStore;
+            this.binaryArrayFileStore = binaryArrayFileStore;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Entry point
     // -------------------------------------------------------------------------
@@ -131,7 +155,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
                 List<String> kernelArgs = new ArrayList<>(parts.length - 1);
                 for (int i = 1; i < parts.length; i++) kernelArgs.add(parts[i]);
                 try {
-                    dispatchToWorkers(kernelArgs);
+                    dispatchToWorkers(kernelArgs, null);
                     System.out.println("KERNEL_DONE");
                 } catch (Exception e) {
                     System.out.println("KERNEL_ERROR: " + e.getMessage());
@@ -226,7 +250,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
     }
 
-    private void dispatchToWorkers(List<String> args) throws Exception {
+    protected void dispatchToWorkers(List<String> args, String requestId) throws Exception {
         long t0 = System.currentTimeMillis();
 
         Map<String, Variable> variableMap = new HashMap<>();
@@ -320,7 +344,6 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
                 arrStore.computeIfAbsent(name, k -> new HashMap<>()).put(e.getKey(), e.getValue());
         }
         System.err.println("[Homelab] setStores: arrStore keys=" + arrStore.keySet());
-        ExecutorImpl.setStores(varStore, arrStore);
 
         Map<String, String> binaryStore = new HashMap<>();
         for (Map.Entry<String, String> e : run.binaryArrayFiles.entrySet()) {
@@ -330,25 +353,94 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             binaryStore.put(name, e.getValue());
         }
         System.err.println("[Homelab] setStores: binaryStore keys=" + binaryStore.keySet());
-        ExecutorImpl.setBinaryArrayFileStore(binaryStore);
+        completeRunState(requestId, varStore, arrStore, binaryStore);
+    }
+
+    protected void completeRunState(String requestId,
+                                    Map<String, Object> variableStore,
+                                    Map<String, Map<String, Object>> arrayStore,
+                                    Map<String, String> binaryArrayFileStore) {
+        Map<String, Object> varCopy = new HashMap<>();
+        if (variableStore != null) varCopy.putAll(variableStore);
+        Map<String, Map<String, Object>> arrCopy = deepCopyArrayStore(arrayStore);
+        Map<String, String> binaryCopy = new HashMap<>();
+        if (binaryArrayFileStore != null) binaryCopy.putAll(binaryArrayFileStore);
+
+        runStateLock.writeLock().lock();
+        try {
+            // Preserve existing interactive query behavior for stdin clients.
+            ExecutorImpl.setStores(varCopy, arrCopy);
+            ExecutorImpl.setBinaryArrayFileStore(binaryCopy);
+
+            if (requestId == null || requestId.trim().isEmpty()) {
+                return;
+            }
+
+            CompletedRunState previous = completedRunStates.put(requestId, new CompletedRunState(varCopy, arrCopy, binaryCopy));
+            if (previous == null) {
+                completedRunOrder.add(requestId);
+            }
+            latestRequestId.set(requestId);
+            evictOldCompletedStatesIfNeeded();
+        } finally {
+            runStateLock.writeLock().unlock();
+        }
+    }
+
+    private void evictOldCompletedStatesIfNeeded() {
+        while (completedRunStates.size() > MAX_COMPLETED_REQUEST_STATES) {
+            String oldestId = completedRunOrder.poll();
+            if (oldestId == null) return;
+            CompletedRunState removed = completedRunStates.remove(oldestId);
+            if (removed != null) {
+                deleteBinaryFiles(removed.binaryArrayFileStore.values());
+            }
+        }
+    }
+
+    private static Map<String, Map<String, Object>> deepCopyArrayStore(Map<String, Map<String, Object>> arrayStore) {
+        Map<String, Map<String, Object>> copy = new HashMap<>();
+        if (arrayStore == null) return copy;
+        for (Map.Entry<String, Map<String, Object>> e : arrayStore.entrySet()) {
+            Map<String, Object> values = new HashMap<>();
+            if (e.getValue() != null) values.putAll(e.getValue());
+            copy.put(e.getKey(), values);
+        }
+        return copy;
+    }
+
+    private static void deleteBinaryFiles(Collection<String> paths) {
+        for (String path : paths) {
+            if (path == null) continue;
+            try { new File(path).delete(); } catch (Exception ignored) {}
+        }
     }
 
     // -------------------------------------------------------------------------
     // HTTP server
     // -------------------------------------------------------------------------
 
-    private void startHttpServer(int port) throws IOException {
-        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
-        server.createContext("/pings/open",        this::handleOpenPing);
-        server.createContext("/pings/heartbeat",   this::handleHeartbeat);
-        server.createContext("/task/complete",     this::handleTaskComplete);
-        server.createContext("/orchestrator/run",  this::handleOrchestratorRun);
-        server.createContext("/orchestrator/dump", this::handleOrchestratorDump);
-        server.createContext("/binary/fetch",      this::handleBinaryFetch);
-        server.createContext("/orchestrator/uploadBinary", this::handleUploadBinary);
-        server.setExecutor(Executors.newCachedThreadPool());
-        server.start();
+    protected void startHttpServer(int port) throws IOException {
+        HttpServer createdServer = HttpServer.create(new InetSocketAddress(port), 0);
+        this.server = createdServer;
+        createdServer.createContext("/pings/open",        this::handleOpenPing);
+        createdServer.createContext("/pings/heartbeat",   this::handleHeartbeat);
+        createdServer.createContext("/task/complete",     this::handleTaskComplete);
+        createdServer.createContext("/orchestrator/run",  this::handleOrchestratorRun);
+        createdServer.createContext("/orchestrator/dump", this::handleOrchestratorDump);
+        createdServer.createContext("/binary/fetch",      this::handleBinaryFetch);
+        createdServer.createContext("/orchestrator/uploadBinary", this::handleUploadBinary);
+        createdServer.setExecutor(Executors.newCachedThreadPool());
+        createdServer.start();
         System.err.println("[Homelab] HTTP server listening on :" + port);
+    }
+
+    protected void stopHttpServer() {
+        HttpServer runningServer = this.server;
+        if (runningServer != null) {
+            runningServer.stop(0);
+            this.server = null;
+        }
     }
 
     /** Orchestrator calls this to compile a kernel and dispatch to workers, blocking until done. */
@@ -357,12 +449,19 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         byte[] body = readAllBytes(ex.getRequestBody());
         Map<String, Object> req = MAPPER.readValue(body, Map.class);
         List<String> args = (List<String>) req.get("args");
+        String requestId = req.get("requestId") != null
+                ? String.valueOf(req.get("requestId"))
+                : UUID.randomUUID().toString();
         try {
-            dispatchToWorkers(args);
-            sendJson(ex, 200, "{\"status\":\"SUCCESS\"}");
+            dispatchToWorkers(args, requestId);
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("requestId", requestId);
+            sendJson(ex, 200, MAPPER.writeValueAsString(response));
         } catch (Exception e) {
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("status", "ERROR");
+            err.put("requestId", requestId);
             err.put("message", e.getMessage() != null ? e.getMessage() : e.toString());
             sendJson(ex, 500, MAPPER.writeValueAsString(err));
         }
@@ -374,8 +473,15 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         Map<String, Object> req = MAPPER.readValue(body, Map.class);
         String name = (String) req.get("name");
         String path = (String) req.get("path");
+        String requestId = req.get("requestId") != null ? String.valueOf(req.get("requestId")) : null;
 
-        String binaryFile = ExecutorImpl.binaryArrayFileStore.get(name);
+        CompletedRunState runState = resolveStateForDump(requestId);
+        if (runState == null) {
+            sendJson(ex, 404, "{\"status\":\"ERROR\",\"message\":\"No completed run state found\"}");
+            return;
+        }
+
+        String binaryFile = runState.binaryArrayFileStore.get(name);
         if (binaryFile != null) {
             System.err.println("[Homelab] dump request: name=" + name + " path=" + path
                     + " (binary-backed, file=" + binaryFile + ")");
@@ -392,8 +498,9 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
 
         System.err.println("[Homelab] dump request: name=" + name + " path=" + path
-                + " storeKeys=" + ExecutorImpl.arrayStore.keySet());
-        Map<String, Object> arr = ExecutorImpl.arrayStore.get(name);
+        + " storeKeys=" + runState.arrayStore.keySet()
+        + (requestId != null ? " requestId=" + requestId : " requestId=<latest>"));
+    Map<String, Object> arr = runState.arrayStore.get(name);
         if (arr == null || arr.isEmpty()) {
             sendJson(ex, 404, "{\"status\":\"ERROR\",\"message\":\"Array not found: " + name + "\"}");
             return;
@@ -440,6 +547,34 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             err.put("status", "ERROR");
             err.put("message", e.getMessage() != null ? e.getMessage() : e.toString());
             sendJson(ex, 500, MAPPER.writeValueAsString(err));
+        }
+    }
+
+    private CompletedRunState resolveStateForDump(String requestId) {
+        runStateLock.readLock().lock();
+        try {
+            if (requestId != null && !requestId.trim().isEmpty()) {
+                return completedRunStates.get(requestId);
+            }
+
+            String latest = latestRequestId.get();
+            if (latest != null) {
+                CompletedRunState latestState = completedRunStates.get(latest);
+                if (latestState != null) return latestState;
+            }
+
+            // Legacy fallback for old clients that do not send requestId.
+            Map<String, Object> varCopy = new HashMap<>();
+            varCopy.putAll(ExecutorImpl.variableStore);
+            Map<String, Map<String, Object>> arrCopy = deepCopyArrayStore(ExecutorImpl.arrayStore);
+            Map<String, String> binaryCopy = new HashMap<>();
+            binaryCopy.putAll(ExecutorImpl.binaryArrayFileStore);
+            if (varCopy.isEmpty() && arrCopy.isEmpty() && binaryCopy.isEmpty()) {
+                return null;
+            }
+            return new CompletedRunState(varCopy, arrCopy, binaryCopy);
+        } finally {
+            runStateLock.readLock().unlock();
         }
     }
 
