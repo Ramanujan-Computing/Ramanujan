@@ -14,7 +14,7 @@ endif()
 if(WIN32)
     add_compile_options($<$<CONFIG:Release>:/O2>)
 else()
-    add_compile_options(-O3)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
 endif()
 
 include_directories(input)
