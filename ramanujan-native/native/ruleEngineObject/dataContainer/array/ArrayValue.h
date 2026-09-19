@@ -16,7 +16,7 @@
 // Cross-platform aligned memory allocation
 #ifdef _WIN32
     #include <malloc.h>
-    #define ALIGNED_ALLOC(ptr, alignment, size) *(ptr) = _aligned_malloc((size), (alignment))
+    #define ALIGNED_ALLOC(ptr, alignment, size) *(ptr) = static_cast<float*>(_aligned_malloc((size), (alignment)))
     #define ALIGNED_FREE(ptr) _aligned_free(ptr)
 #else
     #include <stdlib.h>
@@ -189,7 +189,11 @@ public:
          * in the format of index1_index2_.._indexN.
          */
 
+#ifdef _WIN32
+        int* indexArray = new int[dimensionSize];
+#else
         int indexArray[dimensionSize];
+#endif
         int indexInt = index;
         for(int i = dimensionSize - 1; i >= 0; i--) {
             indexArray[i] = indexInt % dimensions[i];
@@ -200,6 +204,9 @@ public:
             result += std::to_string(indexArray[i]) + "_";
         }
         result += std::to_string(indexArray[dimensionSize - 1]);
+#ifdef _WIN32
+        delete[] indexArray;
+#endif
         return result;
     }
 

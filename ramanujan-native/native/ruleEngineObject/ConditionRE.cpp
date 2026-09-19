@@ -15,7 +15,7 @@
 #include "conditionFunctioning/IsEqualImpl.h"
 
 RuleEngineInputUnits* ConditionRE::process() {
-
+    return nullptr;
 }
 
 bool ConditionRE::operate() {

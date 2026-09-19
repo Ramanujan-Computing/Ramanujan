@@ -6,7 +6,11 @@
 #include <unordered_map>
 #include <cstdio>
 #include <cstdlib>
+#ifdef _WIN32
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 #include "../ruleEngineObject/CommandRE.h"
 #include "../ruleEngineObject/ConditionRE.h"
@@ -199,9 +203,18 @@ std::unordered_map<std::string, std::string> *
 Processor::binaryReturnArrayFiles() {
   auto *files = new std::unordered_map<std::string, std::string>();
 
+#ifdef _WIN32
+  const char *tmpDirEnv = std::getenv("TEMP");
+  std::string tmpDir = (tmpDirEnv != nullptr) ? tmpDirEnv : ".";
+  const char separator = '\\';
+  const int processId = _getpid();
+#else
   const char *tmpDirEnv = std::getenv("TMPDIR");
   std::string tmpDir = (tmpDirEnv != nullptr) ? tmpDirEnv : "/tmp";
-  if (!tmpDir.empty() && tmpDir.back() != '/') tmpDir += '/';
+  const char separator = '/';
+  const int processId = getpid();
+#endif
+  if (!tmpDir.empty() && tmpDir.back() != separator) tmpDir += separator;
 
   for (RuleEngineInputUnits *u : arrayREs) {
     ArrayRE *arrayRE = (ArrayRE *)u;
@@ -215,7 +228,7 @@ Processor::binaryReturnArrayFiles() {
     // their own JVM process) never collide; the caller (worker) uploads and
     // deletes this file immediately after the run, so it is never read back
     // from this process again.
-    std::string path = tmpDir + "ramanujan_ret_" + std::to_string(getpid()) +
+    std::string path = tmpDir + "ramanujan_ret_" + std::to_string(processId) +
                         "_" + arrayRE->id + ".bin";
     FILE *f = fopen(path.c_str(), "wb");
     if (f == nullptr) continue;
