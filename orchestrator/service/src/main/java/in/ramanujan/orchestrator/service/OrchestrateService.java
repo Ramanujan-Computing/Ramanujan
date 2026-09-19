@@ -61,6 +61,28 @@ public class OrchestrateService {
     }
 
     private void assignMachine(String asyncId, Future<Void> future, AsyncTask asyncTask) {
+        try {
+            storageDao.getAsyncTaskRuleEngineInput(asyncId).setHandler(reiHandler -> {
+                if (reiHandler.succeeded() && reiHandler.result() != null) {
+                    asyncTask.setRuleEngineInput(reiHandler.result());
+                }
+                doAssignMachine(asyncId, future, asyncTask);
+            });
+        } catch (Exception e) {
+            doAssignMachine(asyncId, future, asyncTask);
+        }
+    }
+
+    /**
+     * Finds an eligible machine for the task via {@link HostsDao#getMachine(AsyncTask, Boolean)}
+     * and persists the assigned task to {@link AsyncTaskDao}.
+     *
+     * @param asyncId   the unique ID of the asynchronous task
+     * @param future    future to complete upon successful assignment and insertion
+     * @param asyncTask the task being scheduled
+     */
+    private void doAssignMachine(String asyncId, Future<Void> future, AsyncTask asyncTask) {
+
         hostsDao.getMachine(asyncTask,false).setHandler(hostMachineGetHandler -> {
             if(hostMachineGetHandler.succeeded()) {
                 logger.info(asyncId + " got machine " + hostMachineGetHandler.result());

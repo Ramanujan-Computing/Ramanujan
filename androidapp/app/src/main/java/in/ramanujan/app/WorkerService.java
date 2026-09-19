@@ -131,7 +131,8 @@ public class WorkerService extends Service {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 // Long-poll: server blocks up to 900 ms waiting for work
-                Map<String, Object> pingResp = postJson(serverUrl + "/pings/open?uuid=" + hostId, "");
+                String pingUrl = buildPingUrl(serverUrl, hostId);
+                Map<String, Object> pingResp = postJson(pingUrl, "");
                 if (pingResp == null) continue;
                 if (!"SUCCESS".equalsIgnoreCase((String) pingResp.get("status"))) continue;
 
@@ -448,5 +449,35 @@ public class WorkerService extends Service {
         if (code >= 400) {
             throw new IOException("uploadBinary for arrayId=" + arrayId + " failed with HTTP " + code);
         }
+    }
+
+    /**
+     * Constructs the worker check-in URL for the Android worker, dynamically measuring
+     * available processor cores, free JVM/ART heap memory, GPU support flag, and computing
+     * the capability rank to transmit as URL query parameters.
+     *
+     * @param serverUrl base URL of the homelab or orchestrator server
+     * @param hostId    unique identifier for this Android worker
+     * @return ping URL with embedded telemetry query parameters
+     */
+    private String buildPingUrl(String serverUrl, String hostId) {
+
+        int threads = Runtime.getRuntime().availableProcessors();
+        long maxMem = Runtime.getRuntime().maxMemory();
+        long totalMem = Runtime.getRuntime().totalMemory();
+        long freeMem = Runtime.getRuntime().freeMemory();
+        long availableRamMb = Math.max(64L, (maxMem - (totalMem - freeMem)) / (1024L * 1024L));
+        long totalRamMb = maxMem / (1024L * 1024L);
+        boolean hasGpu = true; // Android worker supports OpenCL GPU kernels via NativeProcessor
+        double capabilityRank = Math.min(10.0, Math.max(1.0, (threads * 0.4) + (hasGpu ? 1.5 : 0.0) + (availableRamMb / 2048.0)));
+
+        return serverUrl + "/pings/open?uuid=" + hostId
+                + "&threads=" + threads
+                + "&ramMb=" + availableRamMb
+                + "&totalThreads=" + threads
+                + "&totalRamMb=" + totalRamMb
+                + "&rank=" + String.format(java.util.Locale.US, "%.1f", capabilityRank)
+                + "&gpu=" + hasGpu
+                + "&deviceType=ANDROID";
     }
 }

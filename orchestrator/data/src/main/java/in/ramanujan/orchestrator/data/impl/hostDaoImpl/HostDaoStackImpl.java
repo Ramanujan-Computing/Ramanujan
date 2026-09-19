@@ -11,12 +11,25 @@ import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import in.ramanujan.orchestrator.data.dao.WorkerDao;
+import in.ramanujan.pojo.loadbalancing.TaskComplexityProfile;
+import in.ramanujan.pojo.loadbalancing.WorkerTelemetry;
+import in.ramanujan.utils.loadbalancing.LoadBalancerStrategy;
+import in.ramanujan.utils.loadbalancing.TaskComplexityAnalyzer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.util.*;
 
+/**
+ * Stack-based implementation of {@link HostsDao} enhanced with dynamic telemetry caching
+ * and multi-criteria load balancing.
+ * <p>
+ * Maintains idle worker hosts in a stack while tracking their live telemetry (CPU cores, RAM, rank, GPU).
+ * When assigning an {@link AsyncTask}, it analyzes the task's complexity profile using
+ * {@link TaskComplexityAnalyzer} and selects the optimal worker via {@link LoadBalancerStrategy}.
+ */
 @Component
 public class HostDaoStackImpl implements HostsDao {
 
@@ -38,19 +51,59 @@ public class HostDaoStackImpl implements HostsDao {
     @Autowired
     private StorageDao storageDao;
 
+    @Autowired(required = false)
+    private WorkerDao workerDao;
+
+    private final Map<String, WorkerTelemetry> liveTelemetryMap = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Initializes the host stack and membership set upon bean construction.
+     */
     @PostConstruct
     public void init() {
         hostStack = new Stack<>();
         isHostInStack = new HashSet<>();
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Evaluates task complexity and selects the best candidate worker from the host pool using
+     * affinity scoring (RAM headroom, thread availability, capability ranking, GPU compatibility).
+     */
     @Override
     public synchronized Future<String> getMachine(AsyncTask asyncTask, Boolean resumeComputation) {
+
         if(hostStack.empty()) {
             logger.error(asyncTask.getUuid() + " no machine available for computation");
             return Future.succeededFuture("No Machine available");
         } else {
-            String hostId = hostStack.pop();
+            // Task Complexity & Load-Balancing Matchmaking
+            TaskComplexityProfile complexity = TaskComplexityAnalyzer.analyze(asyncTask.getRuleEngineInput());
+            String bestHostId = null;
+            double bestScore = Double.NEGATIVE_INFINITY;
+
+            for (String candidate : hostStack) {
+                WorkerTelemetry telemetry = liveTelemetryMap.getOrDefault(candidate, WorkerTelemetry.createDefault(candidate));
+                if (LoadBalancerStrategy.isEligible(telemetry, complexity)) {
+                    double score = LoadBalancerStrategy.calculateAffinityScore(telemetry, complexity, 0);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestHostId = candidate;
+                    }
+                }
+            }
+
+            final String hostId;
+            if (bestHostId != null) {
+                hostStack.remove(bestHostId);
+                hostId = bestHostId;
+                logger.info(asyncTask.getUuid() + " matched optimal worker " + hostId + " with score=" + bestScore);
+            } else {
+                hostId = hostStack.pop();
+                logger.info(asyncTask.getUuid() + " fell back to popping head worker " + hostId);
+            }
+
             Future<String> future = Future.future();
 
             logger.info(asyncTask.getUuid() + " has got probable machine " + hostId);
@@ -58,6 +111,9 @@ public class HostDaoStackImpl implements HostsDao {
             asyncTaskHostMappingDao.createMapping(asyncTask, hostId, resumeComputation).setHandler(mappingCreateHandler -> {
                if(mappingCreateHandler.succeeded()) {
                    logger.info(asyncTask.getUuid() + " has been assigned machine " + hostId);
+                   if (workerDao != null) {
+                       workerDao.updateWorkerStatus(hostId, "ENGAGED");
+                   }
                    future.complete(hostId);
                } else {
                    isHostInStack.remove(hostId);
@@ -73,6 +129,17 @@ public class HostDaoStackImpl implements HostsDao {
 
     @Override
     public Future<AsyncTask> putMachineForComputation(String hostId) {
+        return putMachineForComputation(hostId, WorkerTelemetry.createDefault(hostId));
+    }
+
+    @Override
+    public Future<AsyncTask> putMachineForComputation(String hostId, WorkerTelemetry telemetry) {
+        if (telemetry != null) {
+            liveTelemetryMap.put(hostId, telemetry);
+            if (workerDao != null) {
+                workerDao.upsertWorkerTelemetry(telemetry);
+            }
+        }
         /*
         * Check if any asynctask is being processed by the hostId
         * Check if there is an entry in availableHost with proper timelimit and status as ENGAGED.
