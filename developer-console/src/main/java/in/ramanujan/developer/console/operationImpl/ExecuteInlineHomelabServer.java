@@ -107,13 +107,16 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
     private static final class CompletedRunState {
         final Map<String, Object> variableStore;
         final Map<String, Map<String, Object>> arrayStore;
+        final Map<String, List<Integer>> arrayDimensions;
         final Map<String, String> binaryArrayFileStore;
 
         CompletedRunState(Map<String, Object> variableStore,
                           Map<String, Map<String, Object>> arrayStore,
+                          Map<String, List<Integer>> arrayDimensions,
                           Map<String, String> binaryArrayFileStore) {
             this.variableStore = variableStore;
             this.arrayStore = arrayStore;
+            this.arrayDimensions = arrayDimensions;
             this.binaryArrayFileStore = binaryArrayFileStore;
         }
     }
@@ -332,10 +335,14 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         for (Variable v : variableMap.values()) varStore.put(v.getName(), v.getValue());
 
         Map<String, Map<String, Object>> arrStore = new HashMap<>();
+        Map<String, List<Integer>> arrDimensions = new HashMap<>();
         for (Array a : arrayMap.values()) {
             String id = a.getId();
             if (id.contains("func") || !id.contains("_name_")) continue;
             String name = id.split("_name_")[1];
+            if (a.getDimension() != null && !a.getDimension().isEmpty()) {
+                arrDimensions.put(name, new ArrayList<>(a.getDimension()));
+            }
             Map<String, Object> vals = a.getValues();
             int valCount = vals == null ? -1 : vals.size();
             System.err.println("[Homelab] setStores: array id=" + id + " name=" + name + " vals=" + valCount);
@@ -353,16 +360,18 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             binaryStore.put(name, e.getValue());
         }
         System.err.println("[Homelab] setStores: binaryStore keys=" + binaryStore.keySet());
-        completeRunState(requestId, varStore, arrStore, binaryStore);
+        completeRunState(requestId, varStore, arrStore, arrDimensions, binaryStore);
     }
 
     protected void completeRunState(String requestId,
                                     Map<String, Object> variableStore,
                                     Map<String, Map<String, Object>> arrayStore,
+                                    Map<String, List<Integer>> arrayDimensions,
                                     Map<String, String> binaryArrayFileStore) {
         Map<String, Object> varCopy = new HashMap<>();
         if (variableStore != null) varCopy.putAll(variableStore);
         Map<String, Map<String, Object>> arrCopy = deepCopyArrayStore(arrayStore);
+        Map<String, List<Integer>> dimCopy = arrayDimensions != null ? new HashMap<>(arrayDimensions) : new HashMap<>();
         Map<String, String> binaryCopy = new HashMap<>();
         if (binaryArrayFileStore != null) binaryCopy.putAll(binaryArrayFileStore);
 
@@ -370,13 +379,13 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         try {
             // Preserve existing interactive query behavior for stdin clients.
             ExecutorImpl.setStores(varCopy, arrCopy);
-            ExecutorImpl.setBinaryArrayFileStore(binaryCopy);
 
             if (requestId == null || requestId.trim().isEmpty()) {
+                ExecutorImpl.setBinaryArrayFileStore(binaryCopy);
                 return;
             }
 
-            CompletedRunState previous = completedRunStates.put(requestId, new CompletedRunState(varCopy, arrCopy, binaryCopy));
+            CompletedRunState previous = completedRunStates.put(requestId, new CompletedRunState(varCopy, arrCopy, dimCopy, binaryCopy));
             if (previous == null) {
                 completedRunOrder.add(requestId);
             }
@@ -506,16 +515,28 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             return;
         }
 
+        List<Integer> declaredDims = runState.arrayDimensions != null ? runState.arrayDimensions.get(name) : null;
         boolean is1D = true;
         int maxRow = 0, maxCol = 0;
-        for (String key : arr.keySet()) {
-            String[] dims = key.split("_");
-            if (dims.length >= 2) {
+        if (declaredDims != null && !declaredDims.isEmpty()) {
+            if (declaredDims.size() == 1) {
+                is1D = true;
+                maxRow = Math.max(0, declaredDims.get(0) - 1);
+            } else if (declaredDims.size() >= 2) {
                 is1D = false;
-                maxRow = Math.max(maxRow, Integer.parseInt(dims[0]));
-                maxCol = Math.max(maxCol, Integer.parseInt(dims[1]));
-            } else {
-                maxRow = Math.max(maxRow, Integer.parseInt(dims[0]));
+                maxRow = Math.max(0, declaredDims.get(0) - 1);
+                maxCol = Math.max(0, declaredDims.get(1) - 1);
+            }
+        } else {
+            for (String key : arr.keySet()) {
+                String[] dims = key.split("_");
+                if (dims.length >= 2) {
+                    is1D = false;
+                    maxRow = Math.max(maxRow, Integer.parseInt(dims[0]));
+                    maxCol = Math.max(maxCol, Integer.parseInt(dims[1]));
+                } else {
+                    maxRow = Math.max(maxRow, Integer.parseInt(dims[0]));
+                }
             }
         }
 
@@ -572,7 +593,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             if (varCopy.isEmpty() && arrCopy.isEmpty() && binaryCopy.isEmpty()) {
                 return null;
             }
-            return new CompletedRunState(varCopy, arrCopy, binaryCopy);
+            return new CompletedRunState(varCopy, arrCopy, Collections.emptyMap(), binaryCopy);
         } finally {
             runStateLock.readLock().unlock();
         }
