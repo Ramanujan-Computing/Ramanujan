@@ -44,3 +44,4 @@ CMakeFiles/
 *.so
 *.dll
 *.dylib
+dependency-reduced-pom.xml

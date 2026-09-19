@@ -23,6 +23,11 @@ import java.util.concurrent.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import in.ramanujan.developer.console.loadbalancing.LoadBalancedTaskPool;
+import in.ramanujan.pojo.loadbalancing.TaskComplexityProfile;
+import in.ramanujan.pojo.loadbalancing.WorkerTelemetry;
+import in.ramanujan.utils.loadbalancing.TaskComplexityAnalyzer;
+
 import static in.ramanujan.developer.console.operationImpl.ExecutorImpl.createJson;
 
 /**
@@ -55,7 +60,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
     private static final int MAX_COMPLETED_REQUEST_STATES = 64;
 
     // Tasks compiled and waiting to be served to a polling worker
-    private final BlockingQueue<PendingTask> taskQueue = new LinkedBlockingQueue<>();
+    private final LoadBalancedTaskPool taskPool = new LoadBalancedTaskPool();
     // Tasks served but not yet completed (keyed by uuid sent to worker)
     private final ConcurrentHashMap<String, PendingTask> inflight = new ConcurrentHashMap<>();
     // Completed run outputs keyed by orchestrator requestId.
@@ -90,19 +95,42 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         }
     }
 
-    private static final class PendingTask {
-        final String     uuid;
-        final DagElement dagElement;
-        final KernelRun  kernelRun;
-        final String     responseJson; // full OpenPingHttpResponse JSON to return to worker
+    /**
+     * Encapsulates a compiled DAG task element awaiting worker assignment in the homelab server.
+     */
+    public static final class PendingTask {
+        /** Unique task execution ID. */
+        public final String uuid;
+        /** Compiled DAG element for the task. */
+        public final DagElement dagElement;
+        /** Context of the current kernel execution run. */
+        public final KernelRun kernelRun;
+        /** Serialized JSON payload returned to the worker. */
+        public final String responseJson; // full OpenPingHttpResponse JSON to return to worker
+        /** Evaluated complexity and resource profile of the task. */
+        public final TaskComplexityProfile complexityProfile;
+        /** Timestamp (epoch ms) when this task was added to the pending queue. */
+        public final long enqueuedAt;
 
-        PendingTask(String uuid, DagElement dagElement, KernelRun kernelRun, String responseJson) {
-            this.uuid         = uuid;
-            this.dagElement   = dagElement;
-            this.kernelRun    = kernelRun;
+        /**
+         * Constructs a pending task with associated DAG metadata, response payload, and complexity profile.
+         *
+         * @param uuid              the unique task execution ID
+         * @param dagElement        the DAG element to be processed
+         * @param kernelRun         the active kernel run context
+         * @param responseJson      the JSON response string for worker dispatch
+         * @param complexityProfile the resource complexity profile of this task
+         */
+        public PendingTask(String uuid, DagElement dagElement, KernelRun kernelRun, String responseJson, TaskComplexityProfile complexityProfile) {
+            this.uuid = uuid;
+            this.dagElement = dagElement;
+            this.kernelRun = kernelRun;
             this.responseJson = responseJson;
+            this.complexityProfile = complexityProfile != null ? complexityProfile : TaskComplexityProfile.defaultLight();
+            this.enqueuedAt = System.currentTimeMillis();
         }
     }
+
 
     private static final class CompletedRunState {
         final Map<String, Object> variableStore;
@@ -202,12 +230,16 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             envelope.put("data",   data);
             String responseJson = MAPPER.writeValueAsString(envelope);
 
-            PendingTask task = new PendingTask(taskUuid, element, run, responseJson);
+            TaskComplexityProfile complexity = TaskComplexityAnalyzer.analyze(element.getRuleEngineInput());
+            PendingTask task = new PendingTask(taskUuid, element, run, responseJson, complexity);
             inflight.put(taskUuid, task);
-            taskQueue.add(task);
+            taskPool.addTask(task);
 
             System.err.println("[Homelab] dispatched task (firstCmd=" + element.getFirstCommandId()
-                    + ", uuid=" + taskUuid + ") | queued=" + taskQueue.size()
+                    + ", uuid=" + taskUuid + ", tier=" + complexity.getComplexityTier()
+                    + ", ramMb=" + complexity.getRequiredRamMb()
+                    + ", gpu=" + complexity.getRequiresGpu()
+                    + ") | queued=" + taskPool.size()
                     + ", inflight=" + inflight.size());
         } catch (Exception e) {
             System.err.println("[Homelab] error dispatching element " + element.getId() + ": " + e.getMessage());
@@ -709,15 +741,19 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
     }
 
     /** Workers poll this to receive work.
+     *  Matches the requesting worker with the optimal pending task based on
+     *  dynamic CPU thread count, available RAM, capability rank, and GPU flags.
      *  Long-polls up to 900 ms so the worker's HTTP connection blocks here
      *  rather than the worker sleeping between rapid fire empty polls.
-     *  Returns null data only if no task arrives within the window.
+     *  Returns null data only if no eligible task arrives within the window.
      */
     private void handleOpenPing(HttpExchange ex) throws IOException {
-        consumeBody(ex);
+        byte[] bodyBytes = readAllBytes(ex.getRequestBody());
+        WorkerTelemetry worker = extractWorkerTelemetry(ex, bodyBytes);
+
         PendingTask task;
         try {
-            task = taskQueue.poll(900, TimeUnit.MILLISECONDS);
+            task = taskPool.pollBestMatch(worker, 900);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             task = null;
@@ -728,10 +764,78 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         sendJson(ex, 200, body);
     }
 
-    /** Workers ping heartbeat; just acknowledge. */
+    /** Workers ping heartbeat; record dynamic telemetry updates. */
     private void handleHeartbeat(HttpExchange ex) throws IOException {
-        consumeBody(ex);
+        byte[] bodyBytes = readAllBytes(ex.getRequestBody());
+        WorkerTelemetry worker = extractWorkerTelemetry(ex, bodyBytes);
+        taskPool.recordWorkerTelemetry(worker);
         sendJson(ex, 200, "{\"status\":\"SUCCESS\"}");
+    }
+
+    /**
+     * Extracts worker telemetry from HTTP exchange query parameters or request body JSON.
+     *
+     * @param ex   the HTTP exchange from the worker ping
+     * @param body the raw request body bytes
+     * @return populated {@link WorkerTelemetry} with worker hardware and resource stats
+     */
+    private WorkerTelemetry extractWorkerTelemetry(HttpExchange ex, byte[] body) {
+
+        String query = ex.getRequestURI().getRawQuery();
+        Map<String, String> params = new HashMap<>();
+        if (query != null) {
+            for (String pair : query.split("&")) {
+                int idx = pair.indexOf('=');
+                if (idx <= 0) continue;
+                try {
+                    String k = URLDecoder.decode(pair.substring(0, idx), "UTF-8");
+                    String v = URLDecoder.decode(pair.substring(idx + 1), "UTF-8");
+                    params.put(k, v);
+                } catch (Exception ignored) {}
+            }
+        }
+
+        String hostId = params.get("uuid");
+
+        WorkerTelemetry telemetry = null;
+        if (body != null && body.length > 0) {
+            try {
+                String bodyStr = new String(body, StandardCharsets.UTF_8).trim();
+                if (bodyStr.startsWith("{")) {
+                    telemetry = MAPPER.readValue(bodyStr, WorkerTelemetry.class);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (telemetry == null) {
+            telemetry = WorkerTelemetry.createDefault(hostId != null ? hostId : "unknown");
+        } else if (hostId != null && telemetry.getHostId() == null) {
+            telemetry.setHostId(hostId);
+        }
+
+        if (params.containsKey("threads")) {
+            try { telemetry.setAvailableThreads(Integer.parseInt(params.get("threads"))); } catch (Exception ignored) {}
+        }
+        if (params.containsKey("ramMb")) {
+            try { telemetry.setAvailableRamMb(Long.parseLong(params.get("ramMb"))); } catch (Exception ignored) {}
+        }
+        if (params.containsKey("totalThreads")) {
+            try { telemetry.setTotalThreads(Integer.parseInt(params.get("totalThreads"))); } catch (Exception ignored) {}
+        }
+        if (params.containsKey("totalRamMb")) {
+            try { telemetry.setTotalRamMb(Long.parseLong(params.get("totalRamMb"))); } catch (Exception ignored) {}
+        }
+        if (params.containsKey("rank")) {
+            try { telemetry.setCapabilityRank(Double.parseDouble(params.get("rank"))); } catch (Exception ignored) {}
+        }
+        if (params.containsKey("gpu")) {
+            try { telemetry.setHasGpu(Boolean.parseBoolean(params.get("gpu"))); } catch (Exception ignored) {}
+        }
+        if (params.containsKey("deviceType")) {
+            telemetry.setDeviceType(params.get("deviceType"));
+        }
+        telemetry.setLastPingTimestamp(System.currentTimeMillis());
+        return telemetry;
     }
 
     /** Workers submit results here. Merge results, mark element completed, and dispatch newly ready successors. */

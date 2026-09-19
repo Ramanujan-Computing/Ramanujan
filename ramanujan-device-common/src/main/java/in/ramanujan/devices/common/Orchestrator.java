@@ -131,10 +131,36 @@ public class Orchestrator {
         }
     }
 
+    /**
+     * Issues an open ping check-in to the orchestrator backend, passing dynamic hardware telemetry
+     * (available CPU threads, free RAM, capability rank) via query parameters, and retrieves
+     * any assigned task.
+     *
+     * @param uuid        unique identifier of this device / worker node
+     * @param credentials authorization credentials
+     * @return the assigned task response data, or null if idle
+     * @throws Exception if network communication or response parsing fails
+     */
     private OpenPingApiResponse callBackendOpenAPI(final String uuid, final Credentials credentials) throws Exception {
+
+        int threads = Runtime.getRuntime().availableProcessors();
+        long maxMem = Runtime.getRuntime().maxMemory();
+        long totalMem = Runtime.getRuntime().totalMemory();
+        long freeMem = Runtime.getRuntime().freeMemory();
+        long availableRamMb = Math.max(128L, (maxMem - (totalMem - freeMem)) / (1024L * 1024L));
+        long totalRamMb = maxMem / (1024L * 1024L);
+        double rank = Math.min(10.0, Math.max(1.0, (threads * 0.5) + (availableRamMb / 2048.0)));
+
+        String fullUrl = host + pingUri + "?uuid=" + uuid
+                + "&threads=" + threads
+                + "&ramMb=" + availableRamMb
+                + "&totalThreads=" + threads
+                + "&totalRamMb=" + totalRamMb
+                + "&rank=" + String.format(java.util.Locale.US, "%.1f", rank);
+
         Request request = new Request.Builder()
                 .post(RequestBody.create(JSON, ""))
-                .url(host + pingUri + "?uuid=" + uuid)
+                .url(fullUrl)
                 .build();
         final Response response = getOkHttpClient().newCall(request).execute();
         if(response.code() != 200) {
