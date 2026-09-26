@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static in.ramanujan.translation.codeConverter.utils.TranslateUtil.isPythonCode;
+
 @Component
 public class PackageRunner extends TranslateAndRunHandler {
 
@@ -26,7 +28,17 @@ public class PackageRunner extends TranslateAndRunHandler {
                     PackageRunInput.class);
             final String toBeDebuggedStr = routingContext.queryParams().get("debug");
             final Boolean toBeDebugged = (toBeDebuggedStr != null && "true".equals(toBeDebuggedStr)) ? true : false;
-            packageCompileErrorChecker.checkPackageForCompilation(packageRunnerInput);
+            String code = packageRunnerInput.getCode();
+            if (code == null && packageRunnerInput.getAllFiles() != null) {
+                code = packageRunnerInput.getAllFiles().get("main.py");
+                if (code == null) {
+                    code = packageRunnerInput.getAllFiles().get("./main.py");
+                }
+                packageRunnerInput.setCode(code);
+            }
+            if (!isPythonCode(code)) {
+                packageCompileErrorChecker.checkPackageForCompilation(packageRunnerInput);
+            }
             runCode(routingContext, packageRunnerInput, toBeDebugged, currentRequestCount);
         } catch (CompilationException e) {
             currentRequestCount.decrementAndGet();

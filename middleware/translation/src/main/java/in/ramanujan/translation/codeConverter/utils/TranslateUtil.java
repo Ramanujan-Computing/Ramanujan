@@ -37,8 +37,18 @@ public class TranslateUtil {
                                              Map<String, Variable> variableMap, Map<String, Array> arrayMap,
                                              List<DagElement> dagElementListToBePopulated,
                                              Map<String, String> dagElementAndCodeMap, int linesForCommonFunctions) throws CompilationException {
+        return populateAllDagElements(codeSnippetElement, null, csvInformationList, functionCallsRuleEngineInput,
+                variableMap, arrayMap, dagElementListToBePopulated, dagElementAndCodeMap, linesForCommonFunctions);
+    }
+
+    public DagElement populateAllDagElements(CodeSnippetElement codeSnippetElement, Map<String, String> files,
+                                             List<CsvInformation> csvInformationList,
+                                             Map<String, RuleEngineInput> functionCallsRuleEngineInput,
+                                             Map<String, Variable> variableMap, Map<String, Array> arrayMap,
+                                             List<DagElement> dagElementListToBePopulated,
+                                             Map<String, String> dagElementAndCodeMap, int linesForCommonFunctions) throws CompilationException {
         Queue<PairCodeSnippetElementWithParent> populationQueue = new LinkedList<PairCodeSnippetElementWithParent>();
-        CodeConverter codeConverter = getNewCodeConverter(csvInformationList);
+        CodeConverter codeConverter = getNewCodeConverter(csvInformationList, files);
         populationQueue.add(new PairCodeSnippetElementWithParent(codeSnippetElement, null));
         DagElement lastElement = null;
         Map<String, DagElement> codeSnippetElementDagElementMap = new HashMap<>();
@@ -157,7 +167,11 @@ public class TranslateUtil {
     }
 
     public CodeConverter getNewCodeConverter(List<CsvInformation> csvInformationList) {
-        return new CodeConverter(codeConverterLogicFactory, null, csvInformationList);
+        return getNewCodeConverter(csvInformationList, null);
+    }
+
+    public CodeConverter getNewCodeConverter(List<CsvInformation> csvInformationList, Map<String, String> files) {
+        return new CodeConverter(codeConverterLogicFactory, null, csvInformationList, files);
     }
 
     /**

@@ -32,6 +32,16 @@ cluster nodes don't need Python installed on them — each node runs the native 
 the compiled simulation directly. See [docs/architecture.md](docs/architecture.md) for more on how Python code is
 compiled down to the Ramanujan runtime.
 
+### Multi-File Python Projects:
+Programs can be split across multiple `.py` files. The middleware bundles and translates modules into the Ramanujan runtime representation, supporting standard Python imports:
+- `import math_helper` &rarr; `math_helper.add(a, b)`
+- `import math_helper as mh` &rarr; `mh.add(a, b)`
+- `from math_helper import add` &rarr; `add(a, b)`
+- `from math_helper import add as my_add` &rarr; `my_add(a, b)`
+- `from math_helper import *`
+- Intra-module function calls, transitive imports, and namespace isolation across modules.
+
+
 
 ## Documentation
 This README covers only the high-level project description. The rest of the documentation has been split into

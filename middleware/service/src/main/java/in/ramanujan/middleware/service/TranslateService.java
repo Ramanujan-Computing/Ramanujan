@@ -47,6 +47,11 @@ public class TranslateService {
     * */
     public Future<TranslateResponse> translate(String code, List<CsvInformation> csvInformationList, Map<String, Variable> variableMap,
                                                Map<String, Array> arrayMap) {
+        return translate(code, null, csvInformationList, variableMap, arrayMap);
+    }
+
+    public Future<TranslateResponse> translate(String code, Map<String, String> files, List<CsvInformation> csvInformationList, Map<String, Variable> variableMap,
+                                               Map<String, Array> arrayMap) {
         Future<TranslateResponse> future = Future.future();
         try {
             TranslateResponse translateResponse = new TranslateResponse();
@@ -75,7 +80,7 @@ public class TranslateService {
                     new HashMap<>(), new HashMap<>());
             List<DagElement> dagElementList = new ArrayList<>();
             Map<String, String> dagElementAndCodeMap = new HashMap<>();
-            DagElement firstDagElement  = translateUtil.populateAllDagElements(firstCodeSnippetElement, csvInformationList,
+            DagElement firstDagElement  = translateUtil.populateAllDagElements(firstCodeSnippetElement, files, csvInformationList,
                     functionCallsRuleEngineInput, variableMap, arrayMap, dagElementList, dagElementAndCodeMap, linesForFunctions);
             translateResponse.setFirstDagElement(firstDagElement);
             translateResponse.setDagElementList(dagElementList);

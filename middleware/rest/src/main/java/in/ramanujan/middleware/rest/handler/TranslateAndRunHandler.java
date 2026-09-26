@@ -54,7 +54,16 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
             final String toBeDebuggedStr = routingContext.queryParams().get("debug");
             final Boolean toBeDebugged = (toBeDebuggedStr != null && "true".equals(toBeDebuggedStr)) ? true : false;
             String code = codeRunRequest.getCode();
-            compileErrorChecker.checkCompilationEntryPoint(code);
+            if (code == null && codeRunRequest.getAllFiles() != null) {
+                code = codeRunRequest.getAllFiles().get("main.py");
+                if (code == null) {
+                    code = codeRunRequest.getAllFiles().get("./main.py");
+                }
+                codeRunRequest.setCode(code);
+            }
+            if (!isPythonCode(code)) {
+                compileErrorChecker.checkCompilationEntryPoint(code);
+            }
             runCode(routingContext, codeRunRequest, toBeDebugged, currentRequestCount);
         } catch (CompilationException compilationException) {
             apiReactionOnCompialtionException(routingContext, compilationException);
@@ -81,7 +90,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
         final String code = isPythonCode(codeRunRequest.getCode()) ? codeRunRequest.getCode() : codeRunRequest.getCode().replaceAll("\\n","").replaceAll("\\t","");
-        translateService.translate(code, codeRunRequest.getCsvInformationList(), variableMap, arrayMap)
+        translateService.translate(code, codeRunRequest.getAllFiles(), codeRunRequest.getCsvInformationList(), variableMap, arrayMap)
                 .setHandler(translateHandler -> {
            if(translateHandler.succeeded()) {
                TranslateResponse translateResponse = translateHandler.result();

@@ -115,6 +115,12 @@ public class JsonAstParser {
                 return parseBoolOp(node);
             case "ListComp":
                 return parseListComp(node);
+            case "Import":
+                return parseImport(node);
+            case "ImportFrom":
+                return parseImportFrom(node);
+            case "alias":
+                return parseAlias(node);
             default:
                 // Unknown node type - log and skip
                 System.err.println("Warning: Unknown AST node type: " + type);
@@ -593,7 +599,58 @@ public class JsonAstParser {
         }
         return ti;
     }
-    
+
+    private ImportNode parseImport(JsonNode node) throws CompilationException {
+        ImportNode importNode = new ImportNode();
+        if (node.has("names") && node.get("names").isArray()) {
+            List<AliasNode> aliases = new ArrayList<>();
+            for (JsonNode aliasNode : node.get("names")) {
+                AliasNode alias = parseAlias(aliasNode);
+                if (alias != null) {
+                    aliases.add(alias);
+                }
+            }
+            importNode.setNames(aliases);
+        }
+        setLineInfo(importNode, node);
+        return importNode;
+    }
+
+    private ImportFromNode parseImportFrom(JsonNode node) throws CompilationException {
+        ImportFromNode importFrom = new ImportFromNode();
+        if (node.has("module") && !node.get("module").isNull()) {
+            importFrom.setModule(node.get("module").asText());
+        }
+        if (node.has("level") && !node.get("level").isNull()) {
+            importFrom.setLevel(node.get("level").asInt());
+        }
+        if (node.has("names") && node.get("names").isArray()) {
+            List<AliasNode> aliases = new ArrayList<>();
+            for (JsonNode aliasNode : node.get("names")) {
+                AliasNode alias = parseAlias(aliasNode);
+                if (alias != null) {
+                    aliases.add(alias);
+                }
+            }
+            importFrom.setNames(aliases);
+        }
+        setLineInfo(importFrom, node);
+        return importFrom;
+    }
+
+    private AliasNode parseAlias(JsonNode node) {
+        if (node == null) return null;
+        AliasNode alias = new AliasNode();
+        if (node.has("name") && !node.get("name").isNull()) {
+            alias.setName(node.get("name").asText());
+        }
+        if (node.has("asname") && !node.get("asname").isNull()) {
+            alias.setAsname(node.get("asname").asText());
+        }
+        setLineInfo(alias, node);
+        return alias;
+    }
+
     /**
      * Extract operator name from operator node.
      * Operator nodes have _type field like "Add", "Sub", "Mult", etc.

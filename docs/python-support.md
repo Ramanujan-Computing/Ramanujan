@@ -173,6 +173,38 @@ def compute(x):
 value = compute(5)
 ```
 
+### Multi-File Programs and Imports
+Ramanujan supports splitting code across multiple Python files and importing functions:
+- **Module Import**:
+  ```python
+  import math_helper
+  res = math_helper.add(10, 20)
+  ```
+- **Module Alias**:
+  ```python
+  import math_helper as mh
+  res = mh.add(10, 20)
+  ```
+- **Direct Function Import**:
+  ```python
+  from math_helper import add
+  res = add(10, 20)
+  ```
+- **Function Import with Alias**:
+  ```python
+  from math_helper import add as my_add
+  res = my_add(10, 20)
+  ```
+- **Wildcard Import**:
+  ```python
+  from math_helper import *
+  res = add(10, 20)
+  ```
+- **Intra-Module Calls**: Functions within an imported module can invoke other helper functions defined in the same module.
+- **Transitive Imports**: Modules can import other modules (e.g. `main.py` &rarr; `service.py` &rarr; `base_ops.py`).
+- **Namespace Isolation**: Functions sharing the same name in different modules do not collide.
+
+
 ## Unsupported Python Features (Current Limitations):
 
 ### 1. Return with Array Element Access
