@@ -30,85 +30,7 @@ They just have to download and install the `ramanujan` client one-time.
 Researchers and simulation developers just need to write their simulation in Python and run it on the cluster. The
 cluster nodes don't need Python installed on them — each node runs the native **Ramanujan interpreter**, which executes
 the compiled simulation directly. See [docs/architecture.md](docs/architecture.md) for more on how Python code is
-compiled down to the Ramanujan runtime.
-
-### Multi-File Python Projects:
-Programs can be split across multiple `.py` files. The middleware bundles and translates modules into the Ramanujan runtime representation, supporting standard Python imports:
-- `import math_helper` &rarr; `math_helper.add(a, b)`
-- `import math_helper as mh` &rarr; `mh.add(a, b)`
-- `from math_helper import add` &rarr; `add(a, b)`
-- `from math_helper import add as my_add` &rarr; `my_add(a, b)`
-- `from math_helper import *`
-- Intra-module function calls, transitive imports, and namespace isolation across modules.
-
-#### Sending Multiple Files to Orchestrator or Homelab Server:
-
-##### 1. Local Execution via Developer Console (`rj`)
-Pass the entrypoint Python file first, followed by any auxiliary `.py` modules and optional CSV data files:
-```sh
-rj main.py helper.py utils.py [data.csv ...]
-```
-The developer console parses the first argument as the main script and automatically packages all subsequent `.py` files into the module bundle.
-
-##### 2. Sending to Remote Orchestrator via Developer Console
-- **Direct file execution (`execute`)**:
-  ```sh
-  rj execute main.py helper.py utils.py [data.csv ...]
-  # or using the fat JAR:
-  java -jar developer-console-1.0-SNAPSHOT-fat.jar execute main.py helper.py utils.py
-  ```
-  The developer console packages `main.py` (entrypoint) and all dependent `.py` files into a `CodeRunRequest` and submits them via HTTP POST to `/run` on the middleware server, which coordinates task execution across the cluster with the Orchestrator.
-
-- **Package directory execution (`executePackage`)**:
-  Organize files into a directory (with an optional `build.json` specifying `"mainClass": "main.py"`):
-  ```sh
-  rj executePackage path/to/project_folder/
-  # or using the fat JAR:
-  java -jar developer-console-1.0-SNAPSHOT-fat.jar executePackage path/to/project_folder/
-  ```
-  The developer console scans the directory, bundles all `.py` files into `PackageRunInput.files`, and submits the package to `/run/package`.
-
-##### 3. Sending to Homelab Server (`homelab`)
-A homelab server runs as a persistent coordinator that compiles and dispatches DAG tasks to connected worker devices (`rj worker http://<homelab-ip>:8888`).
-
-- **Start the Homelab server**:
-  ```sh
-  rj homelab [port]   # defaults to port 8888
-  ```
-
-- **Via interactive console prompt**:
-  In the terminal where the homelab server is running, use the `run` command:
-  ```
-  run /path/to/main.py /path/to/helper.py /path/to/utils.py
-  ```
-
-- **Via HTTP API (`/orchestrator/run`)**:
-  Send an HTTP POST request to `/orchestrator/run` with the list of files in `args`:
-  ```sh
-  curl -X POST http://<homelab-ip>:8888/orchestrator/run \
-    -H "Content-Type: application/json" \
-    -d '{
-      "args": ["/path/to/main.py", "/path/to/helper.py", "/path/to/utils.py"]
-    }'
-  ```
-  Or from a Python client script:
-  ```python
-  import urllib.request, json
-
-  payload = json.dumps({
-      "args": ["main.py", "helper.py", "utils.py"]
-  }).encode("utf-8")
-
-  req = urllib.request.Request(
-      "http://<homelab-ip>:8888/orchestrator/run",
-      data=payload,
-      headers={"Content-Type": "application/json"}
-  )
-  with urllib.request.urlopen(req) as resp:
-      result = json.loads(resp.read().decode("utf-8"))
-      print(result)
-  ```
-  The homelab server translates the module ASTs and dispatches the execution DAG to connected worker devices.
+compiled down to the Ramanujan runtime, and [docs/python-support.md](docs/python-support.md) for supported syntax, multi-file imports, and execution modes.
 
 
 
@@ -118,7 +40,7 @@ focused pages under [docs/](docs/):
 
 | Document | Description |
 |---|---|
-| [docs/python-support.md](docs/python-support.md) | Writing computations in Python (actively developed) — supported/unsupported features, examples. |
+| [docs/python-support.md](docs/python-support.md) | Writing computations in Python (actively developed) — supported/unsupported features, multi-file imports, execution modes, examples. |
 | [docs/gpu-acceleration.md](docs/gpu-acceleration.md) | GPU acceleration support via OpenCL — kernel generation, built-ins, memory management. |
 | [docs/ramanujan-language.md](docs/ramanujan-language.md) | The original `ramanujan` language (**deprecated**) — variables, arrays, functions, loops, threads. |
 | [docs/architecture.md](docs/architecture.md) | Code-flow across dev-console, middleware, orchestrator, and the native interpreter. |
