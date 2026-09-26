@@ -204,6 +204,8 @@ Ramanujan supports splitting code across multiple Python files and importing fun
 - **Transitive Imports**: Modules can import other modules (e.g. `main.py` &rarr; `service.py` &rarr; `base_ops.py`).
 - **Namespace Isolation**: Functions sharing the same name in different modules do not collide.
 
+For execution instructions (running via Developer Console, sending to remote Orchestrator, or dispatching via Homelab server), see [Sending Multiple Files to Orchestrator or Homelab Server](../README.md#sending-multiple-files-to-orchestrator-or-homelab-server).
+
 
 ## Unsupported Python Features (Current Limitations):
 

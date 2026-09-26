@@ -41,6 +41,75 @@ Programs can be split across multiple `.py` files. The middleware bundles and tr
 - `from math_helper import *`
 - Intra-module function calls, transitive imports, and namespace isolation across modules.
 
+#### Sending Multiple Files to Orchestrator or Homelab Server:
+
+##### 1. Local Execution via Developer Console (`rj`)
+Pass the entrypoint Python file first, followed by any auxiliary `.py` modules and optional CSV data files:
+```sh
+rj main.py helper.py utils.py [data.csv ...]
+```
+The developer console parses the first argument as the main script and automatically packages all subsequent `.py` files into the module bundle.
+
+##### 2. Sending to Remote Orchestrator via Developer Console
+- **Direct file execution (`execute`)**:
+  ```sh
+  rj execute main.py helper.py utils.py [data.csv ...]
+  # or using the fat JAR:
+  java -jar developer-console-1.0-SNAPSHOT-fat.jar execute main.py helper.py utils.py
+  ```
+  The developer console packages `main.py` (entrypoint) and all dependent `.py` files into a `CodeRunRequest` and submits them via HTTP POST to `/run` on the middleware server, which coordinates task execution across the cluster with the Orchestrator.
+
+- **Package directory execution (`executePackage`)**:
+  Organize files into a directory (with an optional `build.json` specifying `"mainClass": "main.py"`):
+  ```sh
+  rj executePackage path/to/project_folder/
+  # or using the fat JAR:
+  java -jar developer-console-1.0-SNAPSHOT-fat.jar executePackage path/to/project_folder/
+  ```
+  The developer console scans the directory, bundles all `.py` files into `PackageRunInput.files`, and submits the package to `/run/package`.
+
+##### 3. Sending to Homelab Server (`homelab`)
+A homelab server runs as a persistent coordinator that compiles and dispatches DAG tasks to connected worker devices (`rj worker http://<homelab-ip>:8888`).
+
+- **Start the Homelab server**:
+  ```sh
+  rj homelab [port]   # defaults to port 8888
+  ```
+
+- **Via interactive console prompt**:
+  In the terminal where the homelab server is running, use the `run` command:
+  ```
+  run /path/to/main.py /path/to/helper.py /path/to/utils.py
+  ```
+
+- **Via HTTP API (`/orchestrator/run`)**:
+  Send an HTTP POST request to `/orchestrator/run` with the list of files in `args`:
+  ```sh
+  curl -X POST http://<homelab-ip>:8888/orchestrator/run \
+    -H "Content-Type: application/json" \
+    -d '{
+      "args": ["/path/to/main.py", "/path/to/helper.py", "/path/to/utils.py"]
+    }'
+  ```
+  Or from a Python client script:
+  ```python
+  import urllib.request, json
+
+  payload = json.dumps({
+      "args": ["main.py", "helper.py", "utils.py"]
+  }).encode("utf-8")
+
+  req = urllib.request.Request(
+      "http://<homelab-ip>:8888/orchestrator/run",
+      data=payload,
+      headers={"Content-Type": "application/json"}
+  )
+  with urllib.request.urlopen(req) as resp:
+      result = json.loads(resp.read().decode("utf-8"))
+      print(result)
+  ```
+  The homelab server translates the module ASTs and dispatches the execution DAG to connected worker devices.
+
 
 
 ## Documentation
