@@ -173,6 +173,107 @@ def compute(x):
 value = compute(5)
 ```
 
+### Multi-File Programs and Imports
+Ramanujan supports splitting code across multiple Python files and importing functions:
+- **Module Import**:
+  ```python
+  import math_helper
+  res = math_helper.add(10, 20)
+  ```
+- **Module Alias**:
+  ```python
+  import math_helper as mh
+  res = mh.add(10, 20)
+  ```
+- **Direct Function Import**:
+  ```python
+  from math_helper import add
+  res = add(10, 20)
+  ```
+- **Function Import with Alias**:
+  ```python
+  from math_helper import add as my_add
+  res = my_add(10, 20)
+  ```
+- **Wildcard Import**:
+  ```python
+  from math_helper import *
+  res = add(10, 20)
+  ```
+- **Intra-Module Calls**: Functions within an imported module can invoke other helper functions defined in the same module.
+- **Transitive Imports**: Modules can import other modules (e.g. `main.py` &rarr; `service.py` &rarr; `base_ops.py`).
+- **Namespace Isolation**: Functions sharing the same name in different modules do not collide.
+
+#### Running Multi-File Programs:
+
+##### 1. Local Execution via Developer Console (`rj`)
+Pass the entrypoint script first, followed by any imported `.py` modules and optional CSV data files:
+```bash
+rj main.py helper.py utils.py [data.csv ...]
+```
+The developer console identifies `main.py` as the entrypoint and automatically packages all subsequent `.py` files into the module map.
+
+##### 2. Sending to Remote Orchestrator via Developer Console
+- **Direct file execution (`execute`)**:
+  ```bash
+  rj execute main.py helper.py utils.py [data.csv ...]
+  # or using the fat JAR:
+  java -jar developer-console-1.0-SNAPSHOT-fat.jar execute main.py helper.py utils.py
+  ```
+  The developer console packages `main.py` and all dependent `.py` files into a `CodeRunRequest` and submits them via HTTP POST to `/run` on the middleware server, which coordinates task execution across the cluster with the Orchestrator.
+
+- **Package directory execution (`executePackage`)**:
+  Organize files into a directory (with an optional `build.json` specifying `"mainClass": "main.py"`):
+  ```bash
+  rj executePackage path/to/project_folder/
+  # or using the fat JAR:
+  java -jar developer-console-1.0-SNAPSHOT-fat.jar executePackage path/to/project_folder/
+  ```
+  The console scans the directory, bundles all `.py` files into `PackageRunInput.files`, and submits the package to `/run/package`.
+
+##### 3. Sending to Homelab Server (`homelab`)
+A homelab server runs as a persistent coordinator that compiles and dispatches DAG tasks to connected worker devices (`rj worker http://<homelab-ip>:8888`).
+
+- **Start the Homelab server**:
+  ```bash
+  rj homelab [port]   # defaults to port 8888
+  ```
+
+- **Via interactive console prompt**:
+  In the terminal where the homelab server is running, use the `run` command:
+  ```
+  run /path/to/main.py /path/to/helper.py /path/to/utils.py
+  ```
+
+- **Via HTTP API (`/orchestrator/run`)**:
+  Send an HTTP POST request to `/orchestrator/run` with the list of files in `args`:
+  ```bash
+  curl -X POST http://<homelab-ip>:8888/orchestrator/run \
+    -H "Content-Type: application/json" \
+    -d '{
+      "args": ["/path/to/main.py", "/path/to/helper.py", "/path/to/utils.py"]
+    }'
+  ```
+  Or from a Python client script:
+  ```python
+  import urllib.request, json
+
+  payload = json.dumps({
+      "args": ["main.py", "helper.py", "utils.py"]
+  }).encode("utf-8")
+
+  req = urllib.request.Request(
+      "http://<homelab-ip>:8888/orchestrator/run",
+      data=payload,
+      headers={"Content-Type": "application/json"}
+  )
+  with urllib.request.urlopen(req) as resp:
+      result = json.loads(resp.read().decode("utf-8"))
+      print(result)
+  ```
+  The homelab server translates the module ASTs and dispatches the execution DAG to connected worker devices.
+
+
 ## Unsupported Python Features (Current Limitations):
 
 ### 1. Return with Array Element Access

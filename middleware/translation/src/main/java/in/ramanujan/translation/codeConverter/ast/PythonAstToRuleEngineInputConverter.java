@@ -8,6 +8,7 @@ import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.ArrayCommand;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.translation.codeConverter.grammar.DebugLevelCodeCreator;
+import in.ramanujan.translation.codeConverter.utils.PythonAstInvoker;
 
 import java.util.*;
 
@@ -283,6 +284,46 @@ public class PythonAstToRuleEngineInputConverter {
      * GPU functions can look up helper functions regardless of definition order.
      */
     private Map<String, FunctionDefNode> allModuleFunctions = new HashMap<>();
+
+    /**
+     * Map of available files (filename/path -> content) for multi-file module resolution.
+     */
+    private Map<String, String> files = new HashMap<>();
+
+    /**
+     * Maps module alias/name to full module name.
+     * e.g., "import math_helper as mh" -> mh -> math_helper
+     *       "import math_helper" -> math_helper -> math_helper
+     */
+    private Map<String, String> importedModules = new HashMap<>();
+
+    /**
+     * Maps symbol name (as used in caller) to fully qualified function name.
+     * e.g., "from math_helper import add" -> add -> math_helper.add
+     *       "from math_helper import add as my_add" -> my_add -> math_helper.add
+     */
+    private Map<String, String> importedSymbols = new HashMap<>();
+
+    /**
+     * Set of modules that have been loaded and converted.
+     */
+    private Set<String> loadedModules = new HashSet<>();
+
+    /**
+     * Set of modules currently being loaded (for circular import detection).
+     */
+    private Set<String> currentlyLoadingModules = new HashSet<>();
+
+    /**
+     * Maps module name to set of function names defined in that module.
+     * e.g., math_helper -> [add, sub, helper]
+     */
+    private Map<String, Set<String>> moduleDefinedFunctions = new HashMap<>();
+
+    /**
+     * Current module name being converted ("" or null for root/main module).
+     */
+    private String currentModuleName = null;
     
     /**
      * Constructs a new converter for transforming Python AST to RuleEngineInput.
@@ -298,11 +339,31 @@ public class PythonAstToRuleEngineInputConverter {
                                                 DebugLevelCodeCreator debugLevelCodeCreator,
                                                 Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
                                                 Integer[] frameVariableCounterId) {
+        this(codeConverter, ruleEngineInput, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId, new HashMap<>());
+    }
+
+    /**
+     * Constructs a new converter with multi-file support.
+     *
+     * @param codeConverter The code converter managing variable/array maps and scope resolution
+     * @param ruleEngineInput The target RuleEngineInput to populate with converted structures
+     * @param debugLevelCodeCreator Generator for human-readable debug code
+     * @param functionFrameVariableMap Map of function frames to their local variables
+     * @param frameVariableCounterId Counter for unique function frame ID generation
+     * @param files Map of filename -> file content
+     */
+    public PythonAstToRuleEngineInputConverter(CodeConverter codeConverter,
+                                                RuleEngineInput ruleEngineInput,
+                                                DebugLevelCodeCreator debugLevelCodeCreator,
+                                                Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
+                                                Integer[] frameVariableCounterId,
+                                                Map<String, String> files) {
         this.codeConverter = codeConverter;
         this.ruleEngineInput = ruleEngineInput;
         this.debugLevelCodeCreator = debugLevelCodeCreator;
         this.functionFrameVariableMap = functionFrameVariableMap;
         this.frameVariableCounterId = frameVariableCounterId;
+        this.files = files != null ? new HashMap<>(files) : new HashMap<>();
     }
     
     /**
@@ -344,6 +405,15 @@ public class PythonAstToRuleEngineInputConverter {
         Command previousCommand = null;
         List<AstNode> nonFunctionDefNodes = new ArrayList<>();
         List<AstNode> functionDefNodes = new ArrayList<>();
+
+        // Pre-scan imports first so modules and imported functions are loaded and available
+        for (AstNode node : module.getBody()) {
+            if (node instanceof ImportNode) {
+                convertImport((ImportNode) node);
+            } else if (node instanceof ImportFromNode) {
+                convertImportFrom((ImportFromNode) node);
+            }
+        }
 
         // Pre-scan: collect every function definition so GPU converters can look up helpers.
         for (AstNode node : module.getBody()) {
@@ -444,6 +514,12 @@ public class PythonAstToRuleEngineInputConverter {
             convertExpr((ExprNode) node, command, variableScope);
         } else if (node instanceof ReturnNode) {
             return convertReturn((ReturnNode) node, variableScope, parentScopeUnit);
+        } else if (node instanceof ImportNode) {
+            emitImportDebug((ImportNode) node);
+            return null;
+        } else if (node instanceof ImportFromNode) {
+            emitImportFromDebug((ImportFromNode) node);
+            return null;
         }
         ruleEngineInput.getCommands().add(command);
         return command;
@@ -1317,18 +1393,21 @@ public class PythonAstToRuleEngineInputConverter {
      * @param command The Command object (unused, function returns null from convertStatement)
      */
     private void convertFunctionDef(FunctionDefNode funcDef, Command command, List<String> variableScopeNotUsed, RuleEngineInputUnits parentScopeUnit) throws CompilationException {
-        debugLevelCodeCreator.concat("def " + funcDef.getName() + "(");
+        String qualifiedName = (currentModuleName != null && !currentModuleName.isEmpty())
+                ? currentModuleName + "." + funcDef.getName()
+                : funcDef.getName();
+        debugLevelCodeCreator.concat("def " + qualifiedName + "(");
         List<String> paramNames = new ArrayList<>();
         List<String> paramIds = new ArrayList<>();
         int[] counter = new int[]{0};
         Map<Integer, RuleEngineInputUnits> variableFrameMap = new HashMap<>();
         List<String> variableScope = new ArrayList<>();
         variableScope.add("");
-        variableScope.add("func_" + funcDef.getName() + "_");
+        variableScope.add("func_" + qualifiedName + "_");
         
         // Track the current function being defined
         String previousFunctionName = this.currentFunctionName;
-        this.currentFunctionName = funcDef.getName();
+        this.currentFunctionName = qualifiedName;
         
         for (ArgNode arg : funcDef.getArgs().getArgs()) {
             String argStr = arg.getArg();
@@ -1348,7 +1427,7 @@ public class PythonAstToRuleEngineInputConverter {
         debugLevelCodeCreator.nextLine();
         
         // Check if this function returns values and add return target parameters
-        Integer returnCount = functionReturnCounts.get(funcDef.getName());
+        Integer returnCount = functionReturnCounts.get(qualifiedName);
         if (returnCount != null && returnCount > 0) {
             // Add extra parameters for return targets
             for (int i = 0; i < returnCount; i++) {
@@ -1365,10 +1444,10 @@ public class PythonAstToRuleEngineInputConverter {
         }
 
         // Store the function arguments for use in convertReturn
-        functionDefinitionArgs.put(funcDef.getName(), new ArrayList<>(paramIds));
+        functionDefinitionArgs.put(qualifiedName, new ArrayList<>(paramIds));
 
         FunctionCall functionCall = new FunctionCall();
-        functionCall.setId(funcDef.getName());
+        functionCall.setId(qualifiedName);
         
         // Set parent for the function call itself (usually null for top-level functions)
         if (parentScopeUnit != null) {
@@ -1381,7 +1460,7 @@ public class PythonAstToRuleEngineInputConverter {
         }
 
         functionCall.setArguments(paramIds);
-        functionCall.setId(funcDef.getName());
+        functionCall.setId(qualifiedName);
 
         List<String> variablesInFunction = new ArrayList<>();
         int frameCounter = 0;
@@ -1431,6 +1510,10 @@ public class PythonAstToRuleEngineInputConverter {
 
         ruleEngineInput.getFunctionCalls().add(functionCall);
         
+        if (currentModuleName == null || currentModuleName.isEmpty()) {
+            importedSymbols.remove(funcDef.getName());
+        }
+
         // Restore previous function name
         this.currentFunctionName = previousFunctionName;
 
@@ -1697,12 +1780,7 @@ public class PythonAstToRuleEngineInputConverter {
     private void convertFunctionCall(CallNode call, Command command, List<String> variableScope) 
             throws CompilationException {
         
-        if (!(call.getFunc() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex function calls not yet supported");
-        }
-        
-        NameNode funcName = (NameNode) call.getFunc();
-        String functionName = funcName.getId();
+        String functionName = resolveTargetFunctionName(call.getFunc());
         
         FunctionCall functionCall = new FunctionCall();
         List<String> argumentIds = new ArrayList<>();
@@ -1759,12 +1837,7 @@ public class PythonAstToRuleEngineInputConverter {
                                                                List<String> returnTargetIds) 
             throws CompilationException {
         
-        if (!(call.getFunc() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex function calls not yet supported");
-        }
-        
-        NameNode funcName = (NameNode) call.getFunc();
-        String functionName = funcName.getId();
+        String functionName = resolveTargetFunctionName(call.getFunc());
         
         FunctionCall functionCall = new FunctionCall();
         functionCall.setId(functionName);
@@ -1834,6 +1907,11 @@ public class PythonAstToRuleEngineInputConverter {
             MethodDataTypeAgnosticArg methodArg = findMethodArgById(argId);
             if (methodArg != null && methodArg.getName().startsWith("_return_target_")) {
                 existingReturnTargetCount++;
+            } else {
+                Variable var = findVariableById(argId);
+                if (var != null && var.getName().startsWith("_return_target_")) {
+                    existingReturnTargetCount++;
+                }
             }
         }
         
@@ -2817,12 +2895,7 @@ public class PythonAstToRuleEngineInputConverter {
     private String convertCallExpressionToCommand(CallNode call, List<String> variableScope) 
             throws CompilationException {
         
-        if (!(call.getFunc() instanceof NameNode)) {
-            throw new CompilationException(null, null, "Complex function calls not supported");
-        }
-        
-        NameNode funcName = (NameNode) call.getFunc();
-        String functionName = funcName.getId();
+        String functionName = resolveTargetFunctionName(call.getFunc());
         
         FunctionCall functionCall = new FunctionCall();
         functionCall.setId(functionName);  // Use actual function name, not random ID
@@ -3295,6 +3368,21 @@ public class PythonAstToRuleEngineInputConverter {
             appendValueToDebug(compare.getLeft());
             debugLevelCodeCreator.concat(" " + mapCompareOp(compare.getOps().get(0)) + " ");
             appendValueToDebug(compare.getComparators().get(0));
+        } else if (value instanceof AttributeNode) {
+            AttributeNode attr = (AttributeNode) value;
+            appendValueToDebug(attr.getValue());
+            debugLevelCodeCreator.concat("." + attr.getAttr());
+        } else if (value instanceof CallNode) {
+            CallNode call = (CallNode) value;
+            appendValueToDebug(call.getFunc());
+            debugLevelCodeCreator.concat("(");
+            boolean first = true;
+            for (AstNode arg : call.getArgs()) {
+                if (!first) debugLevelCodeCreator.concat(", ");
+                appendValueToDebug(arg);
+                first = false;
+            }
+            debugLevelCodeCreator.concat(")");
         }
     }
     
@@ -3492,6 +3580,208 @@ public class PythonAstToRuleEngineInputConverter {
             return globalVar.getId();
         }
         
+        return null;
+    }
+
+    private String resolveTargetFunctionName(AstNode funcNode) throws CompilationException {
+        if (funcNode instanceof NameNode) {
+            String name = ((NameNode) funcNode).getId();
+            if (importedSymbols.containsKey(name)) {
+                return importedSymbols.get(name);
+            }
+            if (currentModuleName != null && !currentModuleName.isEmpty()) {
+                Set<String> funcs = moduleDefinedFunctions.get(currentModuleName);
+                if (funcs != null && funcs.contains(name)) {
+                    return currentModuleName + "." + name;
+                }
+            }
+            return name;
+        } else if (funcNode instanceof AttributeNode) {
+            AttributeNode attr = (AttributeNode) funcNode;
+            String attrName = attr.getAttr();
+            String prefix = getAttributePrefix(attr.getValue());
+            if (prefix == null) {
+                throw new CompilationException(null, null, "Complex attribute function call not supported: " + attr);
+            }
+            if (importedModules.containsKey(prefix)) {
+                return importedModules.get(prefix) + "." + attrName;
+            }
+            return prefix + "." + attrName;
+        } else {
+            throw new CompilationException(null, null, "Complex function calls not yet supported: " + funcNode.getClass().getSimpleName());
+        }
+    }
+
+    private String getAttributePrefix(AstNode node) {
+        if (node instanceof NameNode) {
+            return ((NameNode) node).getId();
+        } else if (node instanceof AttributeNode) {
+            AttributeNode attr = (AttributeNode) node;
+            String parent = getAttributePrefix(attr.getValue());
+            if (parent != null) {
+                return parent + "." + attr.getAttr();
+            }
+        }
+        return null;
+    }
+
+    private void convertImport(ImportNode importNode) throws CompilationException {
+        if (importNode.getNames() == null) {
+            return;
+        }
+        for (AliasNode alias : importNode.getNames()) {
+            String modName = alias.getName();
+            String asName = alias.getAsname() != null ? alias.getAsname() : modName;
+            loadAndConvertModule(modName);
+            importedModules.put(asName, modName);
+        }
+    }
+
+    private void convertImportFrom(ImportFromNode importFromNode) throws CompilationException {
+        String modName = importFromNode.getModule();
+        if (modName == null) {
+            throw new CompilationException(null, null, "Relative imports without module name not supported");
+        }
+        loadAndConvertModule(modName);
+        if (importFromNode.getNames() != null) {
+            for (AliasNode alias : importFromNode.getNames()) {
+                if ("*".equals(alias.getName())) {
+                    Set<String> funcs = moduleDefinedFunctions.get(modName);
+                    if (funcs != null) {
+                        for (String func : funcs) {
+                            importedSymbols.put(func, modName + "." + func);
+                        }
+                    }
+                } else {
+                    String symbol = alias.getName();
+                    String asName = alias.getAsname() != null ? alias.getAsname() : symbol;
+                    importedSymbols.put(asName, modName + "." + symbol);
+                }
+            }
+        }
+    }
+
+    private void emitImportDebug(ImportNode importNode) {
+        if (importNode.getNames() == null) return;
+        for (AliasNode alias : importNode.getNames()) {
+            debugLevelCodeCreator.concat("import " + alias.getName());
+            if (alias.getAsname() != null) {
+                debugLevelCodeCreator.concat(" as " + alias.getAsname());
+            }
+            debugLevelCodeCreator.nextLine();
+        }
+    }
+
+    private void emitImportFromDebug(ImportFromNode importFromNode) {
+        debugLevelCodeCreator.concat("from " + importFromNode.getModule() + " import ");
+        if (importFromNode.getNames() != null) {
+            boolean first = true;
+            for (AliasNode alias : importFromNode.getNames()) {
+                if (!first) debugLevelCodeCreator.concat(", ");
+                debugLevelCodeCreator.concat(alias.getName());
+                if (alias.getAsname() != null) {
+                    debugLevelCodeCreator.concat(" as " + alias.getAsname());
+                }
+                first = false;
+            }
+        }
+        debugLevelCodeCreator.nextLine();
+    }
+
+    private void loadAndConvertModule(String moduleName) throws CompilationException {
+        if (loadedModules.contains(moduleName)) {
+            return;
+        }
+        if (currentlyLoadingModules.contains(moduleName)) {
+            return;
+        }
+        currentlyLoadingModules.add(moduleName);
+
+        String moduleCode = findModuleCode(moduleName);
+        if (moduleCode == null) {
+            throw new CompilationException(null, null, "Module not found: " + moduleName);
+        }
+
+        try {
+            moduleCode = CodeConverter.dedentPythonCode(moduleCode);
+            String astJson = new PythonAstInvoker().invokeAstJson(moduleCode);
+            JsonAstParser parser = new JsonAstParser();
+            ModuleNode moduleNode = parser.parseJson(astJson);
+
+            String previousModule = this.currentModuleName;
+            this.currentModuleName = moduleName;
+
+            try {
+                // Pre-process imports within the imported module
+                for (AstNode node : moduleNode.getBody()) {
+                    if (node instanceof ImportNode) {
+                        convertImport((ImportNode) node);
+                    } else if (node instanceof ImportFromNode) {
+                        convertImportFrom((ImportFromNode) node);
+                    }
+                }
+
+                // Register all functions defined in this module
+                for (AstNode node : moduleNode.getBody()) {
+                    if (node instanceof FunctionDefNode) {
+                        FunctionDefNode fdn = (FunctionDefNode) node;
+                        String qualifiedName = moduleName + "." + fdn.getName();
+                        moduleDefinedFunctions.computeIfAbsent(moduleName, k -> new HashSet<>()).add(fdn.getName());
+                        allModuleFunctions.put(qualifiedName, fdn);
+                    }
+                }
+
+                // Convert all function definitions in this module
+                for (AstNode node : moduleNode.getBody()) {
+                    if (node instanceof FunctionDefNode) {
+                        FunctionDefNode fdn = (FunctionDefNode) node;
+                        List<String> scope = new ArrayList<>();
+                        convertFunctionDef(fdn, null, scope, null);
+                    }
+                }
+
+                loadedModules.add(moduleName);
+            } finally {
+                this.currentModuleName = previousModule;
+            }
+        } catch (CompilationException ce) {
+            throw ce;
+        } catch (Exception e) {
+            throw new CompilationException(null, null, "Failed to load module " + moduleName + ": " + e.getMessage());
+        } finally {
+            currentlyLoadingModules.remove(moduleName);
+        }
+    }
+
+    private String findModuleCode(String moduleName) {
+        if (files == null || files.isEmpty()) {
+            return null;
+        }
+        // Direct match
+        if (files.containsKey(moduleName)) {
+            return files.get(moduleName);
+        }
+        if (files.containsKey(moduleName + ".py")) {
+            return files.get(moduleName + ".py");
+        }
+        // Dotted module name to path: foo.bar -> foo/bar.py
+        String pathVersion = moduleName.replace('.', '/');
+        if (files.containsKey(pathVersion)) {
+            return files.get(pathVersion);
+        }
+        if (files.containsKey(pathVersion + ".py")) {
+            return files.get(pathVersion + ".py");
+        }
+        // Scan by normalized filename / basename
+        String targetBase = moduleName.contains(".") ? moduleName.substring(moduleName.lastIndexOf('.') + 1) : moduleName;
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            String key = entry.getKey().replace('\\', '/');
+            String fileName = key.contains("/") ? key.substring(key.lastIndexOf('/') + 1) : key;
+            if (fileName.equals(targetBase) || fileName.equals(targetBase + ".py") ||
+                fileName.equals(moduleName) || fileName.equals(moduleName + ".py")) {
+                return entry.getValue();
+            }
+        }
         return null;
     }
 }

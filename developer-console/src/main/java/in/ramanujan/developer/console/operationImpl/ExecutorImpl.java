@@ -309,6 +309,16 @@ public class ExecutorImpl implements Operation {
             for(int iter = 1; iter < args.size(); iter++) {
                 long csvReadStart = System.currentTimeMillis();
                 String csvPath = args.get(iter);
+                if (csvPath.endsWith(".py")) {
+                    String pyData = PackageBuildHelper.readFileWithNewLine(csvPath);
+                    if (codeRunRequest.getFiles() == null) {
+                        codeRunRequest.setFiles(new java.util.HashMap<>());
+                    }
+                    codeRunRequest.getFiles().put(csvPath, pyData);
+                    java.io.File pyFile = new java.io.File(csvPath);
+                    codeRunRequest.getFiles().put(pyFile.getName(), pyData);
+                    continue;
+                }
                 java.io.File csvFile = new java.io.File(csvPath);
                 System.out.println("[createJson] CSV " + iter + "/" + (args.size()-1) + ": " + csvPath);
                 System.out.flush();
