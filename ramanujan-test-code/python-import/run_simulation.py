@@ -123,5 +123,80 @@ def run_simulation(verbose=True):
         "vel_y": vel_y,
     }
 
+def run_via_homelab(homelab_url="http://localhost:8888"):
+    import json
+    import urllib.request
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    main_py = os.path.join(here, "main.py")
+    math_utils_py = os.path.join(here, "math_utils.py")
+    physics_py = os.path.join(here, "physics.py")
+    integrator_py = os.path.join(here, "integrator.py")
+    diagnostics_py = os.path.join(here, "diagnostics.py")
+
+    args = [main_py, math_utils_py, physics_py, integrator_py, diagnostics_py]
+    print(f"Connecting to homelab server at {homelab_url}...")
+    try:
+        urllib.request.urlopen(f"{homelab_url}/pings/heartbeat", timeout=5)
+    except Exception as e:
+        print(f"ERROR: Cannot reach homelab server at {homelab_url}: {e}", file=sys.stderr)
+        return False
+
+    print("Submitting multi-file simulation to homelab orchestrator (/orchestrator/run)...")
+    req_data = json.dumps({"args": args}).encode("utf-8")
+    run_req = urllib.request.Request(
+        f"{homelab_url}/orchestrator/run",
+        data=req_data,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    t0 = os.times().elapsed if hasattr(os, "times") else 0
+    with urllib.request.urlopen(run_req, timeout=120) as resp:
+        res = json.loads(resp.read().decode("utf-8"))
+        print(f"Homelab run status: {res.get('status')}")
+
+    # Query final positions and variables
+    out_dir = os.path.join(here, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    pos_x_csv = os.path.join(out_dir, "pos_x.csv")
+    pos_y_csv = os.path.join(out_dir, "pos_y.csv")
+
+    for arr_name, arr_path in [("pos_x", pos_x_csv), ("pos_y", pos_y_csv)]:
+        dump_req = urllib.request.Request(
+            f"{homelab_url}/orchestrator/dump",
+            data=json.dumps({"name": arr_name, "path": arr_path}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(dump_req, timeout=30) as d_resp:
+            d_res = json.loads(d_resp.read().decode("utf-8"))
+            print(f"Dumped {arr_name} -> {arr_path}: {d_res.get('status')}")
+
+    # Query variables
+    for var_name in ["simulation_done", "energy_drift", "final_total_energy", "final_px", "final_py"]:
+        var_req = urllib.request.Request(
+            f"{homelab_url}/orchestrator/var",
+            data=json.dumps({"name": var_name}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(var_req, timeout=30) as v_resp:
+                v_res = json.loads(v_resp.read().decode("utf-8"))
+                print(f"Variable {var_name} = {v_res.get('value')}")
+        except Exception as e:
+            print(f"Could not fetch variable {var_name}: {e}")
+
+    return True
+
 if __name__ == "__main__":
-    run_simulation(verbose=True)
+    import argparse
+    parser = argparse.ArgumentParser(description="Run N-body simulation via standard Python or Ramanujan Homelab")
+    parser.add_argument("--homelab", action="store_true", help="Submit to homelab server")
+    parser.add_argument("--homelab-url", default="http://localhost:8888", help="Homelab server URL")
+    args = parser.parse_args()
+
+    if args.homelab:
+        run_via_homelab(args.homelab_url)
+    else:
+        run_simulation(verbose=True)

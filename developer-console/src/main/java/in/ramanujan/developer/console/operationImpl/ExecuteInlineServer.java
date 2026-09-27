@@ -184,7 +184,7 @@ public class ExecuteInlineServer extends ExecuteInline {
             dagList = new ArrayList<>();
             Map<String, String> dagCodeMap = new HashMap<>();
             firstDag = translateUtil.populateAllDagElements(
-                    firstSnippet, csvList, functionCallsRuleEngineInput,
+                    firstSnippet, req.getAllFiles(), csvList, functionCallsRuleEngineInput,
                     variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
 
             System.err.println("[Server] compiled in " + (System.currentTimeMillis() - t0)

@@ -30,12 +30,28 @@ Key features tested across the modular architecture:
 
 ## Running the Simulation
 
-### Direct Python Execution
+### 1. Direct Python Execution
 ```bash
 python ramanujan-test-code/python-import/run_simulation.py
 ```
 
-### Running via Ramanujan Test Suite
+### 2. Running via Ramanujan Homelab Server and Worker
+Start the Homelab server in Terminal 1:
+```bash
+java -jar developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar homelab 8888
+```
+
+Start the local worker in Terminal 2:
+```bash
+java -jar developer-console/target/developer-console-1.0-SNAPSHOT-fat.jar worker http://localhost:8888 2
+```
+
+Submit the simulation and verify execution in Terminal 3:
+```bash
+python ramanujan-test-code/python-import/run_simulation.py --homelab
+```
+
+### 3. Running via Ramanujan Unit Tests
 ```bash
 mvn -f middleware/pom.xml test -pl translation -Dtest=PythonMultiFileImportTest
 ```
