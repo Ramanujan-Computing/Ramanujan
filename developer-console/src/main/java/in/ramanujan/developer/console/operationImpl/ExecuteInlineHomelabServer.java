@@ -290,7 +290,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         List<DagElement> dagList   = new ArrayList<>();
         Map<String, String> dagCodeMap = new HashMap<>();
         DagElement firstDag = translateUtil.populateAllDagElements(
-                firstSnippet, csvList, functionCallsREI,
+                firstSnippet, req.getAllFiles(), csvList, functionCallsREI,
                 variableMap, arrayMap, dagList, dagCodeMap, linesForFunctions);
 
         Set<DagElement> uniqueElements = new LinkedHashSet<>();
@@ -437,6 +437,7 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
         createdServer.createContext("/task/complete",     this::handleTaskComplete);
         createdServer.createContext("/orchestrator/run",  this::handleOrchestratorRun);
         createdServer.createContext("/orchestrator/dump", this::handleOrchestratorDump);
+        createdServer.createContext("/orchestrator/var",  this::handleOrchestratorVar);
         createdServer.createContext("/binary/fetch",      this::handleBinaryFetch);
         createdServer.createContext("/orchestrator/uploadBinary", this::handleUploadBinary);
         createdServer.setExecutor(Executors.newCachedThreadPool());
@@ -569,6 +570,31 @@ public class ExecuteInlineHomelabServer extends ExecuteInline {
             err.put("message", e.getMessage() != null ? e.getMessage() : e.toString());
             sendJson(ex, 500, MAPPER.writeValueAsString(err));
         }
+    }
+
+    private void handleOrchestratorVar(HttpExchange ex) throws IOException {
+        byte[] body = readAllBytes(ex.getRequestBody());
+        Map<String, Object> req = MAPPER.readValue(body, Map.class);
+        String name = (String) req.get("name");
+        String requestId = req.get("requestId") != null ? String.valueOf(req.get("requestId")) : null;
+
+        CompletedRunState runState = resolveStateForDump(requestId);
+        if (runState == null) {
+            sendJson(ex, 404, "{\"status\":\"ERROR\",\"message\":\"No completed run state found\"}");
+            return;
+        }
+
+        Object val = runState.variableStore.get(name);
+        if (val == null) {
+            // Also check ExecutorImpl.variableStore fallback
+            val = ExecutorImpl.variableStore.get(name);
+        }
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("status", "SUCCESS");
+        res.put("name", name);
+        res.put("value", val);
+        sendJson(ex, 200, MAPPER.writeValueAsString(res));
     }
 
     private CompletedRunState resolveStateForDump(String requestId) {

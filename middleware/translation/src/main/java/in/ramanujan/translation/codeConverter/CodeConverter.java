@@ -28,6 +28,7 @@ public class CodeConverter {
     private Map<String, Array> arrayMap;
     private Map<String, MethodDataTypeAgnosticArg> methodDataTypeAgnosticArgMap;
     private Map<String, String> csvDataMap;
+    private Map<String, String> filesMap;
 //    public Variable getVariable(String variableName) {
 //        Variable variable = variableMap.get(variableName);
 //        return variable;
@@ -54,6 +55,20 @@ public class CodeConverter {
             return null;
         }
         return csvDataMap.get(fileName);
+    }
+
+    public Map<String, String> getFilesMap() {
+        return filesMap;
+    }
+
+    public void setFilesMap(Map<String, String> filesMap) {
+        this.filesMap = filesMap;
+    }
+
+    public CodeConverter(CodeConverterLogicFactory codeConverterLogicFactory, StringUtils stringUtils,
+                         List<CsvInformation> csvInformations, Map<String, String> filesMap) {
+        this(codeConverterLogicFactory, stringUtils, csvInformations);
+        this.filesMap = filesMap;
     }
 
     public CodeConverter(CodeConverterLogicFactory codeConverterLogicFactory, StringUtils stringUtils,
@@ -142,7 +157,7 @@ public class CodeConverter {
      * Remove common leading whitespace from all non-empty lines (like Python's textwrap.dedent).
      * This handles code extracted from threadStart { ... } blocks that may be indented.
      */
-    private static String dedentPythonCode(String code) {
+    public static String dedentPythonCode(String code) {
         if (code == null || code.isEmpty()) return code;
         String[] lines = code.split("\n", -1);
         // Find minimum indentation of non-empty lines
@@ -183,6 +198,15 @@ public class CodeConverter {
                                         DebugLevelCodeCreator debugLevelCodeCreator, 
                                         Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
                                         Integer[] frameVariableCounterId) throws CompilationException {
+        return interpretPython(pythonCode, this.filesMap, ruleEngineInput, variableScope, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId);
+    }
+
+    public List<Command> interpretPython(String pythonCode, Map<String, String> files,
+                                        RuleEngineInput ruleEngineInput, 
+                                        List<String> variableScope,
+                                        DebugLevelCodeCreator debugLevelCodeCreator, 
+                                        Map<Integer, RuleEngineInputUnits> functionFrameVariableMap,
+                                        Integer[] frameVariableCounterId) throws CompilationException {
         try {
             // Dedent the code: strip common leading whitespace so code extracted
             // from threadStart { ... } blocks doesn't cause IndentationError
@@ -192,24 +216,15 @@ public class CodeConverter {
             PythonAstInvoker invoker = new PythonAstInvoker();
             String astJson = invoker.invokeAstJson(pythonCode);
 
-//            // Debug: Print AST JSON from Python
-//            System.out.println("========== AST JSON FROM PYTHON ==========");
-//            System.out.println(astJson);
-//            System.out.println("==========================================");
-
             // Step 2: Parse AST JSON into Java AST objects
             in.ramanujan.translation.codeConverter.ast.JsonAstParser parser = new in.ramanujan.translation.codeConverter.ast.JsonAstParser();
             ModuleNode module = parser.parseJson(astJson);
             
-//            // Debug: Print parsed Module toString
-//            System.out.println("========== PARSED MODULE (toString) ==========");
-//            System.out.println(module.toString());
-//            System.out.println("===============================================");
-            
             // Step 3: Convert AST to RuleEngineInput
             System.out.println("========== STARTING AST TO RULE ENGINE CONVERSION ==========");
+            Map<String, String> activeFiles = files != null ? files : (this.filesMap != null ? this.filesMap : Collections.emptyMap());
             PythonAstToRuleEngineInputConverter converter = new PythonAstToRuleEngineInputConverter(
-                this, ruleEngineInput, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId
+                this, ruleEngineInput, debugLevelCodeCreator, functionFrameVariableMap, frameVariableCounterId, activeFiles
             );
 
             variableScope.add("");

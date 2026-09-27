@@ -54,7 +54,16 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
             final String toBeDebuggedStr = routingContext.queryParams().get("debug");
             final Boolean toBeDebugged = (toBeDebuggedStr != null && "true".equals(toBeDebuggedStr)) ? true : false;
             String code = codeRunRequest.getCode();
-            compileErrorChecker.checkCompilationEntryPoint(code);
+            if ((code == null || code.trim().isEmpty()) && codeRunRequest.getAllFiles() != null && !codeRunRequest.getAllFiles().isEmpty()) {
+                code = resolveEntryCode(codeRunRequest, routingContext);
+                codeRunRequest.setCode(code);
+            }
+            if (code == null || code.trim().isEmpty()) {
+                throw new CompilationException(null, null, "No code or entry point provided to execute");
+            }
+            if (!isPythonCode(code)) {
+                compileErrorChecker.checkCompilationEntryPoint(code);
+            }
             runCode(routingContext, codeRunRequest, toBeDebugged, currentRequestCount);
         } catch (CompilationException compilationException) {
             apiReactionOnCompialtionException(routingContext, compilationException);
@@ -81,7 +90,7 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
         Map<String, Variable> variableMap = new HashMap<>();
         Map<String, Array> arrayMap = new HashMap<>();
         final String code = isPythonCode(codeRunRequest.getCode()) ? codeRunRequest.getCode() : codeRunRequest.getCode().replaceAll("\\n","").replaceAll("\\t","");
-        translateService.translate(code, codeRunRequest.getCsvInformationList(), variableMap, arrayMap)
+        translateService.translate(code, codeRunRequest.getAllFiles(), codeRunRequest.getCsvInformationList(), variableMap, arrayMap)
                 .setHandler(translateHandler -> {
            if(translateHandler.succeeded()) {
                TranslateResponse translateResponse = translateHandler.result();
@@ -138,5 +147,80 @@ public class TranslateAndRunHandler implements Handler<RoutingContext> {
             }
         }
         return dagElementMap.get(translateResponse.getFirstDagElement().getId());
+    }
+
+    public static String resolveEntryCode(CodeRunRequest codeRunRequest, RoutingContext routingContext) throws CompilationException {
+        Map<String, String> allFiles = codeRunRequest.getAllFiles();
+        if (allFiles == null || allFiles.isEmpty()) {
+            return null;
+        }
+
+        String entryPoint = codeRunRequest.getEntryPoint();
+        if (entryPoint == null && routingContext != null && routingContext.queryParams() != null) {
+            entryPoint = routingContext.queryParams().get("entryPoint");
+            if (entryPoint == null) {
+                entryPoint = routingContext.queryParams().get("entrypoint");
+            }
+            if (entryPoint == null) {
+                entryPoint = routingContext.queryParams().get("main");
+            }
+        }
+
+        if (entryPoint != null && !entryPoint.trim().isEmpty()) {
+            entryPoint = entryPoint.trim();
+            String code = findFileContent(allFiles, entryPoint);
+            if (code != null) {
+                return code;
+            }
+            throw new CompilationException(null, null,
+                    "Specified entrypoint '" + entryPoint + "' not found in files. Available files: " + allFiles.keySet());
+        }
+
+        // Try standard conventions in order
+        String[] standardEntrypoints = new String[]{"main.py", "app.py", "run.py", "__main__.py"};
+        for (String candidate : standardEntrypoints) {
+            String code = findFileContent(allFiles, candidate);
+            if (code != null) {
+                return code;
+            }
+        }
+
+        // Single python file fallback
+        List<String> pyKeys = new ArrayList<>();
+        for (String k : allFiles.keySet()) {
+            if (k.endsWith(".py")) {
+                pyKeys.add(k);
+            }
+        }
+        if (pyKeys.size() == 1) {
+            return allFiles.get(pyKeys.get(0));
+        }
+
+        throw new CompilationException(null, null,
+                "No entrypoint found in files. Please specify 'code', 'entryPoint' (e.g. 'app.py', 'run.py'), or include main.py/app.py/run.py. Available files: " + allFiles.keySet());
+    }
+
+    private static String findFileContent(Map<String, String> files, String target) {
+        if (files.containsKey(target)) {
+            return files.get(target);
+        }
+        if (files.containsKey("./" + target)) {
+            return files.get("./" + target);
+        }
+        String cleanTarget = target.startsWith("./") ? target.substring(2) : target;
+        if (files.containsKey(cleanTarget)) {
+            return files.get(cleanTarget);
+        }
+        String targetNormalized = cleanTarget.replace('\\', '/');
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            String key = entry.getKey().replace('\\', '/');
+            while (key.startsWith("./")) {
+                key = key.substring(2);
+            }
+            if (key.equals(targetNormalized) || key.endsWith("/" + targetNormalized)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 }

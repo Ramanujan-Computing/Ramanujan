@@ -348,7 +348,7 @@ public class ExecuteInline implements Operation {
                     new HashMap<>(), new HashMap<>());
             List<DagElement> dagElementList = new ArrayList<>();
             Map<String, String> dagElementAndCodeMap = new HashMap<>();
-            DagElement firstDagElement = translateUtil.populateAllDagElements(firstCodeSnippetElement, csvInformationList,
+            DagElement firstDagElement = translateUtil.populateAllDagElements(firstCodeSnippetElement, codeRunRequest.getAllFiles(), csvInformationList,
                     functionCallsRuleEngineInput, variableMap, arrayMap, dagElementList, dagElementAndCodeMap, linesForFunctions);
             translateResponse.setFirstDagElement(firstDagElement);
             translateResponse.setDagElementList(dagElementList);

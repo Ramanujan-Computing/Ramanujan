@@ -88,7 +88,15 @@ public class PackageBuildHelper {
             if(mainClass.equalsIgnoreCase(file.getName())) {
                 continue;
             }
-            packageRunInput.getHeaderCodes().put(file.getName(), readFile(packageDirectory + file.getName()));
+            if (packageRunInput.getHeaderCodes() == null) {
+                packageRunInput.setHeaderCodes(new java.util.HashMap<>());
+            }
+            String content = readFile(packageDirectory + file.getName());
+            packageRunInput.getHeaderCodes().put(file.getName(), content);
+            if (packageRunInput.getFiles() == null) {
+                packageRunInput.setFiles(new java.util.HashMap<>());
+            }
+            packageRunInput.getFiles().put(file.getName(), content);
         }
     }
 

@@ -301,14 +301,50 @@ public class ExecutorImpl implements Operation {
     }
 
     public static CodeRunRequest createJson(List<String> args) throws JsonProcessingException {
-        String codeString = PackageBuildHelper.readFile(args.get(0));
+        String mainPath = args.get(0);
+        String codeString = PackageBuildHelper.readFile(mainPath);
         CodeRunRequest codeRunRequest = new CodeRunRequest();
         codeRunRequest.setCode(codeString);
+        codeRunRequest.setEntryPoint(mainPath);
         codeRunRequest.setCsvInformationList(new ArrayList<>());
+        if (codeRunRequest.getFiles() == null) {
+            codeRunRequest.setFiles(new java.util.LinkedHashMap<>());
+        }
+        String normMainPath = mainPath.replace('\\', '/');
+        codeRunRequest.getFiles().put(mainPath, codeString);
+        codeRunRequest.getFiles().put(normMainPath, codeString);
+        if (normMainPath.startsWith("./")) {
+            codeRunRequest.getFiles().put(normMainPath.substring(2), codeString);
+        }
+        java.io.File mainFile = new java.io.File(mainPath);
+        codeRunRequest.getFiles().put(mainFile.getName(), codeString);
+
+        java.util.Set<String> conflictingBasenames = new java.util.HashSet<>();
         if(args.size() > 0) {
             for(int iter = 1; iter < args.size(); iter++) {
                 long csvReadStart = System.currentTimeMillis();
                 String csvPath = args.get(iter);
+                if (csvPath.endsWith(".py")) {
+                    String pyData = PackageBuildHelper.readFileWithNewLine(csvPath);
+                    String normPath = csvPath.replace('\\', '/');
+                    codeRunRequest.getFiles().put(csvPath, pyData);
+                    codeRunRequest.getFiles().put(normPath, pyData);
+                    if (normPath.startsWith("./")) {
+                        codeRunRequest.getFiles().put(normPath.substring(2), pyData);
+                    }
+                    java.io.File pyFile = new java.io.File(csvPath);
+                    String baseName = pyFile.getName();
+                    if (conflictingBasenames.contains(baseName)) {
+                        codeRunRequest.getFiles().remove(baseName);
+                    } else if (codeRunRequest.getFiles().containsKey(baseName)) {
+                        // Basename was already registered from a different path
+                        conflictingBasenames.add(baseName);
+                        codeRunRequest.getFiles().remove(baseName);
+                    } else {
+                        codeRunRequest.getFiles().put(baseName, pyData);
+                    }
+                    continue;
+                }
                 java.io.File csvFile = new java.io.File(csvPath);
                 System.out.println("[createJson] CSV " + iter + "/" + (args.size()-1) + ": " + csvPath);
                 System.out.flush();
