@@ -13,10 +13,14 @@ import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
 import org.junit.Test;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 public class PythonMultiFileImportTest {
 
@@ -346,5 +350,53 @@ public class PythonMultiFileImportTest {
         assertNotNull("Variable 'res_b' should exist", resBVar);
         assertEquals(15.0, ((Number) resAVar.getValue()).doubleValue(), 0.001);
         assertEquals(50.0, ((Number) resBVar.getValue()).doubleValue(), 0.001);
+    }
+
+    @Test
+    public void testComplexSimulationWithImports() throws Exception {
+        Map<String, String> files = new HashMap<>();
+        File simDir = new File("../../ramanujan-test-code/python-import");
+        if (!simDir.exists()) {
+            simDir = new File("ramanujan-test-code/python-import");
+        }
+        if (!simDir.exists()) {
+            simDir = new File("../../ramanujan-test-codes/python-import");
+        }
+        if (!simDir.exists()) {
+            simDir = new File("ramanujan-test-codes/python-import");
+        }
+        assertTrue("Simulation directory should exist", simDir.exists());
+        for (File file : simDir.listFiles()) {
+            if (file.getName().endsWith(".py") && !"run_simulation.py".equals(file.getName())) {
+                String content = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+                files.put(file.getName(), content);
+            }
+        }
+        String mainCode = files.get("main.py");
+        assertNotNull("main.py must be present", mainCode);
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretAndExecute(mainCode, files, variableMap, arrayMap);
+
+        Variable doneVar = findVariableByName(variableMap, "simulation_done");
+        assertNotNull("Variable 'simulation_done' should exist", doneVar);
+        assertEquals(1.0, ((Number) doneVar.getValue()).doubleValue(), 0.001);
+
+        Variable driftVar = findVariableByName(variableMap, "energy_drift");
+        assertNotNull("Variable 'energy_drift' should exist", driftVar);
+        assertTrue("Energy drift should be small: " + driftVar.getValue(), ((Number) driftVar.getValue()).doubleValue() < 0.05);
+
+        Variable finalEVar = findVariableByName(variableMap, "final_total_energy");
+        assertNotNull("Variable 'final_total_energy' should exist", finalEVar);
+        assertEquals(-51.23, ((Number) finalEVar.getValue()).doubleValue(), 0.1);
+
+        Variable finalPxVar = findVariableByName(variableMap, "final_px");
+        assertNotNull("Variable 'final_px' should exist", finalPxVar);
+        assertEquals(-9.65, ((Number) finalPxVar.getValue()).doubleValue(), 0.01);
+
+        Variable finalPyVar = findVariableByName(variableMap, "final_py");
+        assertNotNull("Variable 'final_py' should exist", finalPyVar);
+        assertEquals(6.721, ((Number) finalPyVar.getValue()).doubleValue(), 0.01);
     }
 }
