@@ -16,6 +16,9 @@ public class PackageRunInput extends CodeRunRequest{
         if (mainCode != null && isPython(mainCode)) {
             return mainCode;
         }
+        if (mainCode == null && super.getCode() != null) {
+            return super.getCode();
+        }
         String code = "";
         if(getHeaderCodes() != null) {
             for(String fileName : headerCodes.keySet()) {

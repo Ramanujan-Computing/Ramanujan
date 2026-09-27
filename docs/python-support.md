@@ -203,6 +203,13 @@ Ramanujan supports splitting code across multiple Python files and importing fun
 - **Intra-Module Calls**: Functions within an imported module can invoke other helper functions defined in the same module.
 - **Transitive Imports**: Modules can import other modules (e.g. `main.py` &rarr; `service.py` &rarr; `base_ops.py`).
 - **Namespace Isolation**: Functions sharing the same name in different modules do not collide.
+- **Package-Style Qualified Imports & Disambiguation**: Projects can organize modules into directory packages (e.g. `subsystems/thermal/controller.py` and `subsystems/power/controller.py`). Qualified imports (`from subsystems.thermal.controller import ...` and `from subsystems.power.controller import ...`) deterministically resolve to their respective package files without collisions from duplicate basenames. Bare ambiguous imports (`import controller`) are rejected with clear error messages.
+- **Submodule Imports via Packages**:
+  ```python
+  from subsystems.thermal import controller
+  cmd = controller.compute_control(...)
+  ```
+- **Flexible Entrypoint Resolution**: Projects are not restricted to `main.py`. Any valid entrypoint file (`app.py`, `run.py`, or custom path passed via `entryPoint`/`args[0]`) is automatically detected and resolved.
 
 #### Running Multi-File Programs:
 

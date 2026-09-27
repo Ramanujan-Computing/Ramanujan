@@ -3639,26 +3639,87 @@ public class PythonAstToRuleEngineInputConverter {
 
     private void convertImportFrom(ImportFromNode importFromNode) throws CompilationException {
         String modName = importFromNode.getModule();
-        if (modName == null) {
+        Integer level = importFromNode.getLevel();
+        if (modName == null && (level == null || level == 0)) {
             throw new CompilationException(null, null, "Relative imports without module name not supported");
         }
-        loadAndConvertModule(modName);
-        if (importFromNode.getNames() != null) {
-            for (AliasNode alias : importFromNode.getNames()) {
-                if ("*".equals(alias.getName())) {
-                    Set<String> funcs = moduleDefinedFunctions.get(modName);
-                    if (funcs != null) {
-                        for (String func : funcs) {
-                            importedSymbols.put(func, modName + "." + func);
-                        }
-                    }
-                } else {
-                    String symbol = alias.getName();
-                    String asName = alias.getAsname() != null ? alias.getAsname() : symbol;
-                    importedSymbols.put(asName, modName + "." + symbol);
-                }
+        if (level != null && level > 0) {
+            String pkgPrefix = getPackagePrefix(this.currentModuleName, level);
+            if (modName != null) {
+                modName = (pkgPrefix != null && !pkgPrefix.isEmpty()) ? pkgPrefix + "." + modName : modName;
+            } else {
+                modName = pkgPrefix;
             }
         }
+
+        String modCode = findModuleCode(modName);
+        if (modCode != null) {
+            loadAndConvertModule(modName);
+            if (importFromNode.getNames() != null) {
+                for (AliasNode alias : importFromNode.getNames()) {
+                    if ("*".equals(alias.getName())) {
+                        Set<String> funcs = moduleDefinedFunctions.get(modName);
+                        if (funcs != null) {
+                            for (String func : funcs) {
+                                importedSymbols.put(func, modName + "." + func);
+                            }
+                        }
+                    } else {
+                        String symbol = alias.getName();
+                        String asName = alias.getAsname() != null ? alias.getAsname() : symbol;
+                        Set<String> funcs = moduleDefinedFunctions.get(modName);
+                        if (funcs != null && funcs.contains(symbol)) {
+                            importedSymbols.put(asName, modName + "." + symbol);
+                        } else {
+                            // Check if symbol is actually a submodule in modName (e.g. from pkg import foo)
+                            String subModName = (modName != null && !modName.isEmpty()) ? modName + "." + symbol : symbol;
+                            if (findModuleCode(subModName) != null) {
+                                loadAndConvertModule(subModName);
+                                importedModules.put(asName, subModName);
+                            } else {
+                                importedSymbols.put(asName, modName + "." + symbol);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // modName might be a package directory without __init__.py or modName.py
+            // e.g. `from pkg import foo` where `pkg/foo.py` exists
+            if (importFromNode.getNames() != null && !importFromNode.getNames().isEmpty()) {
+                for (AliasNode alias : importFromNode.getNames()) {
+                    String symbol = alias.getName();
+                    String asName = alias.getAsname() != null ? alias.getAsname() : symbol;
+                    String subModName = (modName != null && !modName.isEmpty()) ? modName + "." + symbol : symbol;
+                    if (findModuleCode(subModName) != null) {
+                        loadAndConvertModule(subModName);
+                        importedModules.put(asName, subModName);
+                    } else {
+                        throw new CompilationException(null, null, "Module not found: " + (modName != null ? modName : symbol));
+                    }
+                }
+            } else {
+                throw new CompilationException(null, null, "Module not found: " + modName);
+            }
+        }
+    }
+
+    private String getPackagePrefix(String currentMod, int level) {
+        if (currentMod == null || currentMod.isEmpty()) {
+            return "";
+        }
+        String normalized = currentMod.replace('/', '.');
+        String[] parts = normalized.split("\\.");
+        int keep = parts.length - level;
+        if (keep <= 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < keep; i++) {
+            if (i > 0) sb.append(".");
+            sb.append(parts[i]);
+        }
+        return sb.toString();
     }
 
     private void emitImportDebug(ImportNode importNode) {
@@ -3753,35 +3814,128 @@ public class PythonAstToRuleEngineInputConverter {
         }
     }
 
-    private String findModuleCode(String moduleName) {
-        if (files == null || files.isEmpty()) {
+    private String findModuleCode(String moduleName) throws CompilationException {
+        if (files == null || files.isEmpty() || moduleName == null) {
             return null;
         }
-        // Direct match
+
+        // 1. Direct match with exact key
         if (files.containsKey(moduleName)) {
             return files.get(moduleName);
         }
         if (files.containsKey(moduleName + ".py")) {
             return files.get(moduleName + ".py");
         }
-        // Dotted module name to path: foo.bar -> foo/bar.py
-        String pathVersion = moduleName.replace('.', '/');
-        if (files.containsKey(pathVersion)) {
-            return files.get(pathVersion);
-        }
-        if (files.containsKey(pathVersion + ".py")) {
-            return files.get(pathVersion + ".py");
-        }
-        // Scan by normalized filename / basename
-        String targetBase = moduleName.contains(".") ? moduleName.substring(moduleName.lastIndexOf('.') + 1) : moduleName;
-        for (Map.Entry<String, String> entry : files.entrySet()) {
-            String key = entry.getKey().replace('\\', '/');
-            String fileName = key.contains("/") ? key.substring(key.lastIndexOf('/') + 1) : key;
-            if (fileName.equals(targetBase) || fileName.equals(targetBase + ".py") ||
-                fileName.equals(moduleName) || fileName.equals(moduleName + ".py")) {
-                return entry.getValue();
+
+        // 2. Relative to current package if currentModuleName is inside a package
+        if (currentModuleName != null && (currentModuleName.contains(".") || currentModuleName.contains("/"))) {
+            String currentPkg = currentModuleName.contains(".")
+                    ? currentModuleName.substring(0, currentModuleName.lastIndexOf('.'))
+                    : currentModuleName.substring(0, currentModuleName.lastIndexOf('/'));
+            String candidateInPkg = currentPkg + "." + moduleName;
+            String pkgResult = findModuleCodeDirect(candidateInPkg);
+            if (pkgResult != null) {
+                return pkgResult;
             }
         }
+
+        return findModuleCodeDirect(moduleName);
+    }
+
+    private String findModuleCodeDirect(String moduleName) throws CompilationException {
+        if (files == null || files.isEmpty() || moduleName == null) {
+            return null;
+        }
+
+        String pathVersion = moduleName.replace('.', '/');
+        while (pathVersion.startsWith("/")) {
+            pathVersion = pathVersion.substring(1);
+        }
+
+        List<String> targetCandidates = new ArrayList<>();
+        targetCandidates.add(pathVersion + ".py");
+        targetCandidates.add(pathVersion + "/__init__.py");
+        targetCandidates.add(pathVersion);
+        targetCandidates.add(moduleName + ".py");
+        targetCandidates.add(moduleName);
+
+        // Phase 1: Exact matches against target candidates
+        for (String candidate : targetCandidates) {
+            if (files.containsKey(candidate)) {
+                return files.get(candidate);
+            }
+            if (files.containsKey("./" + candidate)) {
+                return files.get("./" + candidate);
+            }
+        }
+
+        // Phase 2: Normalized key exact match
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            String normKey = normalizePath(entry.getKey());
+            for (String candidate : targetCandidates) {
+                if (normKey.equals(candidate)) {
+                    return entry.getValue();
+                }
+            }
+        }
+
+        // Phase 3: Suffix match for package/directory-qualified candidates
+        // e.g. candidate "pkg/foo.py" matching key "my_project/pkg/foo.py"
+        if (pathVersion.contains("/")) {
+            for (String candidate : targetCandidates) {
+                if (!candidate.contains("/")) continue;
+                Map<String, String> suffixMatchesByNormPath = new LinkedHashMap<>();
+                for (Map.Entry<String, String> entry : files.entrySet()) {
+                    String normKey = normalizePath(entry.getKey());
+                    if (normKey.endsWith("/" + candidate) || normKey.equals(candidate)) {
+                        suffixMatchesByNormPath.put(normKey, entry.getValue());
+                    }
+                }
+                if (suffixMatchesByNormPath.size() == 1) {
+                    return suffixMatchesByNormPath.values().iterator().next();
+                } else if (suffixMatchesByNormPath.size() > 1) {
+                    List<String> sortedKeys = new ArrayList<>(suffixMatchesByNormPath.keySet());
+                    sortedKeys.sort(Comparator.comparingInt(String::length));
+                    String shortest = sortedKeys.get(0);
+                    String secondShortest = sortedKeys.get(1);
+                    if (shortest.length() < secondShortest.length()) {
+                        return suffixMatchesByNormPath.get(shortest);
+                    }
+                    throw new CompilationException(null, null, "Ambiguous module '" + moduleName + "': matched multiple files " + sortedKeys);
+                }
+            }
+        }
+
+        // Phase 4: Basename fallback for bare module names (e.g. "math_utils" or "foo")
+        // ONLY if moduleName is a bare name without dots/slashes
+        if (!moduleName.contains(".") && !moduleName.contains("/")) {
+            String targetBase = moduleName + ".py";
+            Map<String, String> basenameMatchesByNormPath = new LinkedHashMap<>();
+            for (Map.Entry<String, String> entry : files.entrySet()) {
+                String normKey = normalizePath(entry.getKey());
+                String base = normKey.contains("/") ? normKey.substring(normKey.lastIndexOf('/') + 1) : normKey;
+                if (base.equals(targetBase) || base.equals(moduleName)) {
+                    basenameMatchesByNormPath.put(normKey, entry.getValue());
+                }
+            }
+            if (basenameMatchesByNormPath.size() == 1) {
+                return basenameMatchesByNormPath.values().iterator().next();
+            } else if (basenameMatchesByNormPath.size() > 1) {
+                throw new CompilationException(null, null,
+                        "Ambiguous module '" + moduleName + "': multiple matching files found: " + basenameMatchesByNormPath.keySet()
+                                + ". Please use a package-qualified import (e.g. 'import pkg." + moduleName + "').");
+            }
+        }
+
         return null;
+    }
+
+    private static String normalizePath(String path) {
+        if (path == null) return "";
+        String norm = path.replace('\\', '/');
+        while (norm.startsWith("./")) {
+            norm = norm.substring(2);
+        }
+        return norm;
     }
 }

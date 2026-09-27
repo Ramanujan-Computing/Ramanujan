@@ -29,12 +29,12 @@ public class PackageRunner extends TranslateAndRunHandler {
             final String toBeDebuggedStr = routingContext.queryParams().get("debug");
             final Boolean toBeDebugged = (toBeDebuggedStr != null && "true".equals(toBeDebuggedStr)) ? true : false;
             String code = packageRunnerInput.getCode();
-            if (code == null && packageRunnerInput.getAllFiles() != null) {
-                code = packageRunnerInput.getAllFiles().get("main.py");
-                if (code == null) {
-                    code = packageRunnerInput.getAllFiles().get("./main.py");
-                }
+            if ((code == null || code.trim().isEmpty()) && packageRunnerInput.getAllFiles() != null && !packageRunnerInput.getAllFiles().isEmpty()) {
+                code = resolveEntryCode(packageRunnerInput, routingContext);
                 packageRunnerInput.setCode(code);
+            }
+            if (code == null || code.trim().isEmpty()) {
+                throw new CompilationException(null, null, "No code or entry point provided to execute");
             }
             if (!isPythonCode(code)) {
                 packageCompileErrorChecker.checkPackageForCompilation(packageRunnerInput);

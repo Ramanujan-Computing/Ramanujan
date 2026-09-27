@@ -9,6 +9,7 @@ import in.ramanujan.rule.engine.NativeProcessor;
 import in.ramanujan.rule.engine.RuleEngineInputProtoSerializer;
 import in.ramanujan.translation.codeConverter.CodeConverter;
 import in.ramanujan.translation.codeConverter.CodeConverterLogicFactory;
+import in.ramanujan.translation.codeConverter.exception.CompilationException;
 import in.ramanujan.translation.codeConverter.grammar.debugLevelCodeCreatorImpl.ActualDebugCodeCreator;
 import in.ramanujan.translation.codeConverter.utils.StringUtils;
 import org.junit.Test;
@@ -346,5 +347,87 @@ public class PythonMultiFileImportTest {
         assertNotNull("Variable 'res_b' should exist", resBVar);
         assertEquals(15.0, ((Number) resAVar.getValue()).doubleValue(), 0.001);
         assertEquals(50.0, ((Number) resBVar.getValue()).doubleValue(), 0.001);
+    }
+
+    @Test
+    public void testPackageQualifiedImportsWithDuplicateBasenames() throws Exception {
+        Map<String, String> files = new LinkedHashMap<>();
+        // Invert insertion order or use duplicate basenames 'foo.py'
+        files.put("pkg/foo.py",
+                "def compute(val):\n" +
+                "    ans = val + 100\n" +
+                "    return ans\n"
+        );
+        files.put("lib/foo.py",
+                "def compute(val):\n" +
+                "    ans = val * 2\n" +
+                "    return ans\n"
+        );
+
+        String mainCode =
+                "from pkg.foo import compute as compute_pkg\n" +
+                "from lib.foo import compute as compute_lib\n" +
+                "res_pkg = compute_pkg(50)\n" +
+                "res_lib = compute_lib(50)\n" +
+                "total = res_pkg + res_lib\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretAndExecute(mainCode, files, variableMap, arrayMap);
+
+        Variable resPkgVar = findVariableByName(variableMap, "res_pkg");
+        Variable resLibVar = findVariableByName(variableMap, "res_lib");
+        Variable totalVar = findVariableByName(variableMap, "total");
+
+        assertNotNull(resPkgVar);
+        assertNotNull(resLibVar);
+        assertNotNull(totalVar);
+
+        assertEquals(150.0, ((Number) resPkgVar.getValue()).doubleValue(), 0.001);
+        assertEquals(100.0, ((Number) resLibVar.getValue()).doubleValue(), 0.001);
+        assertEquals(250.0, ((Number) totalVar.getValue()).doubleValue(), 0.001);
+    }
+
+    @Test
+    public void testFromPackageImportSubmodule() throws Exception {
+        Map<String, String> files = new HashMap<>();
+        files.put("services/calculator.py",
+                "def add(a, b):\n" +
+                "    res = a + b\n" +
+                "    return res\n"
+        );
+
+        String mainCode =
+                "from services import calculator\n" +
+                "answer = calculator.add(17, 25)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretAndExecute(mainCode, files, variableMap, arrayMap);
+
+        Variable ansVar = findVariableByName(variableMap, "answer");
+        assertNotNull(ansVar);
+        assertEquals(42.0, ((Number) ansVar.getValue()).doubleValue(), 0.001);
+    }
+
+    @Test(expected = CompilationException.class)
+    public void testAmbiguousBareImportThrows() throws Exception {
+        Map<String, String> files = new HashMap<>();
+        files.put("pkg/foo.py",
+                "def compute(val):\n" +
+                "    return val + 10\n"
+        );
+        files.put("lib/foo.py",
+                "def compute(val):\n" +
+                "    return val * 10\n"
+        );
+
+        String mainCode =
+                "import foo\n" +
+                "val = foo.compute(5)\n";
+
+        Map<String, Variable> variableMap = new HashMap<>();
+        Map<String, Array> arrayMap = new HashMap<>();
+        interpretAndExecute(mainCode, files, variableMap, arrayMap);
     }
 }
