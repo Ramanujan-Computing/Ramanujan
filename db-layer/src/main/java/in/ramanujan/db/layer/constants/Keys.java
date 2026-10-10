@@ -23,4 +23,5 @@ public class Keys {
     public final static String DE_ID_VARIABLE_ID = "dagElementId_variableId";
     public static final String ASYNC_ID_ARRAY_ID_INDEX = "asyncId_arrayId_index";
     public static final String DE_ID_ARRAY_ID_INDEX = "dagElementId_arrayId_index";
+    public static final String STATUS_LAST_PING = "status_lastPing";
 }

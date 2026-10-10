@@ -86,7 +86,8 @@ public class ExecuteInlineWorker implements Operation {
             try {
                 // Long-poll: the server blocks up to 900 ms waiting for work
                 // before returning null, so no client-side sleep is needed.
-                Map<String, Object> pingResp = postJson(serverUrl + "/pings/open?uuid=" + hostId, "");
+                String pingUrl = buildPingUrl(serverUrl, hostId);
+                Map<String, Object> pingResp = postJson(pingUrl, "");
                 if (pingResp == null) continue;
                 if (!"SUCCESS".equalsIgnoreCase((String) pingResp.get("status"))) continue;
 
@@ -248,5 +249,34 @@ public class ExecuteInlineWorker implements Operation {
         is.close();
 
         return MAPPER.readValue(baos.toByteArray(), Map.class);
+    }
+
+    /**
+     * Constructs the worker check-in URL appending dynamic resource telemetry query parameters
+     * (available CPU threads, free RAM, capability rank, GPU capability, device type).
+     *
+     * @param serverUrl base URL of the homelab server
+     * @param hostId    unique identifier of this worker
+     * @return full open ping URL with dynamic telemetry parameters
+     */
+    private String buildPingUrl(String serverUrl, String hostId) {
+
+        int threads = Runtime.getRuntime().availableProcessors();
+        long maxMem = Runtime.getRuntime().maxMemory();
+        long totalMem = Runtime.getRuntime().totalMemory();
+        long freeMem = Runtime.getRuntime().freeMemory();
+        long availableRamMb = Math.max(128L, (maxMem - (totalMem - freeMem)) / (1024L * 1024L));
+        long totalRamMb = maxMem / (1024L * 1024L);
+        boolean hasGpu = true; // Desktop worker running NativeProcessor supports GPU/OpenCL bridge
+        double capabilityRank = Math.min(10.0, Math.max(1.0, (threads * 0.5) + (hasGpu ? 2.5 : 0.0) + (availableRamMb / 2048.0)));
+
+        return serverUrl + "/pings/open?uuid=" + hostId
+                + "&threads=" + threads
+                + "&ramMb=" + availableRamMb
+                + "&totalThreads=" + threads
+                + "&totalRamMb=" + totalRamMb
+                + "&rank=" + String.format(Locale.US, "%.1f", capabilityRank)
+                + "&gpu=" + hasGpu
+                + "&deviceType=DESKTOP";
     }
 }
