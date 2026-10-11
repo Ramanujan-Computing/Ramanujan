@@ -426,4 +426,34 @@ public class DagElementSqlDbImpl implements DagElementDao {
         }
         return future;
     }
+
+    @Override
+    public Future<List<String>> getParentIds(String dagElementId) {
+        Future<List<String>> future = Future.future();
+        try {
+            DagElementRelationShip dagElementRelationShip = new DagElementRelationShip();
+            dagElementRelationShip.setNextDagElementId(dagElementId);
+
+            queryExecutor.execute(dagElementRelationShip, Keys.NEXT_DAG_ELEMENT_ID, QueryType.SELECT).setHandler(handler -> {
+                if(handler.succeeded()) {
+                    List<Object> list = handler.result();
+                    List<String> parentIds = new ArrayList<>();
+                    if (list != null) {
+                        for(Object listObj : list) {
+                            DagElementRelationShip rel = (DagElementRelationShip) listObj;
+                            if (rel.getDagElementId() != null) {
+                                parentIds.add(rel.getDagElementId());
+                            }
+                        }
+                    }
+                    future.complete(parentIds);
+                } else {
+                    future.fail(handler.cause());
+                }
+            });
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
 }

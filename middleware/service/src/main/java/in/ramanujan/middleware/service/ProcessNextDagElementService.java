@@ -48,6 +48,11 @@ public class ProcessNextDagElementService {
     @Autowired
     private OrchestratorCallLockerDao orchestratorCallLockerDao;
 
+    @Autowired
+    private StorageDao storageDao;
+
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
     private Logger logger = LoggerFactory.getLogger(ProcessNextDagElementService.class);
 
     AtomicInteger countConcurrentRequest = new AtomicInteger(0);
@@ -186,7 +191,12 @@ public class ProcessNextDagElementService {
                         future.fail(updateHandler.cause());
                         return;
                     }
-                    future.complete();
+                    storageDao.cleanupAsyncId(asyncId).setHandler(cleanupHandler -> {
+                        if (cleanupHandler.failed()) {
+                            logger.warn("Cleanup storage for asyncId " + asyncId + " warning: " + cleanupHandler.cause().getMessage());
+                        }
+                        future.complete();
+                    });
                 });
             } else {
                 //dont' do anything
@@ -199,6 +209,10 @@ public class ProcessNextDagElementService {
     private Future<Void> refreshVariables(String asyncId, String dagElementId, Map<String, Object> result) {
         Future<Void> future = Future.future();
         List<Future> updateVariableFutures = new ArrayList<>();
+
+        in.ramanujan.middleware.base.pojo.DagVertexOutput vertexOutput =
+                new in.ramanujan.middleware.base.pojo.DagVertexOutput(asyncId, dagElementId);
+
         // Collect variables for batch update
         List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variablesToUpdate = new ArrayList<>();
         for(String key : result.keySet()) {
@@ -209,6 +223,7 @@ public class ProcessNextDagElementService {
                         continue;
                     }
                     Map<String, Object> arrayIndexMap = arrayMap.get(arrayId);
+                    vertexOutput.getArrayMap().put(arrayId, arrayIndexMap);
                     // Use batch update for all indexes of this arrayId. Pass empty string for arrayName (or replace if you have the name)
                     updateVariableFutures.add(variableValueDao.storeArrayValueBatch(asyncId, arrayId, "", arrayIndexMap));
                 }
@@ -216,6 +231,7 @@ public class ProcessNextDagElementService {
                 if(key.contains("func")) {
                     continue;
                 }
+                vertexOutput.getVariableMap().put(key, result.get(key));
                 // Create a Variable object for batch update
                 in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable = new in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable();
                 variable.setId(key);
@@ -226,6 +242,16 @@ public class ProcessNextDagElementService {
         if (!variablesToUpdate.isEmpty()) {
             updateVariableFutures.add(variableValueDao.updateVariablesBatch(asyncId, variablesToUpdate));
         }
+
+        try {
+            String outputJson = objectMapper.writeValueAsString(vertexOutput);
+            updateVariableFutures.add(storageDao.storeDagVertexOutput(asyncId, dagElementId, outputJson));
+        } catch (Exception e) {
+            logger.error("Failed to serialize DagVertexOutput for " + dagElementId, e);
+            future.fail(e);
+            return future;
+        }
+
         CompositeFuture.all(updateVariableFutures).setHandler(updateVariableFuturesHandler -> {
             if(updateVariableFuturesHandler.succeeded()) {
                 future.complete();

@@ -15,4 +15,5 @@ public class ConfigKey {
     public static final String MIDDLEWARE_GCS_CREDENTIALS_PATH = "middleware.gcs.credentials.path";
     // Path to the MetricPusher credentials file for middleware
     public static final String METRIC_PUSHER_CRED_PATH = "middleware.metric.pusher.cred.path";
+    public static final String GCP_PROJECT_ID = "gcp.project.id";
 }

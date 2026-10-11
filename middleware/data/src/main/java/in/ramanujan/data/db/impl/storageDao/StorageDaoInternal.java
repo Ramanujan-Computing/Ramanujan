@@ -12,10 +12,13 @@ public class StorageDaoInternal extends StorageDao {
     @Override
     public void setContext(Context context, StorageType storageType) {
         super.setContext(context, storageType);
-        if(storageType == StorageType.GCP) {
-            storageDaoInternal = new StorageDaoGoogleCloudImpl();
-        } else {
-            storageDaoInternal = new StorageDaoLocalContainerImpl();
+        if (this.getClass().equals(StorageDaoInternal.class)) {
+            if(storageType == StorageType.GCP) {
+                storageDaoInternal = new StorageDaoGoogleCloudImpl();
+            } else {
+                storageDaoInternal = new StorageDaoLocalContainerImpl();
+            }
+            storageDaoInternal.setContext(context, storageType);
         }
     }
 
@@ -27,5 +30,15 @@ public class StorageDaoInternal extends StorageDao {
     @Override
     protected String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception {
         return storageDaoInternal.getObject(objectId, bucketName, currentRetryCount);
+    }
+
+    @Override
+    protected void deleteObject(String objectId, String bucketName, int currentRetryCount) throws Exception {
+        storageDaoInternal.deleteObject(objectId, bucketName, currentRetryCount);
+    }
+
+    @Override
+    protected void deletePrefix(String prefix, String bucketName, int currentRetryCount) throws Exception {
+        storageDaoInternal.deletePrefix(prefix, bucketName, currentRetryCount);
     }
 }

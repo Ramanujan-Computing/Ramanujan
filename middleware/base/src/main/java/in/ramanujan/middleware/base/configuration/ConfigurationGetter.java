@@ -14,10 +14,16 @@ public class ConfigurationGetter {
     }
 
     public static String getString(String key) {
+        if (config == null) {
+            return null;
+        }
         return config.getString(key);
     }
 
     public static Integer getInt(String key) {
+        if (config == null) {
+            return null;
+        }
         return config.getInteger(key);
     }
 
