@@ -39,7 +39,7 @@ public class ExecutorImpl implements Operation {
         OkHttpClient httpClient = new OkHttpClient(builder);
         String json = new ObjectMapper().writeValueAsString(createJson(args));
         RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), json);
-        Request request = new Request.Builder().url("http://127.0.0.1:8888/run?debug=false").post(requestBody).build();
+        Request request = new Request.Builder().url(in.ramanujan.developer.console.pojo.Constants.getServerUrl() + "/run?debug=false").post(requestBody).build();
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             Response response = httpClient.newCall(request).execute();
@@ -51,7 +51,7 @@ public class ExecutorImpl implements Operation {
                 System.out.println(taskId);
                 Diagram diagram = codeRunAsyncResponse.getDiagram();
                 System.out.println(diagram);
-                request = new Request.Builder().url("http://127.0.0.1:8888/status?uuid=" + taskId).build();
+                request = new Request.Builder().url(in.ramanujan.developer.console.pojo.Constants.getServerUrl() + "/status?uuid=" + taskId).build();
                 while(true) {
                     try {
                         Thread.sleep(5000);
@@ -126,11 +126,12 @@ public class ExecutorImpl implements Operation {
         java.util.Scanner scanner = new java.util.Scanner(System.in);
         System.out.println("\n--- Query Console ---");
         System.out.println("Commands: 'var <name>', 'arr <name> <index>', 'dump <name> [file]', 'exit'");
-        while (true) {
+        while (scanner.hasNextLine()) {
             System.out.print("> ");
             String line = scanner.nextLine();
             if (line == null) break;
             line = line.trim();
+            if (line.isEmpty()) continue;
             if (line.equalsIgnoreCase("exit")) break;
             if (line.startsWith("var ")) {
                 String[] parts = line.split(" ", 2);

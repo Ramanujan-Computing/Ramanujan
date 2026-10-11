@@ -70,6 +70,10 @@ public class ProcessNextDagElementService {
 
         logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
         orchestratorAsyncTaskDao.getMapping(asyncId).setHandler(handler -> {
+            if (handler.failed()) {
+                future.fail(handler.cause());
+                return;
+            }
             if (handler.result() == null) {
                 logger.warn("No mapping found for asyncId: " + asyncId);
                 countConcurrentRequest.decrementAndGet();
@@ -91,6 +95,17 @@ public class ProcessNextDagElementService {
                         future.fail("Status API returned null for asyncId: " + asyncId);
                     } else {
                         DeviceExecStatus deviceExecStatus = statusApiHandler.result();
+                        if (deviceExecStatus.getStatus() == Status.PROCESSING) {
+                            kafkaManagerApiCaller.callEventApi(asyncId, dagElementId, toBeDebugged).setHandler(requeueHandler -> {
+                                countConcurrentRequest.decrementAndGet();
+                                if (requeueHandler.succeeded()) {
+                                    future.complete();
+                                } else {
+                                    future.fail(requeueHandler.cause());
+                                }
+                            });
+                            return;
+                        }
                         if(deviceExecStatus.getStatus() == Status.CHECKPOINT) {
                             asyncTaskDao.update(asyncId, new HashMap<String, Object>() {
                                 {
@@ -110,6 +125,10 @@ public class ProcessNextDagElementService {
                                 Long removeStart = new Date().toInstant().toEpochMilli();
                                 dagElementDao.removeDagElementAsyncIdMap(asyncId, dagElementId) //redundant in case of sql.
                                         .setHandler(new MonitoringHandler<>("removeDagElementIdFromAsyncTask", removeDagElementHandler -> {
+                                    if (removeDagElementHandler.failed()) {
+                                        future.fail(removeDagElementHandler.cause());
+                                        return;
+                                    }
                                     //logger.info("remove time: " + getTimeElapsed(removeStart));
                                     Long nextIdFetchStart = new Date().toInstant().toEpochMilli();
                                     dagElementDao.getNextId(dagElementId, false/*so that if nextElem was not able to get started, we dont stop here in the next run.*/).
@@ -121,7 +140,11 @@ public class ProcessNextDagElementService {
                                                     if(noNextDagElementHandler.succeeded()) {
                                                         countConcurrentRequest.decrementAndGet();
                                                         orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId).setHandler(removeHandler -> {
-                                                            future.complete();
+                                                            if (removeHandler.succeeded()) {
+                                                                future.complete();
+                                                            } else {
+                                                                future.fail(removeHandler.cause());
+                                                            }
                                                         });
                                                     } else {
                                                         countConcurrentRequest.decrementAndGet();
@@ -135,7 +158,11 @@ public class ProcessNextDagElementService {
                                                     countConcurrentRequest.decrementAndGet();
                                                     if(nextElementCallHandler.succeeded()) {
                                                         orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId).setHandler(removeHandler -> {
-                                                            future.complete();
+                                                            if (removeHandler.succeeded()) {
+                                                                future.complete();
+                                                            } else {
+                                                                future.fail(removeHandler.cause());
+                                                            }
                                                         });
                                                     } else {
                                                         logger.error("Failed to call next elements", nextElementCallHandler.cause());
@@ -178,6 +205,10 @@ public class ProcessNextDagElementService {
     private Future<Void> handleNoNextDagElement(String asyncId) {
         Future<Void> future = Future.future();
         dagElementDao.isAsyncTaskDone(asyncId).setHandler(isAsyncTaskDoneHandler -> {
+            if (isAsyncTaskDoneHandler.failed()) {
+                future.fail(isAsyncTaskDoneHandler.cause());
+                return;
+            }
             if(isAsyncTaskDoneHandler.result() <= 1) {
                 //terminate the asyncTask
                 asyncTaskDao.update(asyncId, new HashMap<String, Object>() {
@@ -216,6 +247,13 @@ public class ProcessNextDagElementService {
         // Collect variables for batch update
         List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variablesToUpdate = new ArrayList<>();
         for(String key : result.keySet()) {
+            if ("binaryArrayFiles".equals(key)) {
+                if (!(result.get(key) instanceof Map) || !((Map<?, ?>) result.get(key)).isEmpty()) {
+                    future.fail("Binary array results require an out-of-band upload");
+                    return future;
+                }
+                continue;
+            }
             if(Constants.arrayIndex.equalsIgnoreCase(key)) {
                 Map<String, Map<String, Object>> arrayMap = (Map) result.get(key);
                 for(String arrayId : arrayMap.keySet()) {

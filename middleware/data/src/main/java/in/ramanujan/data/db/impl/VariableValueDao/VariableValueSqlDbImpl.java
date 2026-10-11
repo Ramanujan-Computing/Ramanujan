@@ -105,6 +105,10 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     @Override
     public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, String arrayName, Map<String, Object> indexValueMap) {
         Future<Void> future = Future.future();
+        if (indexValueMap.isEmpty()) {
+            future.complete();
+            return future;
+        }
         try {
             List<Object> list = new ArrayList<>();
             for(String index : indexValueMap.keySet()) {

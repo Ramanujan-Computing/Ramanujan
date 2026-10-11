@@ -4,15 +4,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.squareup.okhttp.Request;
 import com.squareup.okhttp.RequestBody;
 import com.squareup.okhttp.Response;
+import com.squareup.okhttp.OkHttpClient;
 import in.ramanujan.devices.common.Credentials.Credentials;
 import in.ramanujan.devices.common.logging.Logger;
 import in.ramanujan.devices.common.logging.LoggerFactory;
 import in.ramanujan.devices.common.pojo.OpenPingApiResponse;
 import in.ramanujan.devices.common.pojo.OpenPingHttpResponse;
 import in.ramanujan.devices.common.pojo.ResultSubmitPayload;
+import in.ramanujan.pojo.storage.ResultUploadTarget;
 
 import java.util.Date;
 import java.util.UUID;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Base64;
+import java.security.MessageDigest;
+import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static in.ramanujan.devices.common.OrchestratorApiCallHelper.*;
 
@@ -41,29 +51,41 @@ public class Orchestrator {
                         Thread.sleep(15_000L);
                         continue;
                     }
-                    logger.info("starting processing " + hostId);
-                    DebugClient debugClient = new DebugClient(openPingApiResponse.getUuid());
-                    CodeExecutor.ProcessorFutureMap processorFutureMap = CodeExecutor.execute(openPingApiResponse, hostId, debugClient);
-
-                    Long prevTime = new Date().toInstant().toEpochMilli();
-                    while(!processorFutureMap.getDone()) {
-                        if((new Date().toInstant().toEpochMilli() - prevTime) > 5000) {
-                            HeartbeatPinger.pingHeartbeat(hostId, openPingApiResponse.getUuid(), credentials);
-                            prevTime = new Date().toInstant().toEpochMilli();
+                    ScheduledExecutorService heartbeats = Executors.newSingleThreadScheduledExecutor(task -> {
+                        Thread thread = new Thread(task, "task-heartbeat");
+                        thread.setDaemon(true);
+                        return thread;
+                    });
+                    try {
+                        heartbeats.scheduleWithFixedDelay(() -> HeartbeatPinger.pingHeartbeat(
+                                hostId, openPingApiResponse.getUuid(), credentials), 0, 5, TimeUnit.SECONDS);
+                        logger.info("starting processing " + hostId);
+                        DebugClient debugClient = new DebugClient(openPingApiResponse.getUuid());
+                        CodeExecutor.ProcessorFutureMap processorFutureMap =
+                                CodeExecutor.execute(openPingApiResponse, hostId, debugClient);
+                        while (!processorFutureMap.getDone()) {
+                            Thread.sleep(10);
                         }
+                        if (processorFutureMap.getFailure() != null) {
+                            throw new IllegalStateException("Computation failed", processorFutureMap.getFailure());
+                        }
+                        logger.info("done processing " + hostId);
+                        if (Boolean.TRUE.equals(openPingApiResponse.getDebug())) {
+                            Long startForDebugSend = new Date().toInstant().toEpochMilli();
+                            debugClient.call(processorFutureMap.getDebugData());
+                            logger.info("debug api done in " + (new Date().toInstant().toEpochMilli() - startForDebugSend));
+                        }
+                        submitResults(processorFutureMap, openPingApiResponse.getUuid(), hostId,
+                                openPingApiResponse.getResultUpload());
+                        logger.info("submitted results of processing " + hostId);
+                    } finally {
+                        heartbeats.shutdownNow();
                     }
-                    logger.info("done processing " + hostId);
-                    if(openPingApiResponse.getDebug()) {
-                        Long startForDebugSend = new Date().toInstant().toEpochMilli();
-                        debugClient.call(processorFutureMap.getDebugData());
-                        logger.info("debug api done in " + (new Date().toInstant().toEpochMilli() - startForDebugSend));
-                    }
-                    submitResults(processorFutureMap, credentials, openPingApiResponse.getUuid(), hostId);
-                    logger.info("submitted results of  processing " + hostId);
-                    //hostId = UUID.randomUUID().toString();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
                 } catch (Exception e) {
-                    //logger.error("topLevel exception", e);
-                    continue;
+                    logger.error("Worker task failed for " + hostId, e);
                 }
             }
         }
@@ -104,31 +126,72 @@ public class Orchestrator {
         }
     }
 
-    private void submitResults(final CodeExecutor.ProcessorFutureMap processorFutureMap, final Credentials credentials,
-                               final String uuid, final String hostId) {
-        try {
-            ResultSubmitPayload resultSubmitPayload = new ResultSubmitPayload(uuid, hostId, processorFutureMap.getResult());
-            Request request = new Request.Builder()
-                    .post(RequestBody.create(JSON, objectMapper.writeValueAsString(resultSubmitPayload)))
-                    .url(host + completionUri)
-                    .build();
-            Response response = getOkHttpClient().newCall(request).execute();
-
-            if (response.code() != 200) {
-                response.body().close();
-                Thread.sleep(10_000L);
-                submitResults(processorFutureMap, credentials, uuid, hostId);
-            } else {
-                response.body().close();
-            }
-        } catch (Exception e) {
-            System.out.println("send of result failed " + e);
-            e.printStackTrace();
-            try {
-                Thread.sleep(10_000L);
-            } catch (Exception ex) {}
-            submitResults(processorFutureMap, credentials, uuid, hostId);
+    private void submitResults(final CodeExecutor.ProcessorFutureMap processorFutureMap,
+                               final String uuid, final String hostId, ResultUploadTarget target) throws Exception {
+        ResultSubmitPayload payload = new ResultSubmitPayload(uuid, hostId, processorFutureMap.getResult());
+        byte[] upload = null;
+        OkHttpClient uploadClient = getOkHttpClient().clone();
+        uploadClient.setWriteTimeout(120, TimeUnit.SECONDS);
+        if (target != null) {
+            upload = objectMapper.writeValueAsBytes(Collections.singletonMap("map", processorFutureMap.getResult()));
+            payload.setData(null);
+            payload.setResultObject(target.getObjectName());
+            payload.setResultSize((long) upload.length);
+            payload.setResultMd5(Base64.getEncoder().encodeToString(
+                    MessageDigest.getInstance("MD5").digest(upload)));
         }
+        Request completion = new Request.Builder()
+                .post(RequestBody.create(JSON, objectMapper.writeValueAsString(payload)))
+                .url(host + completionUri).build();
+        boolean uploaded = target == null;
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                if (!uploaded) {
+                    if (System.currentTimeMillis() >= target.getExpiresAt()) {
+                        throw new IllegalStateException("Result upload URL expired");
+                    }
+                    Request.Builder request = new Request.Builder().url(target.getUploadUrl())
+                            .put(RequestBody.create(com.squareup.okhttp.MediaType.parse("application/json"), upload));
+                    for (Map.Entry<String, String> header : target.getHeaders().entrySet()) {
+                        request.header(header.getKey(), header.getValue());
+                    }
+                    Response response = uploadClient.newCall(request.build()).execute();
+                    try {
+                        // A retry can observe the immutable object created by a previous timed-out PUT.
+                        if (!response.isSuccessful() && response.code() != 412) {
+                            if (isPermanentFailure(response.code())) {
+                                throw new IllegalStateException("Result upload rejected with HTTP " + response.code());
+                            }
+                            throw new IOException("Result upload returned HTTP " + response.code());
+                        }
+                    } finally {
+                        response.body().close();
+                    }
+                    uploaded = true;
+                    logger.info("Uploaded result for task " + uuid + " (" + upload.length + " bytes)");
+                }
+                Response response = uploadClient.newCall(completion).execute();
+                try {
+                    if (response.code() != 200) {
+                        if (isPermanentFailure(response.code())) {
+                            throw new IllegalStateException("Task completion rejected with HTTP " + response.code());
+                        }
+                        throw new IOException("Task completion returned HTTP " + response.code());
+                    }
+                } finally {
+                    response.body().close();
+                }
+                return;
+            } catch (IOException e) {
+                logger.error("Result submission failed for task " + uuid + "; retrying", e);
+                Thread.sleep(10_000L);
+            }
+        }
+        throw new InterruptedException("Result submission interrupted");
+    }
+
+    private boolean isPermanentFailure(int status) {
+        return status >= 400 && status < 500 && status != 408 && status != 429;
     }
 
     private OpenPingApiResponse callBackendOpenAPI(final String uuid, final Credentials credentials) throws Exception {

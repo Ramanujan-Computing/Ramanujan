@@ -6,5 +6,5 @@ CREATE TABLE `arrayMapping` (
   `indexStr` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   KEY `arrayMapping_asyncId_IDX` (`asyncId`) USING BTREE,
   KEY `arrayMapping_arrayId_IDX` (`arrayId`) USING BTREE,
-  UNIQUE KEY `unique_array` (`asyncId`, `arrayName`, `indexStr`)
+  UNIQUE KEY `unique_array_key` (`asyncId`, `arrayId`, `indexStr`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci

@@ -41,10 +41,11 @@ public class ConsumerVerticle extends AbstractVerticle {
         queueingDao.subscribe().setHandler(handler -> {
            if(handler.succeeded()) {
                startConsumption();
+               startPromise.complete();
+           } else {
+               startPromise.fail(handler.cause());
            }
         });
-
-        startConsumption();
     }
 
     private void startConsumption() {
@@ -64,7 +65,7 @@ public class ConsumerVerticle extends AbstractVerticle {
                         blockingWrapper.unblock();
                         return;
                     }
-                    List<CheckStatusQueueEventWithMetadata> successAckId = new ArrayList<>();
+                    List<CheckStatusQueueEventWithMetadata> successAckId = java.util.Collections.synchronizedList(new ArrayList<>());
                     for(CheckStatusQueueEventWithMetadata checkStatusQueueEventWithMetadata : checkStatusQueueEventWithMetadataList) {
                         Future future  = Future.future();
                         consumeFutureList.add(future);
@@ -73,14 +74,14 @@ public class ConsumerVerticle extends AbstractVerticle {
                                 successAckId.add(checkStatusQueueEventWithMetadata);
                                 future.complete();
                             } else {
-                                logger.error("Failed to consume event: {}", checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent(), consumeHandler.cause());
-                                future.fail(consumeHandler.cause());
+                                logger.error("Failed to consume event: " + checkStatusQueueEventWithMetadata.getCheckStatusQueueEvent(), actualConsumer.cause());
+                                future.fail(actualConsumer.cause());
                             }
                         });
                         }
 
-                    CompositeFuture.all(consumeFutureList).setHandler(consumerListHandler -> {
-                        if(checkStatusQueueEventWithMetadataList.size() == 0) {
+                    CompositeFuture.join(consumeFutureList).setHandler(consumerListHandler -> {
+                        if(successAckId.isEmpty()) {
                             blockingWrapper.unblock();
                             return;
                         }
@@ -88,6 +89,9 @@ public class ConsumerVerticle extends AbstractVerticle {
                                 successAckId.get(successAckId.size() -1).getMetadata() :
                                 getPubSubMetadata(successAckId);
                         queueingDao.commit(metadata).setHandler(commitHandler -> {
+                            if (commitHandler.failed()) {
+                                logger.error("Failed to acknowledge consumed events", commitHandler.cause());
+                            }
                             blockingWrapper.unblock();
                         });
                     });
@@ -128,7 +132,8 @@ public class ConsumerVerticle extends AbstractVerticle {
                 return false;
             }
             if(System.currentTimeMillis() - blockedLastTime > 60_000L) {
-                System.exit(1);
+                logger.warn("Queue batch is still processing; waiting without restarting the server");
+                blockedLastTime = System.currentTimeMillis();
             }
             return blocked;
         }

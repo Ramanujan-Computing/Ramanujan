@@ -12,6 +12,12 @@
     <artifactId>service</artifactId>
     <dependencies>
         <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>in.ramanujan.orchestrator</groupId>
             <artifactId>data</artifactId>
             <version>1.0.2-SNAPSHOT</version>

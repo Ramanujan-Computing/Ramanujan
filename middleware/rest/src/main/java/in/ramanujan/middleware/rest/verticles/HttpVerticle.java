@@ -177,8 +177,8 @@ public class HttpVerticle extends AbstractVerticle {
         });
         
         // Existing handlers
-        router.post("/run").handler(translateAndRunHandler);
-        router.post("/run/package").handler(packageRunner);
+        router.post("/run").blockingHandler(translateAndRunHandler, false);
+        router.post("/run/package").blockingHandler(packageRunner, false);
         router.get("/status").handler(statusHandler);
         router.put("/suspend").handler(workflowSuspendHandler);
         router.put("/process/next").handler(processNextDagElementHandler);

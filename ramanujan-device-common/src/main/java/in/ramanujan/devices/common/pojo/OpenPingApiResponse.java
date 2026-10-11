@@ -3,6 +3,7 @@ package in.ramanujan.devices.common.pojo;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.checkpoint.Checkpoint;
+import in.ramanujan.pojo.storage.ResultUploadTarget;
 import lombok.Data;
 
 import java.util.List;
@@ -19,4 +20,5 @@ public class OpenPingApiResponse {
     private Object data;
     private Boolean debug;
     private List<Integer> breakpoints;
+    private ResultUploadTarget resultUpload;
 }

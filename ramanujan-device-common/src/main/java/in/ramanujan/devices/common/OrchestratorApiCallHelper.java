@@ -18,7 +18,7 @@ public class OrchestratorApiCallHelper {
     static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
 
-    static OkHttpClient getOkHttpClient() {
+    static synchronized OkHttpClient getOkHttpClient() {
         if (okHttpClient == null) {
             okHttpClient = new OkHttpClient();
             okHttpClient.setConnectTimeout(5, TimeUnit.SECONDS);

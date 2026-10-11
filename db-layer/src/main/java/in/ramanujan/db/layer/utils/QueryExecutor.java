@@ -87,27 +87,42 @@ public class QueryExecutor {
             config.setJdbcUrl("jdbc:mysql://" + dbConfig.getJdbcUrl() + "/" + dbConfig.getDbName());
             config.setUsername(dbConfig.getUsername());
             config.setPassword(dbConfig.getPassword());
+            config.addDataSourceProperty("rewriteBatchedStatements", "true");
 
-            int maxPool = 100 * Runtime.getRuntime().availableProcessors();
+            int maxPool = resolvePoolSize(System.getenv("RAMANUJAN_DB_POOL_SIZE"),
+                    Runtime.getRuntime().availableProcessors());
             config.setMaximumPoolSize(maxPool);
             config.setConnectionTimeout(5000);
+            config.setInitializationFailTimeout(120000);
+            config.addDataSourceProperty("connectTimeout", "10000");
             dataSource = new HikariDataSource(config);
 
-            int connectionsMade = maxPool;
-            while(connectionsMade > 0) {
-                try {
-                    Connection connection = dataSource.getConnection();
-                    connection.close();
-                    connectionsMade--;
-                } catch (SQLException e) {
-                    logger.error("Failed to connect to the database: " + dbConfig.getDbName() + ". Retrying...", e);
-
-                }
+            try (Connection connection = dataSource.getConnection()) {
+                logger.info("Database connection verified for database: " + dbConfig.getDbName());
+            } catch (SQLException e) {
+                logger.error("Failed to initialize database: " + dbConfig.getDbName(), e);
+                throw new IllegalStateException("Failed to initialize database: " + dbConfig.getDbName(), e);
             }
 
             logger.info("Database connection pool initialized with " + maxPool + " connections for database: " + dbConfig.getDbName());
 
         }
+    }
+
+    static int resolvePoolSize(String configuredSize, int processors) {
+        if (configuredSize == null || configuredSize.trim().isEmpty()) {
+            return 100 * processors;
+        }
+        int size;
+        try {
+            size = Integer.parseInt(configuredSize.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("RAMANUJAN_DB_POOL_SIZE must be a positive integer", e);
+        }
+        if (size <= 0) {
+            throw new IllegalArgumentException("RAMANUJAN_DB_POOL_SIZE must be a positive integer");
+        }
+        return size;
     }
 
 

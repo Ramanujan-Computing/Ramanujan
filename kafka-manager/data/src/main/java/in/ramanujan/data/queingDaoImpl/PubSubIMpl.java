@@ -72,7 +72,12 @@ public class PubSubIMpl extends QueueDaoImpl {
     }
 
     private GoogleCredentials getCred() throws IOException {
-        return GoogleCredentials.fromStream(new FileInputStream("/pubSubKey.json"))
+        java.io.File f = new java.io.File("/pubSubKey.json");
+        if (f.isFile()) {
+            return GoogleCredentials.fromStream(new FileInputStream(f))
+                    .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
+        }
+        return GoogleCredentials.getApplicationDefault()
                 .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
     }
 
@@ -247,7 +252,11 @@ public class PubSubIMpl extends QueueDaoImpl {
                 blocking.fail(e);
             }
         }, false, handler -> {
-            future.complete();
+            if (handler.succeeded()) {
+                future.complete();
+            } else {
+                future.fail(handler.cause());
+            }
         });
         return future;
     }

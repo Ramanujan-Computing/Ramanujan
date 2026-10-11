@@ -203,6 +203,11 @@ public class OrchestrationApiCaller {
                 if(Status.SUCCESS.getKeyName().equalsIgnoreCase(status)) {
                     logger.info("Task success " + orchestrationTaskId);
                     getData(orchestrationTaskId).setHandler(getDataHandler -> {
+                        if (getDataHandler.failed()) {
+                            logger.error("Failed to read results for " + orchestrationTaskId, getDataHandler.cause());
+                            future.fail(getDataHandler.cause());
+                            return;
+                        }
                         Map<String, Object>  data = getDataHandler.result();
                         //orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId);
                         future.complete(new DeviceExecStatus(Status.SUCCESS, data));
@@ -211,7 +216,7 @@ public class OrchestrationApiCaller {
                 } else {
                     if(Status.PROCESSING.getKeyName().equalsIgnoreCase(status)) {
                         logger.info("Retry poll for " + orchestrationTaskId + " as its processing.");
-                        future.complete(null);
+                        future.complete(new DeviceExecStatus(Status.PROCESSING, new HashMap<>()));
                     } else if(Status.CHECKPOINT.getKeyName().equalsIgnoreCase(status)) {
                         future.complete(new DeviceExecStatus(Status.CHECKPOINT, new HashMap<>()));
                     } else {

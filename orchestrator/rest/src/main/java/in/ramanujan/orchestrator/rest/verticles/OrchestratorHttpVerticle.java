@@ -144,7 +144,7 @@ public class OrchestratorHttpVerticle extends AbstractVerticle {
     }
 
     private void taskCompleteHandle(Router router) {
-        router.post("/task/complete").handler(taskCompleteHandler);
+        router.post("/task/complete").blockingHandler(taskCompleteHandler, false);
     }
 
     private void pingCheckpoint(Router router) {

@@ -142,6 +142,8 @@ public class CodeExecutor {
                 processorFutureMap.setDone(true);
             } catch (Throwable e) {
                 logger.error("ERROR for " + hostId, e);
+                processorFutureMap.setFailure(e);
+                processorFutureMap.setDone(true);
             }
         }).start();
         return processorFutureMap;
@@ -152,7 +154,8 @@ public class CodeExecutor {
         private Processor processor;
         private Map<String, Object> result;
         private List<UserReadableDebugPoint> debugData;
-        private Boolean done = false;
+        private volatile Boolean done = false;
+        private Throwable failure;
     }
 
     private static  boolean isTolerable(double f1, double f2) {

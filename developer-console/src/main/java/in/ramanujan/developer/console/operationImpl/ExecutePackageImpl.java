@@ -67,7 +67,7 @@ public class ExecutePackageImpl implements Operation {
             OkHttpClient httpClient = new OkHttpClient();
             String json = objectMapper.writeValueAsString(packageRunInput);
             RequestBody requestBody = RequestBody.create(json, MediaType.get("application/json; charset=utf-8"));
-            Request request = new Request.Builder().url("http://localhost:8888/run/package").post(requestBody).build();
+            Request request = new Request.Builder().url(in.ramanujan.developer.console.pojo.Constants.getServerUrl() + "/run/package").post(requestBody).build();
             try {
                 Response response = httpClient.newCall(request).execute();
                 if(response.code() == 200) {
