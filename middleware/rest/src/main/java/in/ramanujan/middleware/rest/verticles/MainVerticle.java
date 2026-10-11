@@ -34,7 +34,6 @@ public class MainVerticle extends AbstractVerticle {
         in.ramanujan.orchestrator.base.configuration.ConfigurationGetter.init(config());
         in.ramanujan.base.configuration.ConfigurationGetter.init(config());
         logger.info("deploying application verticles");
-        vertx.deployVerticle(applicationContext.getBean(HttpVerticle.class), option.getDeployOptions("HttpVerticle", 250));
         //vertx.deployVerticle(applicationContext.getBean(OrchestratorHttpVerticle.class), option.getDeployOptions("OrchHttpVerticle", 250));
         final String projectId = "ramanujan-340512";
         final String metricPusherCredPath = ConfigurationGetter.getString(in.ramanujan.middleware.base.configuration.ConfigKey.METRIC_PUSHER_CRED_PATH);
@@ -78,8 +77,35 @@ public class MainVerticle extends AbstractVerticle {
             }
 
         });
-        vertx.deployVerticle(applicationContext.getBean(ConsumerVerticle.class), option.getDeployOptions("ConsumerVerticle", 1));
+        deployApplicationVerticles(vertx, applicationContext.getBean(HttpVerticle.class),
+                applicationContext.getBean(ConsumerVerticle.class)).setHandler(deployment -> {
+            if (deployment.succeeded()) {
+                startFuture.complete();
+            } else {
+                logger.error("Failed to start application verticles", deployment.cause());
+                startFuture.fail(deployment.cause());
+            }
+        });
 
 //        applicationContext.getBean(ConnectionCreator.class).init(vertx);
+    }
+
+    static Future<Void> deployApplicationVerticles(Vertx vertx, HttpVerticle http, ConsumerVerticle consumer) {
+        Future<Void> ready = Future.future();
+        CustomDeploymentOption options = new CustomDeploymentOption();
+        vertx.deployVerticle(http, options.getDeployOptions("HttpVerticle", 250).setWorker(false), initialized -> {
+            if (initialized.failed()) {
+                ready.fail(initialized.cause());
+                return;
+            }
+            vertx.deployVerticle(consumer, options.getDeployOptions("ConsumerVerticle", 1), subscribed -> {
+                if (subscribed.succeeded()) {
+                    ready.complete();
+                } else {
+                    ready.fail(subscribed.cause());
+                }
+            });
+        });
+        return ready;
     }
 }

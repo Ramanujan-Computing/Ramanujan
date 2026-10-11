@@ -63,6 +63,125 @@ keep track of the devices that are available on the network. On the ping API req
 back a suitable computation task mapped to the device. The device would then execute the task and return back the result to the
 Orchestrator server.
 
+## DAG Result Storage
+
+Result transport and persistence are separate from computation. The orchestrator
+and middleware access an object-storage backend through their respective
+`StorageDao` abstractions. Workers receive upload instructions, not storage
+credentials or middleware-specific serialization classes.
+
+### Worker Upload and Task Completion
+
+For a backend that supports signed uploads, the result flow is:
+
+1. The orchestrator assigns a DAG vertex's execution task to a worker.
+   `StorageDao.createResultUploadTarget(taskId, hostId)` adds a `resultUpload`
+   target to the assignment: `uploadUrl`, `objectName`, `expiresAt` (epoch
+   milliseconds), and required `headers`. The signed PUT URL is valid for
+   **24 hours** and is scoped to one task, worker, and upload attempt.
+2. The worker serializes the native result as `HostResult` JSON,
+   `{"map": <native result>}`, and uploads it directly to object storage.
+   It must send the supplied headers and the exact content type
+   `application/json`. The upload is create-only: it cannot overwrite an
+   existing object.
+3. After uploading, the worker calls `/task/complete` with `uuid`, `hostId`,
+   `resultObject`, `resultSize` (bytes), and `resultMd5` (base64-encoded MD5).
+   This request contains a reference rather than the result payload; inline
+   `data` and an uploaded reference are mutually exclusive.
+4. The orchestrator checks that the task is processing and still belongs to
+   this worker. `StorageDao.acceptResultUpload` validates the task/worker/attempt
+   reference and verifies the stored object's size, checksum, and content type.
+   A server-side copy promotes the verified object to the canonical task result
+   location, without downloading and retransmitting its body through the server.
+5. Only after result persistence succeeds does the orchestrator update its task
+   status to `SUCCESS` and release the worker assignment. Middleware processing
+   and the overall DAG's completion happen separately.
+
+The worker continues heartbeats during computation, upload, and completion
+retries. A timed-out PUT may have stored the object already; the server still
+verifies it before acceptance. Promotion is create-only and idempotent for the
+same upload; a conflicting upload cannot replace the accepted result. If the
+status update fails after promotion, completion can retry against the existing
+canonical object. Once a task is successful, completion retries do not require
+the staging object to remain available.
+
+Storage or signing errors propagate rather than silently switching protocols.
+Malformed references and task/assignment conflicts are permanent errors;
+transient transport failures are retried. Backends without signed-upload support,
+including local storage, return no upload target, and workers use the existing
+inline `/task/complete` protocol. Older workers can also submit inline results.
+Deploy compatible server changes before workers during rollout.
+
+Direct uploads avoid routing large result bodies through the orchestrator's
+HTTP endpoint and its request-size limits. They do not remove worker/server
+memory limits, result-query response limits, or the requirement to serialize
+portable data: native `binaryArrayFiles` paths are not uploaded by this protocol
+and cannot be used as cross-machine result references.
+
+### Object Layout and Middleware Persistence
+
+The middleware async ID identifies the entire computation; the orchestrator task
+ID identifies one execution task. Neither should be confused with the DAG vertex
+ID or worker host ID.
+
+| Purpose | Storage namespace | Object key | Content |
+|---------|-------------------|------------|---------|
+| Staged worker upload | `dag_element_result` | `uploads/<taskId>/<hostId>/<attemptId>` | Native `HostResult` JSON |
+| Accepted task result | `dag_element_result` | `<taskId>` | Verified `HostResult` JSON |
+| Middleware vertex output | `dag-element-array-values` | `<asyncId>/dag_vertices/<dagElementId>` | `DagVertexOutput` |
+| Compacted child input | `dag-element-array-values` | `<asyncId>/compacted/<childDagElementId>` | `CompactedDagInput` |
+
+Middleware reads the accepted task result from shared storage and converts it
+into `DagVertexOutput`, containing `asyncId`, `dagElementId`, `variableMap`, and
+`arrayMap`. It stores this vertex output and also writes scalar variables and
+array values to the relational database. Array value identity is
+`(asyncId, arrayId, indexStr)`, not the optional display name.
+
+These storage and database writes are not one atomic transaction. A durable
+object or successful orchestrator task does **not** establish that middleware
+persistence or the whole DAG succeeded. Middleware must finish the required
+writes and dependency processing before marking the overall task `SUCCESS`.
+Queue-driven polling uses shared task state and result storage, so middleware
+queue consumption and database persistence do not require machine affinity.
+
+The HTTP service initializes its database and storage clients on a worker thread.
+Queue consumption starts only after that initialization and HTTP deployment
+succeed; startup failures propagate to the main verticle instead of allowing
+messages to access partially initialized clients.
+
+Within one middleware process, overlapping events for the same async ID and DAG
+vertex are rejected for queue retry while the first event remains active. Result
+preparation, query construction, and output serialization run off event loops.
+Array values are persisted in sequential batches of at most 1,000 rows, with one
+array write active per vertex. Scalars and the vertex object are written only
+after the preceding database writes finish. A failure stops subsequent writes
+and propagates only after the active write has settled, so a retry cannot overlap
+unfinished writes from that attempt. This is not a cross-process lock or an
+atomic transaction; partial writes remain safe to repeat through array upserts.
+
+### Parent Compaction and Retention
+
+Before submitting a dependent vertex, `DagElementCompactionService` reads its
+parents' stored `DagVertexOutput` objects. It coalesces scalar values and sparse
+array-index maps into `CompactedDagInput` and stores that input under the child's
+key. Arrays are merged by array ID with indices ordered by `IndexComparator`.
+The current disjoint-write contract keeps the first encountered value for an
+overlapping array index; scalar keys use the last encountered parent's value.
+Compaction combines state, rather than summing values or rerunning parents.
+
+Signed URLs are bearer credentials: do not log or expose them. The signing
+identity needs permission to sign upload URLs and access the result objects;
+workers need only the scoped URL and headers, not backend credentials.
+
+URL expiry ends upload authorization but does not delete objects. Configure a
+staging lifecycle rule restricted to the `uploads/` prefix, with retention longer
+than the upload/retry window (for example, two days). Do not apply that staging
+rule to accepted task results. On overall DAG success, middleware
+`cleanupAsyncId` deletes vertex outputs and compacted inputs under `<asyncId>/`
+in `dag-element-array-values`; cleanup failures are logged as warnings. This
+cleanup does not delete staged uploads or canonical orchestrator results, whose
+retention is managed separately.
+
 
 #### Use of Kafka-Manager:
 This service helps the system to resume in case the Middleware server goes down. This server becomes a part of a PubSub system.
@@ -352,4 +471,3 @@ The interpreter integrates with the rest of the Ramanujan platform through:
 The `NativeProcessor.cpp` file provides the JNI bridge, receiving JSON input from the Java layer and returning results as structured data.
 
 ---
-

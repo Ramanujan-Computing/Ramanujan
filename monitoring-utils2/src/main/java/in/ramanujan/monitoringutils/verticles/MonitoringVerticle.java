@@ -36,8 +36,13 @@ public class MonitoringVerticle extends AbstractVerticle {
         if(monitoringType == MONITORING_TYPE.GCP) {
             GoogleCredentials googleCredentials;
             LoadBalancerRegistry.getDefaultRegistry().register(new PickFirstLoadBalancerProvider());
-            googleCredentials = GoogleCredentials.fromStream(new FileInputStream(credFile))
-                    .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
+            if (credFile != null && new java.io.File(credFile).isFile()) {
+                googleCredentials = GoogleCredentials.fromStream(new FileInputStream(credFile))
+                        .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
+            } else {
+                googleCredentials = GoogleCredentials.getApplicationDefault()
+                        .createScoped(Lists.newArrayList("https://www.googleapis.com/auth/cloud-platform"));
+            }
 
             MetricServiceSettings clientSetting = null;
             MetricServiceClient metricServiceClient = null;

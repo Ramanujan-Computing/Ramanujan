@@ -105,14 +105,21 @@ public class ExecuteInline implements Operation {
                     Map<String, Object> arrayResult = arrayResultEntry.getValue();
                     Array array = arrayMap.get(arrayName);
                     if(array == null) {
-                        throw new IOException("Array not found");
+                        throw new IOException("Array not found: " + arrayName);
                     }
                     array.getValues().putAll(arrayResult);
+                }
+            } else if("binaryArrayFiles".equalsIgnoreCase(key)) {
+                if (value instanceof Map) {
+                    Map<String, String> binaryMap = (Map<String, String>) value;
+                    if (!binaryMap.isEmpty()) {
+                        in.ramanujan.developer.console.operationImpl.ExecutorImpl.setBinaryArrayFileStore(binaryMap);
+                    }
                 }
             } else {
                 Variable variable = variableMap.get(key);
                 if(variable == null) {
-                    throw new IOException("Variable not found");
+                    throw new IOException("Variable not found: " + key);
                 }
                 variable.setValue(value);
             }

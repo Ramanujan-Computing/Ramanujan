@@ -7,6 +7,11 @@ import java.nio.file.NoSuchFileException;
 
 public class LocalStorageImpl extends OrchestratorStorageDaoInternal {
 
+    @Override
+    public boolean supportsResultUploads() {
+        return false;
+    }
+
     /**
      * Get from file /bucketName/objectId
      */

@@ -34,4 +34,5 @@ public interface DagElementDao {
      * Batch remove dependencies for a dagElementId to a list of nextDagElementIds
      */
     io.vertx.core.Future<Void> removeDagElementDependencies(String dagElementId, java.util.List<String> nextDagElementIds);
+    public Future<List<String>> getParentIds(String dagElementId);
 }

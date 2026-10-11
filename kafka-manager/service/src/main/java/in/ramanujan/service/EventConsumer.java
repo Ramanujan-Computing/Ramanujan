@@ -27,7 +27,11 @@ public class EventConsumer {
                future.complete();
            } else {
                eventProducer.produce(checkStatusQueueEvent).setHandler(produceHandler -> {
-                   future.complete();
+                   if (produceHandler.succeeded()) {
+                       future.complete();
+                   } else {
+                       future.fail(produceHandler.cause());
+                   }
                });
            }
         });

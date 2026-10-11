@@ -15,12 +15,14 @@ public class DagElementHashMapImpl implements DagElementDao {
     private Map<String, DagElement> dagElementMap;
     private Map<String, Set<String>> dagElementIdDependency;
     private Map<String, Set<String>> asyncTaskDagElementMap;
+    private Map<String, Set<String>> parentDagElementsMap;
 
 
     public void init() {
         dagElementMap = new HashMap<>();
         dagElementIdDependency = new HashMap<>();
         asyncTaskDagElementMap = new HashMap<>();
+        parentDagElementsMap = new HashMap<>();
     }
 
     @Override
@@ -70,6 +72,16 @@ public class DagElementHashMapImpl implements DagElementDao {
             dagElementIdDependency.put(dependingDagElementId, dagElementIdsRequired);
         }
         dagElementIdsRequired.add(dagElementId);
+
+        if(parentDagElementsMap == null) {
+            parentDagElementsMap = new HashMap<>();
+        }
+        Set<String> parents = parentDagElementsMap.get(dependingDagElementId);
+        if(parents == null) {
+            parents = new HashSet<>();
+            parentDagElementsMap.put(dependingDagElementId, parents);
+        }
+        parents.add(dagElementId);
         return Future.succeededFuture();
     }
 
@@ -140,5 +152,13 @@ public class DagElementHashMapImpl implements DagElementDao {
             removeDagElementDependency(dagElementId, nextDagElementId);
         }
         return Future.succeededFuture();
+    }
+
+    @Override
+    public Future<List<String>> getParentIds(String dagElementId) {
+        if (parentDagElementsMap == null || !parentDagElementsMap.containsKey(dagElementId)) {
+            return Future.succeededFuture(new ArrayList<>());
+        }
+        return Future.succeededFuture(new ArrayList<>(parentDagElementsMap.get(dagElementId)));
     }
 }

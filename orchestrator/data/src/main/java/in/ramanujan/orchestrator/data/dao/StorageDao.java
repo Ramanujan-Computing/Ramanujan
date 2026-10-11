@@ -6,11 +6,14 @@ import in.ramanujan.orchestrator.base.pojo.CheckpointResumePayload;
 import in.ramanujan.orchestrator.data.impl.storageDaoImpl.GoogleCloudStorageImpl;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.checkpoint.Checkpoint;
+import in.ramanujan.pojo.storage.ResultUploadTarget;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import org.springframework.stereotype.Component;
+
+import java.util.UUID;
 
 @Component
 public abstract class StorageDao {
@@ -30,6 +33,71 @@ public abstract class StorageDao {
     }
     protected Context getContext() {
         return context;
+    }
+
+    public boolean supportsResultUploads() {
+        return false;
+    }
+
+    public Future<ResultUploadTarget> createResultUploadTarget(String taskId, String hostId) {
+        if (!supportsResultUploads()) {
+            return Future.succeededFuture(null);
+        }
+        Future<ResultUploadTarget> future = Future.future();
+        getContext().<ResultUploadTarget>executeBlocking(blocking -> {
+            try {
+                String prefix = resultUploadPrefix(taskId, hostId);
+                blocking.complete(createSignedResultUpload(prefix + UUID.randomUUID(),
+                        dagElementResultBucketName));
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, future);
+        return future;
+    }
+
+    public Future<Void> acceptResultUpload(String taskId, String hostId, String objectName,
+                                                long size, String md5) {
+        Future<Void> future = Future.future();
+        try {
+            String prefix = resultUploadPrefix(taskId, hostId);
+            if (!supportsResultUploads() || objectName == null || !objectName.startsWith(prefix)
+                    || size <= 0 || md5 == null || md5.isEmpty()) {
+                return Future.failedFuture(new IllegalArgumentException("Invalid result upload reference"));
+            }
+            String attempt = objectName.substring(prefix.length());
+            if (!UUID.fromString(attempt).toString().equals(attempt)) {
+                return Future.failedFuture(new IllegalArgumentException("Invalid result upload attempt"));
+            }
+        } catch (IllegalArgumentException e) {
+            return Future.failedFuture(e);
+        }
+        getContext().<Void>executeBlocking(blocking -> {
+            try {
+                promoteResultUpload(objectName, taskId, dagElementResultBucketName, size, md5);
+                blocking.complete();
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, future);
+        return future;
+    }
+
+    private String resultUploadPrefix(String taskId, String hostId) {
+        if (taskId == null || hostId == null || !UUID.fromString(taskId).toString().equals(taskId)
+                || !UUID.fromString(hostId).toString().equals(hostId)) {
+            throw new IllegalArgumentException("Invalid task or host identifier");
+        }
+        return "uploads/" + taskId + "/" + hostId + "/";
+    }
+
+    protected ResultUploadTarget createSignedResultUpload(String objectName, String bucketName) throws Exception {
+        throw new UnsupportedOperationException("Signed uploads are not supported by this storage backend");
+    }
+
+    protected void promoteResultUpload(String objectName, String taskId, String bucketName,
+                                       long size, String md5) throws Exception {
+        throw new UnsupportedOperationException("Result uploads are not supported by this storage backend");
     }
 
     public Future<Void> storeAsyncTaskResult(String asyncTaskId, Object object) throws Exception {

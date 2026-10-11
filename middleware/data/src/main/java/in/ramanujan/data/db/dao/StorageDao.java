@@ -21,6 +21,7 @@ public abstract class  StorageDao {
     protected final String dageElementCodeBucketName = "dag-element-code";
     protected final String commonFunctionCodeBucket = "common-function-code";
     protected final String dagElementDebugValue = "dag-element-debug-value";
+    protected final String dagElementArrayValuesBucketName = "dag-element-array-values";
 
     private Context context;
 
@@ -225,7 +226,123 @@ public abstract class  StorageDao {
         return future;
     }
 
+    public final Future<Void> storeDagVertexOutput(String asyncId, String dagElementId, String outputJson) {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    String objectId = asyncId + "/dag_vertices/" + dagElementId;
+                    deleteObject(objectId, dagElementArrayValuesBucketName, 3);
+                    setObject(objectId, dagElementArrayValuesBucketName, outputJson, 5);
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("storeDagVertexOutput", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    public final Future<String> getDagVertexOutput(String asyncId, String dagElementId) {
+        Future<String> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                String objectId = asyncId + "/dag_vertices/" + dagElementId;
+                String object = getObject(objectId, dagElementArrayValuesBucketName, 5);
+                blocking.complete(object);
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getDagVertexOutput", handler -> {
+            if(handler.succeeded()) {
+                future.complete((String) handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final Future<Void> storeCompactedOutput(String asyncId, String dagElementId, String compactedJson) {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    String objectId = asyncId + "/compacted/" + dagElementId;
+                    deleteObject(objectId, dagElementArrayValuesBucketName, 3);
+                    setObject(objectId, dagElementArrayValuesBucketName, compactedJson, 5);
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("storeCompactedOutput", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
+    public final Future<String> getCompactedOutput(String asyncId, String dagElementId) {
+        Future<String> future = Future.future();
+        getVertxContext().executeBlocking(blocking -> {
+            try {
+                String objectId = asyncId + "/compacted/" + dagElementId;
+                String object = getObject(objectId, dagElementArrayValuesBucketName, 5);
+                blocking.complete(object);
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, new MonitoringHandler<>("getCompactedOutput", handler -> {
+            if(handler.succeeded()) {
+                future.complete((String) handler.result());
+            } else {
+                future.fail(handler.cause());
+            }
+        }));
+        return future;
+    }
+
+    public final Future<Void> cleanupAsyncId(String asyncId) {
+        Future<Void> future = Future.future();
+        try {
+            getVertxContext().executeBlocking(blocking -> {
+                try {
+                    String prefix = asyncId + "/";
+                    deletePrefix(prefix, dagElementArrayValuesBucketName, 3);
+                    blocking.complete();
+                } catch (Exception e) {
+                    blocking.fail(e);
+                }
+            }, false, new MonitoringHandler<>("cleanupAsyncId", handler -> {
+                if(handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            }));
+        } catch (Exception e) {
+            future.fail(e);
+        }
+        return future;
+    }
+
     protected abstract void setObject(String objectId, String buckName, String object, int currentRetryCount) throws Exception;
     protected abstract String getObject(String objectId, String bucketName, int currentRetryCount) throws Exception;
+    protected abstract void deleteObject(String objectId, String bucketName, int currentRetryCount) throws Exception;
+    protected abstract void deletePrefix(String prefix, String bucketName, int currentRetryCount) throws Exception;
 }
 

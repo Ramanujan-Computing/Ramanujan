@@ -14,7 +14,7 @@ public class SuspendImpl implements Operation {
         final String asyncId = args.get(0);
         OkHttpClient httpClient = new OkHttpClient();
         RequestBody requestBody = RequestBody.create(MediaType.get("application/json; charset=utf-8"), "");
-        Request request = new Request.Builder().url("http://localhost:8888/suspend?asyncId=" + asyncId)
+        Request request = new Request.Builder().url(in.ramanujan.developer.console.pojo.Constants.getServerUrl() + "/suspend?asyncId=" + asyncId)
                 .put(requestBody).build();
         try {
             httpClient.newCall(request).execute();

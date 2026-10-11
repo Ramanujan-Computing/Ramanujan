@@ -7,6 +7,7 @@ import in.ramanujan.data.KafkaManagerApiCaller;
 import in.ramanujan.data.OrchestrationApiCaller;
 import in.ramanujan.middleware.base.enums.Status;
 import in.ramanujan.middleware.base.pojo.DeviceExecStatus;
+import in.ramanujan.middleware.base.pojo.DagVertexOutput;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
 import in.ramanujan.utils.Constants;
 import io.vertx.core.CompositeFuture;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class ProcessNextDagElementService {
@@ -48,6 +50,12 @@ public class ProcessNextDagElementService {
     @Autowired
     private OrchestratorCallLockerDao orchestratorCallLockerDao;
 
+    @Autowired
+    private StorageDao storageDao;
+
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    private final Set<List<String>> processingVertices = ConcurrentHashMap.newKeySet();
+
     private Logger logger = LoggerFactory.getLogger(ProcessNextDagElementService.class);
 
     AtomicInteger countConcurrentRequest = new AtomicInteger(0);
@@ -61,10 +69,38 @@ public class ProcessNextDagElementService {
             (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
 
     public Future<Void> processNextElement(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
+        List<String> key = Arrays.asList(asyncId, dagElementId);
+        if (!processingVertices.add(key)) {
+            logger.warn("DAG vertex is already being processed: " + asyncId + "/" + dagElementId);
+            return Future.failedFuture("DAG vertex is already being processed: " + asyncId + "/" + dagElementId);
+        }
+        Future<Void> future = Future.future();
+        try {
+            processNextElementInternal(asyncId, dagElementId, vertx, toBeDebugged).setHandler(handler -> {
+                processingVertices.remove(key);
+                if (handler.succeeded()) {
+                    future.complete();
+                } else {
+                    future.fail(handler.cause());
+                }
+            });
+        } catch (Exception e) {
+            processingVertices.remove(key);
+            logger.error("Failed to process DAG vertex " + asyncId + "/" + dagElementId, e);
+            future.fail(e);
+        }
+        return future;
+    }
+
+    private Future<Void> processNextElementInternal(final String asyncId, final String dagElementId, Vertx vertx, Boolean toBeDebugged) throws Exception {
         Future<Void> future = Future.future();
 
         logger.info("Processing next element for asyncId: {}, dagElementId: {}, toBeDebugged: {}", asyncId, dagElementId, toBeDebugged);
         orchestratorAsyncTaskDao.getMapping(asyncId).setHandler(handler -> {
+            if (handler.failed()) {
+                future.fail(handler.cause());
+                return;
+            }
             if (handler.result() == null) {
                 logger.warn("No mapping found for asyncId: " + asyncId);
                 countConcurrentRequest.decrementAndGet();
@@ -86,6 +122,17 @@ public class ProcessNextDagElementService {
                         future.fail("Status API returned null for asyncId: " + asyncId);
                     } else {
                         DeviceExecStatus deviceExecStatus = statusApiHandler.result();
+                        if (deviceExecStatus.getStatus() == Status.PROCESSING) {
+                            kafkaManagerApiCaller.callEventApi(asyncId, dagElementId, toBeDebugged).setHandler(requeueHandler -> {
+                                countConcurrentRequest.decrementAndGet();
+                                if (requeueHandler.succeeded()) {
+                                    future.complete();
+                                } else {
+                                    future.fail(requeueHandler.cause());
+                                }
+                            });
+                            return;
+                        }
                         if(deviceExecStatus.getStatus() == Status.CHECKPOINT) {
                             asyncTaskDao.update(asyncId, new HashMap<String, Object>() {
                                 {
@@ -98,13 +145,17 @@ public class ProcessNextDagElementService {
                             return;
                         }
                         Long refreshVarStart = new Date().toInstant().toEpochMilli();
-                        refreshVariables(asyncId, dagElementId, deviceExecStatus.getData())
+                        refreshVariables(asyncId, dagElementId, deviceExecStatus.getData(), vertx)
                                 .setHandler(new MonitoringHandler<>("refreshVariables", refreshVariablesHandler -> {
                             //logger.info("refreshVar : " + getTimeElapsed(refreshVarStart));
                             if(refreshVariablesHandler.succeeded()) {
                                 Long removeStart = new Date().toInstant().toEpochMilli();
                                 dagElementDao.removeDagElementAsyncIdMap(asyncId, dagElementId) //redundant in case of sql.
                                         .setHandler(new MonitoringHandler<>("removeDagElementIdFromAsyncTask", removeDagElementHandler -> {
+                                    if (removeDagElementHandler.failed()) {
+                                        future.fail(removeDagElementHandler.cause());
+                                        return;
+                                    }
                                     //logger.info("remove time: " + getTimeElapsed(removeStart));
                                     Long nextIdFetchStart = new Date().toInstant().toEpochMilli();
                                     dagElementDao.getNextId(dagElementId, false/*so that if nextElem was not able to get started, we dont stop here in the next run.*/).
@@ -116,7 +167,11 @@ public class ProcessNextDagElementService {
                                                     if(noNextDagElementHandler.succeeded()) {
                                                         countConcurrentRequest.decrementAndGet();
                                                         orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId).setHandler(removeHandler -> {
-                                                            future.complete();
+                                                            if (removeHandler.succeeded()) {
+                                                                future.complete();
+                                                            } else {
+                                                                future.fail(removeHandler.cause());
+                                                            }
                                                         });
                                                     } else {
                                                         countConcurrentRequest.decrementAndGet();
@@ -130,7 +185,11 @@ public class ProcessNextDagElementService {
                                                     countConcurrentRequest.decrementAndGet();
                                                     if(nextElementCallHandler.succeeded()) {
                                                         orchestratorAsyncTaskDao.removeOrchestratorAsyncId(asyncId, dagElementId).setHandler(removeHandler -> {
-                                                            future.complete();
+                                                            if (removeHandler.succeeded()) {
+                                                                future.complete();
+                                                            } else {
+                                                                future.fail(removeHandler.cause());
+                                                            }
                                                         });
                                                     } else {
                                                         logger.error("Failed to call next elements", nextElementCallHandler.cause());
@@ -145,6 +204,8 @@ public class ProcessNextDagElementService {
                                     }));
                                 }));
                             } else {
+                                logger.error("Failed to persist DAG vertex " + asyncId + "/" + dagElementId,
+                                        refreshVariablesHandler.cause());
                                 countConcurrentRequest.decrementAndGet();
                                 future.fail(refreshVariablesHandler.cause());
                             }
@@ -173,6 +234,10 @@ public class ProcessNextDagElementService {
     private Future<Void> handleNoNextDagElement(String asyncId) {
         Future<Void> future = Future.future();
         dagElementDao.isAsyncTaskDone(asyncId).setHandler(isAsyncTaskDoneHandler -> {
+            if (isAsyncTaskDoneHandler.failed()) {
+                future.fail(isAsyncTaskDoneHandler.cause());
+                return;
+            }
             if(isAsyncTaskDoneHandler.result() <= 1) {
                 //terminate the asyncTask
                 asyncTaskDao.update(asyncId, new HashMap<String, Object>() {
@@ -186,7 +251,12 @@ public class ProcessNextDagElementService {
                         future.fail(updateHandler.cause());
                         return;
                     }
-                    future.complete();
+                    storageDao.cleanupAsyncId(asyncId).setHandler(cleanupHandler -> {
+                        if (cleanupHandler.failed()) {
+                            logger.warn("Cleanup storage for asyncId " + asyncId + " warning: " + cleanupHandler.cause().getMessage());
+                        }
+                        future.complete();
+                    });
                 });
             } else {
                 //dont' do anything
@@ -196,45 +266,93 @@ public class ProcessNextDagElementService {
         return future;
     }
 
-    private Future<Void> refreshVariables(String asyncId, String dagElementId, Map<String, Object> result) {
-        Future<Void> future = Future.future();
-        List<Future> updateVariableFutures = new ArrayList<>();
-        // Collect variables for batch update
-        List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variablesToUpdate = new ArrayList<>();
+    Future<Void> refreshVariables(String asyncId, String dagElementId, Map<String, Object> result, Vertx vertx) {
+        Future<DagVertexOutput> prepared = Future.future();
+        vertx.<DagVertexOutput>executeBlocking(blocking -> {
+            try {
+                blocking.complete(prepareVertexOutput(asyncId, dagElementId, result));
+            } catch (Exception e) {
+                blocking.fail(e);
+            }
+        }, false, prepared);
+
+        return prepared.compose(output ->
+                persistArrays(asyncId, output.getArrayMap().entrySet().iterator()).compose(ignored -> {
+                    List<in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable> variables = new ArrayList<>();
+                    for (Map.Entry<String, Object> entry : output.getVariableMap().entrySet()) {
+                        in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable =
+                                new in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable();
+                        variable.setId(entry.getKey());
+                        variable.setValue(entry.getValue());
+                        variables.add(variable);
+                    }
+                    return variables.isEmpty() ? Future.<Void>succeededFuture()
+                            : variableValueDao.updateVariablesBatch(asyncId, variables);
+                }).compose(ignored -> {
+                    Future<String> serialized = Future.future();
+                    vertx.<String>executeBlocking(blocking -> {
+                        try {
+                            blocking.complete(objectMapper.writeValueAsString(output));
+                        } catch (Exception e) {
+                            blocking.fail(e);
+                        }
+                    }, false, serialized);
+                    return serialized.compose(json -> storageDao.storeDagVertexOutput(asyncId, dagElementId, json));
+                }));
+    }
+
+    private Future<Void> persistArrays(String asyncId, Iterator<Map.Entry<String, Map<String, Object>>> arrays) {
+        if (!arrays.hasNext()) {
+            return Future.succeededFuture();
+        }
+        Map.Entry<String, Map<String, Object>> array = arrays.next();
+        return variableValueDao.storeArrayValueBatch(asyncId, array.getKey(), "", array.getValue())
+                .compose(ignored -> persistArrays(asyncId, arrays));
+    }
+
+    private DagVertexOutput prepareVertexOutput(String asyncId, String dagElementId, Map<String, Object> result) {
+        DagVertexOutput vertexOutput = new DagVertexOutput(asyncId, dagElementId);
+
         for(String key : result.keySet()) {
+            if ("binaryArrayFiles".equals(key)) {
+                if (!(result.get(key) instanceof Map) || !((Map<?, ?>) result.get(key)).isEmpty()) {
+                    throw new IllegalArgumentException("Binary array results require an out-of-band upload");
+                }
+                continue;
+            }
             if(Constants.arrayIndex.equalsIgnoreCase(key)) {
-                Map<String, Map<String, Object>> arrayMap = (Map) result.get(key);
-                for(String arrayId : arrayMap.keySet()) {
+                if (!(result.get(key) instanceof Map)) {
+                    throw new IllegalArgumentException("Array results must be a map");
+                }
+                Map<?, ?> arrayMap = (Map<?, ?>) result.get(key);
+                for (Map.Entry<?, ?> array : arrayMap.entrySet()) {
+                    if (!(array.getKey() instanceof String)) {
+                        throw new IllegalArgumentException("Array IDs must be strings");
+                    }
+                    String arrayId = (String) array.getKey();
                     if(arrayId.contains("func")) {
                         continue;
                     }
-                    Map<String, Object> arrayIndexMap = arrayMap.get(arrayId);
-                    // Use batch update for all indexes of this arrayId. Pass empty string for arrayName (or replace if you have the name)
-                    updateVariableFutures.add(variableValueDao.storeArrayValueBatch(asyncId, arrayId, "", arrayIndexMap));
+                    if (!(array.getValue() instanceof Map)) {
+                        throw new IllegalArgumentException("Array indices must be a map for " + arrayId);
+                    }
+                    Map<String, Object> arrayIndexMap = new LinkedHashMap<>();
+                    for (Map.Entry<?, ?> index : ((Map<?, ?>) array.getValue()).entrySet()) {
+                        if (!(index.getKey() instanceof String)) {
+                            throw new IllegalArgumentException("Array indices must be strings for " + arrayId);
+                        }
+                        arrayIndexMap.put((String) index.getKey(), index.getValue());
+                    }
+                    vertexOutput.getArrayMap().put(arrayId, arrayIndexMap);
                 }
             } else {
                 if(key.contains("func")) {
                     continue;
                 }
-                // Create a Variable object for batch update
-                in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable variable = new in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable();
-                variable.setId(key);
-                variable.setValue(result.get(key));
-                variablesToUpdate.add(variable);
+                vertexOutput.getVariableMap().put(key, result.get(key));
             }
         }
-        if (!variablesToUpdate.isEmpty()) {
-            updateVariableFutures.add(variableValueDao.updateVariablesBatch(asyncId, variablesToUpdate));
-        }
-        CompositeFuture.all(updateVariableFutures).setHandler(updateVariableFuturesHandler -> {
-            if(updateVariableFuturesHandler.succeeded()) {
-                future.complete();
-            } else {
-                logger.error("Variable update failed", updateVariableFuturesHandler.cause());
-                future.fail(updateVariableFuturesHandler.cause());
-            }
-        });
-        return future;
+        return vertexOutput;
     }
 
     private void updateArrayOnIndex(Object[] indexes, Future<Void> arrayIndexFuture, String arrayId, int index, Map<String, Object> arrayIndexMap, String asyncId) {
@@ -271,7 +389,7 @@ public class ProcessNextDagElementService {
                         callNextElementIfIsNotDependent(asyncId, dagElementId, vertx, nextDagElementId, future, toBeDebugged);
                     }));
         }
-        CompositeFuture.all(futures).setHandler(handler -> {
+        CompositeFuture.join(futures).setHandler(handler -> {
             if(handler.failed()) {
                 logger.error("Failed to call next elements", handler.cause());
                 callNextElementFuture.fail(handler.cause());

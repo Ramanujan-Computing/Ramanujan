@@ -36,7 +36,12 @@ public class AsyncTaskHostMappingDaoHashMapImpl implements AsyncTaskHostMappingD
 
     @Override
     public Future<String> getHostForTask(String asyncTaskId) {
-        return null;
+        for (Map.Entry<String, AsyncTask> entry : mapping.entrySet()) {
+            if (asyncTaskId.equals(entry.getValue().getUuid())) {
+                return Future.succeededFuture(entry.getKey());
+            }
+        }
+        return Future.succeededFuture(null);
     }
 
     @Override
@@ -47,7 +52,10 @@ public class AsyncTaskHostMappingDaoHashMapImpl implements AsyncTaskHostMappingD
 
     @Override
     public Future<Void> removeMapping(String hostMachineId, String asyncTaskId) {
-        mapping.remove(hostMachineId);
+        AsyncTask task = mapping.get(hostMachineId);
+        if (task != null && asyncTaskId.equals(task.getUuid())) {
+            mapping.remove(hostMachineId);
+        }
         return Future.succeededFuture();
     }
 }

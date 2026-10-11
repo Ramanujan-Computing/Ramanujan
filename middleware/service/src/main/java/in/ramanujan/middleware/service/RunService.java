@@ -13,6 +13,7 @@ import in.ramanujan.translation.codeConverter.BasicDagElement;
 import in.ramanujan.translation.codeConverter.DagElement;
 import in.ramanujan.translation.codeConverter.pojo.TranslateResponse;
 import in.ramanujan.middleware.base.pojo.asyncTask.AsyncTask;
+import in.ramanujan.middleware.base.pojo.CompactedDagInput;
 import in.ramanujan.pojo.RuleEngineInput;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.Variable;
 import in.ramanujan.pojo.ruleEngineInputUnitsExt.array.Array;
@@ -51,6 +52,9 @@ public class RunService {
 
     @Autowired
     private StorageDao storageDao;
+
+    @Autowired
+    private DagElementCompactionService dagElementCompactionService;
 
     private Set<String> dagElementIdRan = new HashSet<>();
 
@@ -266,45 +270,89 @@ public class RunService {
         RuleEngineInput ruleEngineInput = basicDagElement.getRuleEngineInput();
         String orchestratorAsyncId = UUID.randomUUID().toString();
         try {
-            Long dbGetStart = new Date().toInstant().toEpochMilli();
-            List<Future> futureList = new ArrayList<>();
-            // Collect variables for batch refresh
-            List<Variable> variablesToRefresh = new ArrayList<>();
-            for(Variable variable : ruleEngineInput.getVariables()) {
-                if(variable.getId() != null && !variable.getId().contains("func")) {
-                    variablesToRefresh.add(variable);
+            dagElementCompactionService.compactParentsForChild(asyncId, basicDagElement.getId()).setHandler(compactionHandler -> {
+                if (compactionHandler.failed()) {
+                    logger.error("Compaction failed for dagElement " + basicDagElement.getId(), compactionHandler.cause());
+                    future.fail(compactionHandler.cause());
+                    return;
                 }
-            }
-            // Add batch refresh future if there are variables to refresh
-            if (!variablesToRefresh.isEmpty()) {
-                futureList.add(refreshVariableValuesBatch(asyncId, variablesToRefresh));
-            }
-            for(Array array : ruleEngineInput.getArrays()) {
-                if(array.getId() == null || array.getId().contains("func")) {
-                    continue;
-                }
-                futureList.add(refreshArrayIndexValue(asyncId, array, array.getId()));
-            }
-            futureList.add(dagElementDao.setDagElementAndOrchestratorAsyncIdMapping(basicDagElement.getId(), orchestratorAsyncId));
-            CompositeFuture.all(futureList).setHandler(handler -> {
-                logger.info("dbGet: " + (new Date().toInstant().toEpochMilli() - dbGetStart));
-                if(handler.succeeded()) {
-                    try {
-                        Long storagePutStart = new Date().toInstant().toEpochMilli();
-                        storageDao.storeDagElementInput(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
-                            logger.info("storagePut: " + (new Date().toInstant().toEpochMilli() - storagePutStart));
-                            if(storageDaoHandler.failed()) {
-                                future.fail(storageDaoHandler.cause());
-                                return;
+
+                CompactedDagInput compactedInput = compactionHandler.result();
+                Set<String> compactedArrayIds = new HashSet<>();
+                if (compactedInput != null) {
+                    if (compactedInput.getCoalescedArrays() != null && !compactedInput.getCoalescedArrays().isEmpty()) {
+                        for (Array array : ruleEngineInput.getArrays()) {
+                            if (compactedInput.getCoalescedArrays().containsKey(array.getId())) {
+                                Map<String, Object> coalescedValues = compactedInput.getCoalescedArrays().get(array.getId());
+                                if (coalescedValues != null) {
+                                    if (array.getValues() == null) {
+                                        array.setValues(new HashMap<>());
+                                    }
+                                    array.getValues().putAll(coalescedValues);
+                                    compactedArrayIds.add(array.getId());
+                                }
                             }
-                            future.complete(orchestratorAsyncId);
-                        });
-                    } catch (Exception e) {
-                        future.fail(e);
+                        }
                     }
-                } else {
-                    future.fail(handler.cause());
+                    if (compactedInput.getCoalescedVariables() != null && !compactedInput.getCoalescedVariables().isEmpty()) {
+                        for (Variable variable : ruleEngineInput.getVariables()) {
+                            if (compactedInput.getCoalescedVariables().containsKey(variable.getId())) {
+                                variable.setValue(compactedInput.getCoalescedVariables().get(variable.getId()));
+                            }
+                        }
+                    }
                 }
+
+                Long dbGetStart = new Date().toInstant().toEpochMilli();
+                List<Future> futureList = new ArrayList<>();
+                // Collect variables for batch refresh
+                List<Variable> variablesToRefresh = new ArrayList<>();
+                for(Variable variable : ruleEngineInput.getVariables()) {
+                    if(variable.getId() != null && !variable.getId().contains("func")) {
+                        variablesToRefresh.add(variable);
+                    }
+                }
+                // Add batch refresh future if there are variables to refresh
+                if (!variablesToRefresh.isEmpty()) {
+                    try {
+                        futureList.add(refreshVariableValuesBatch(asyncId, variablesToRefresh));
+                    } catch (Exception ex) {
+                        future.fail(ex);
+                        return;
+                    }
+                }
+                for(Array array : ruleEngineInput.getArrays()) {
+                    if(array.getId() == null || array.getId().contains("func") || compactedArrayIds.contains(array.getId())) {
+                        continue;
+                    }
+                    try {
+                        futureList.add(refreshArrayIndexValue(asyncId, array, array.getId()));
+                    } catch (Exception ex) {
+                        future.fail(ex);
+                        return;
+                    }
+                }
+                futureList.add(dagElementDao.setDagElementAndOrchestratorAsyncIdMapping(basicDagElement.getId(), orchestratorAsyncId));
+                CompositeFuture.all(futureList).setHandler(handler -> {
+                    logger.info("dbGet: " + (new Date().toInstant().toEpochMilli() - dbGetStart));
+                    if(handler.succeeded()) {
+                        try {
+                            Long storagePutStart = new Date().toInstant().toEpochMilli();
+                            storageDao.storeDagElementInput(orchestratorAsyncId, basicDagElement.getRuleEngineInput()).setHandler(storageDaoHandler -> {
+                                logger.info("storagePut: " + (new Date().toInstant().toEpochMilli() - storagePutStart));
+                                if(storageDaoHandler.failed()) {
+                                    future.fail(storageDaoHandler.cause());
+                                    return;
+                                }
+                                future.complete(orchestratorAsyncId);
+                            });
+                        } catch (Exception e) {
+                            future.fail(e);
+                        }
+                    } else {
+                        future.fail(handler.cause());
+                    }
+                });
             });
         } catch (Exception e) {
             future.fail(e);

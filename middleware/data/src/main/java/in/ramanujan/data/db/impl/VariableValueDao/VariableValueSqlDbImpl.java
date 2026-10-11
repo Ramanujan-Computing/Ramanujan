@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,8 @@ import static in.ramanujan.db.layer.constants.Keys.VARIABLE_IDS_IN;
 
 @Component
 public class VariableValueSqlDbImpl implements VariableValueDao {
+
+    static final int ARRAY_BATCH_SIZE = 1000;
 
     @Autowired
     private QueryExecutor queryExecutor;
@@ -105,15 +108,26 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
     @Override
     public Future<Void> storeArrayValueBatch(String asyncId, String arrayId, String arrayName, Map<String, Object> indexValueMap) {
         Future<Void> future = Future.future();
+        storeArrayBatches(asyncId, arrayId, indexValueMap.entrySet().iterator(), future);
+        return future;
+    }
+
+    private void storeArrayBatches(String asyncId, String arrayId,
+                                  Iterator<Map.Entry<String, Object>> entries, Future<Void> future) {
+        if (!entries.hasNext()) {
+            future.complete();
+            return;
+        }
         try {
-            List<Object> list = new ArrayList<>();
-            for(String index : indexValueMap.keySet()) {
-                Object value = indexValueMap.get(index);
+            List<Object> list = new ArrayList<>(ARRAY_BATCH_SIZE);
+            while (entries.hasNext() && list.size() < ARRAY_BATCH_SIZE) {
+                Map.Entry<String, Object> entry = entries.next();
+                Object value = entry.getValue();
                 ArrayMapping arrayMapping = new ArrayMapping();
                 arrayMapping.setAsyncId(asyncId);
                 arrayMapping.setArrayName("");
                 arrayMapping.setArrayId(arrayId);
-                arrayMapping.setIndexStr(index);
+                arrayMapping.setIndexStr(entry.getKey());
                 if(value != null) {
                     arrayMapping.setObject(value.toString());
                 }
@@ -122,7 +136,7 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
             queryExecutor.execute(list.get(0), Keys.ASYNC_ID_ARRAY_ID_INDEX, QueryType.UPSERT, list)
                     .setHandler(new MonitoringHandler<>("storeArrayValue", handler -> {
                         if(handler.succeeded()) {
-                            future.complete();
+                            storeArrayBatches(asyncId, arrayId, entries, future);
                         } else {
                             future.fail(handler.cause());
                         }
@@ -130,7 +144,6 @@ public class VariableValueSqlDbImpl implements VariableValueDao {
         } catch (Exception e) {
             future.fail(e);
         }
-        return future;
     }
 
     @Override
