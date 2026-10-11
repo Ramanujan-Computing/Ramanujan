@@ -81,26 +81,36 @@ public class HttpVerticle extends AbstractVerticle {
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
+        vertx.<Void>executeBlocking(initialized -> {
+            try {
+                initializeServices();
+                initialized.complete();
+            } catch (Exception e) {
+                initialized.fail(e);
+            }
+        }, false, initialized -> {
+            if (initialized.failed()) {
+                logger.error("Failed to initialize server services", initialized.cause());
+                startFuture.fail(initialized.cause());
+                return;
+            }
+            startWebApp(http -> completeStartup(http, startFuture));
+        });
+    }
+
+    private void initializeServices() {
         connectionCreator.init(context);
         QueryExecutor.DBConfig dbConfig = new QueryExecutor.DBConfig(ConfigurationGetter.getString(Config.DB_URL),
                 ConfigurationGetter.getString(Config.DB_USER), ConfigurationGetter.getString(Config.DB_PASSWORD),
                 ConfigurationGetter.getString(Config.DB_NAME));
-        logger.info("DB Config: " +  dbConfig);
         queryExecutor.init(context, ConfigurationGetter.getDBType(), dbConfig);
-        logger.info("QueryExecutor initialized with DB Config");
+        logger.info("QueryExecutor initialized");
         kafkaManagerApiCaller.vertx = vertx;
         orchestrationApiCaller.vertx = vertx;
         orchestrationApiCaller.context = context;
         orchestrationApiCaller.initialize();
         storageDao.setContext(context, ConfigurationGetter.getStorageType());
         orchestratorStorageDao.init(context, ConfigurationGetter.getStorageType());
-
-        startWebApp(new Handler<AsyncResult<HttpServer>>() {
-            @Override
-            public void handle(AsyncResult<HttpServer> httpServerAsyncResult) {
-                completeStartup(httpServerAsyncResult, startFuture);
-            }
-        });
     }
 
     private void startWebApp(Handler<AsyncResult<HttpServer>> next) {

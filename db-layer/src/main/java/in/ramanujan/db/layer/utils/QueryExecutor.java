@@ -22,6 +22,7 @@ import io.vertx.sqlclient.PreparedQuery;
 import io.vertx.sqlclient.Tuple;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -41,6 +42,7 @@ public class QueryExecutor {
     public static class DBConfig {
         private String jdbcUrl;
         private String username;
+        @ToString.Exclude
         private String password;
         private String dbName;
     }
@@ -56,8 +58,8 @@ public class QueryExecutor {
 
     Logger logger = LoggerFactory.getLogger(QueryExecutor.class);
 
-    Context context;
-    DataSource dataSource;
+    volatile Context context;
+    volatile DataSource dataSource;
 
     private final InMemQueryExecutor inMemQueryExecutor = new InMemQueryExecutor();
 
@@ -95,14 +97,16 @@ public class QueryExecutor {
             config.setConnectionTimeout(5000);
             config.setInitializationFailTimeout(120000);
             config.addDataSourceProperty("connectTimeout", "10000");
-            dataSource = new HikariDataSource(config);
+            HikariDataSource pool = new HikariDataSource(config);
 
-            try (Connection connection = dataSource.getConnection()) {
+            try (Connection connection = pool.getConnection()) {
                 logger.info("Database connection verified for database: " + dbConfig.getDbName());
             } catch (SQLException e) {
+                pool.close();
                 logger.error("Failed to initialize database: " + dbConfig.getDbName(), e);
                 throw new IllegalStateException("Failed to initialize database: " + dbConfig.getDbName(), e);
             }
+            dataSource = pool;
 
             logger.info("Database connection pool initialized with " + maxPool + " connections for database: " + dbConfig.getDbName());
 
@@ -141,12 +145,22 @@ public class QueryExecutor {
         } else {
             list = null;
         }
-        final CustomQuery customQuery = getCustomQuery(object, index, queryType, list);
-        context.executeBlocking(blocking -> {
-            queryInternal(object, queryType, blocking, customQuery);
+        if (context == null || dataSource == null) {
+            IllegalStateException failure = new IllegalStateException("Database executor is not initialized");
+            logger.error("Cannot execute database query before initialization", failure);
+            return Future.failedFuture(failure);
+        }
+        context.<List<Object>>executeBlocking(blocking -> {
+            try {
+                final CustomQuery customQuery = getCustomQuery(object, index, queryType, list);
+                queryInternal(object, queryType, blocking, customQuery);
+            } catch (Exception e) {
+                logger.error("Failed to construct database query", e);
+                blocking.fail(e);
+            }
         }, false, handler -> {
             if(handler.succeeded()) {
-                future.complete((List<Object>) handler.result());
+                future.complete(handler.result());
             } else {
                future.fail(handler.cause());
             }
@@ -161,38 +175,22 @@ public class QueryExecutor {
         return future;
     }
 
-    private void queryInternal(Object object, QueryType queryType, Promise<Object> blocking, CustomQuery customQuery) {
-
-            Connection connection = null;
-            try {
-                Long connStart = new Date().toInstant().toEpochMilli();
-                int maxTry = 10;
-                while (maxTry -- > 0) {
-                    try {
-                        connection = dataSource.getConnection();
-                        break;
-                    } catch (SQLTimeoutException ex) {
-                        Thread.sleep(10_000);
-                    }
-                }
-                if(maxTry < 0) {
-                    logger.error("Couldn't get connection in 10 tries, giving up. Switching JVM off");
-                    System.exit(1);
-                }
-                publishMetric("dbCon", connStart);
-                Long stmtStart = new Date().toInstant().toEpochMilli();
-                PreparedStatement statement = connection.prepareStatement(customQuery.getSql());
+    private void queryInternal(Object object, QueryType queryType, Promise<List<Object>> blocking, CustomQuery customQuery) {
+        Long connStart = new Date().toInstant().toEpochMilli();
+        List<Object> objects = new ArrayList<>();
+        try (Connection connection = dataSource.getConnection()) {
+            publishMetric("dbCon", connStart);
+            Long stmtStart = new Date().toInstant().toEpochMilli();
+            try (PreparedStatement statement = connection.prepareStatement(customQuery.getSql())) {
                 publishMetric("dbStmt", stmtStart);
-                int iterator = 0;
-                if(customQuery.getTupleList() != null && customQuery.getTupleList().size() > 0) {
-                    for(List<Object> tuple : customQuery.getTupleList()) {
+                if (customQuery.getTupleList() != null && !customQuery.getTupleList().isEmpty()) {
+                    for (List<Object> tuple : customQuery.getTupleList()) {
                         addRow(tuple, statement);
-                        if(queryType != QueryType.SELECT) {
-                            statement.addBatch();;
-//                            executeStmt(statement);
+                        if (queryType != QueryType.SELECT) {
+                            statement.addBatch();
                         }
                     }
-                    if(queryType != QueryType.SELECT) {
+                    if (queryType != QueryType.SELECT) {
                         Long startBatchExec = new Date().toInstant().toEpochMilli();
                         statement.executeBatch();
                         publishMetric("dbBatch", startBatchExec);
@@ -200,34 +198,24 @@ public class QueryExecutor {
                 } else {
                     addRow(customQuery.getObjects(), statement);
                 }
-                final ResultSet resultSet;
-                List<Object> objects = new ArrayList<>();
-                if(queryType == QueryType.SELECT || queryType == QueryType.SELECT_IN) {
-                    resultSet = statement.executeQuery();
-                    while(resultSet.next()) {
-                        objects.add(RowToObjectConvertor.convert(resultSet, object));
+                if (queryType == QueryType.SELECT || queryType == QueryType.SELECT_IN) {
+                    try (ResultSet resultSet = statement.executeQuery()) {
+                        while (resultSet.next()) {
+                            objects.add(RowToObjectConvertor.convert(resultSet, object));
+                        }
                     }
-                    resultSet.close();
                 } else {
-                    if(customQuery.getTupleList() == null || customQuery.getTupleList().size() == 0) {
+                    if (customQuery.getTupleList() == null || customQuery.getTupleList().isEmpty()) {
                         executeStmt(statement);
                     }
                 }
-                statement.close();
-                connection.close();
-                blocking.complete(objects);
-                return;
-            } catch (Exception e) {
-                if(connection != null) {
-                    try {
-                        connection.close();
-                    } catch (SQLException ex) {
-                        logger.error("Failed to close connection", ex);
-                    }
-                }
-                    logger.error(e);
-                    blocking.fail(e);
             }
+        } catch (Exception e) {
+            logger.error("Database query failed", e);
+            blocking.fail(e);
+            return;
+        }
+        blocking.complete(objects);
     }
 
     private void executeStmt(PreparedStatement statement) throws SQLException {

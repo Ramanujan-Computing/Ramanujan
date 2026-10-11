@@ -144,6 +144,21 @@ writes and dependency processing before marking the overall task `SUCCESS`.
 Queue-driven polling uses shared task state and result storage, so middleware
 queue consumption and database persistence do not require machine affinity.
 
+The HTTP service initializes its database and storage clients on a worker thread.
+Queue consumption starts only after that initialization and HTTP deployment
+succeed; startup failures propagate to the main verticle instead of allowing
+messages to access partially initialized clients.
+
+Within one middleware process, overlapping events for the same async ID and DAG
+vertex are rejected for queue retry while the first event remains active. Result
+preparation, query construction, and output serialization run off event loops.
+Array values are persisted in sequential batches of at most 1,000 rows, with one
+array write active per vertex. Scalars and the vertex object are written only
+after the preceding database writes finish. A failure stops subsequent writes
+and propagates only after the active write has settled, so a retry cannot overlap
+unfinished writes from that attempt. This is not a cross-process lock or an
+atomic transaction; partial writes remain safe to repeat through array upserts.
+
 ### Parent Compaction and Retention
 
 Before submitting a dependent vertex, `DagElementCompactionService` reads its
